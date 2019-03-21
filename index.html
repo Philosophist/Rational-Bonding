@@ -10,25 +10,25 @@
   <link rel="stylesheet" href="styles/index.processed.css">
 
   <!-- Scripts -->
+  <script src="..scripts\index.js"></script>
   <script src="https://aframe.io/releases/0.9.0/aframe.min.js"></script>
-
-    <script src="https://unpkg.com/aframe-particle-system@1.0.x/dist/aframe-particle-system-component.min.js"></script>
+  <script src="https://unpkg.com/aframe-particle-system@1.0.x/dist/aframe-particle-system-component.min.js"></script>
   <script src="jquery.js"></script>
   <script src="//cdn.rawgit.com/donmccurdy/aframe-extras/v3.8.0/dist/aframe-extras.min.js"></script>
 </head>
 <body>
 
 <a-scene>
-  <a-text value="Rational Bonding Presents" position="-3 7 -10" color="#EF2D5E">
-    <a-text value="Alchem Fighter" height="30" width="20" position=".5 -.5 0" color="#02e8f4"></a-text>
-  </a-text>
-  <a-sphere id="proton" position="0 2.5 -6" radius=".05" color="#EF2D5E">
-    <a-sphere id="eclouds1e1"  radius=".53" color="#02e8f4" opacity=".4">
-    <a-entity id="s1e1" material="color: #02e8f4"  rotation="0 90 0"; geometry="primitive: torus; radiusTubular: 0.004" >
-      <a-animation attribute="position" dur="250" from=".53 0 0" to="-.53 0 0" direction="alternate" repeat="indefinite"></a-animation>
-      <a-animation attribute="geometry.radius"  dur="125" from=".01" to=".53" direction="alternate" repeat="indefinite"></a-animation>
-    </a-entity>
-  </a-sphere>
+    <a-text value="Rational Bonding Presents" position="-3 7 -10" color="#EF2D5E">
+      <a-text value="Alchem Fighter" height="30" width="20" position=".5 -.5 0" color="#02e8f4"></a-text>
+    </a-text>
+    <a-sphere id="proton" position="0 2.5 -6" radius=".05" color="#EF2D5E">
+      <a-sphere id="eclouds1e1"  radius=".53" color="#02e8f4" opacity=".4">
+      <a-entity id="s1e1" material="color: #02e8f4"  rotation="0 90 0"; geometry="primitive: torus; radiusTubular: 0.004" animation="property: position; from: .53 0 0; to: -.53 0 0; dur: 250; dir: normal; easing: linear"
+                      animation__rad="property: geometry.radius; from: .01; to: .53; dur: 125; dir: normal; easing: linear">
+        <a-entity s-orbital></a-entity>
+      </a-entity>
+    </a-sphere>
   <a-sky src="https://upload.wikimedia.org/wikipedia/commons/7/7b/Earth_Western_Hemisphere.jpg"></a-sky>
 </a-scene>
 
