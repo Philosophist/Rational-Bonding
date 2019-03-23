@@ -20,4 +20,4 @@ AFRAME.registerComponent('s-orbital', {
     }, 250);
     
   }
-}
+});
