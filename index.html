@@ -11,43 +11,70 @@
 
   <!-- Scripts -->
   <script src="https://aframe.io/releases/0.9.0/aframe.min.js"></script>
-  <script src="https://unpkg.com/aframe-particle-system@1.0.x/dist/aframe-particle-system-component.min.js"></script>
-  <script src="jquery.js"></script>
+  <script src="//cdn.rawgit.com/donmccurdy/aframe-physics-system/v3.3.0/dist/aframe-physics-system.min.js"></script>
+  <script src="jquery.js" type="text/javascript"></script>
   <script src="https://unpkg.com/aframe-extras@6.0.x/dist/aframe-extras.min.js"></script>
+  <script src="scripts/menu.js" defer></script>
   <script src="scripts/index.js"></script>
 </head>
 <body>
 
-<a-scene>
+<a-scene physics="gravity: 0; friction: 0; restitution: 1" 
+         cursor="rayOrigin: mouse">
+  <a-mixin id="proton" 
+    dynamic-body 
+    geometry="primitive: sphere; radius: 0.05"
+    material="color: #EF2D5E">     
+  </a-mixin>
+  <a-mixin id="s-orbit"  
+    geometry="primitive: sphere; radius: 0.53"
+    material="color: #02e8f4; opacity: .2">
+  </a-mixin> 
+  <a-mixin id="s-electron"
+    material="color: #02e8f4"  
+    rotation="0 90 0" 
+    geometry="primitive: torus; radiusTubular: 0.004" 
+    animation__pos="property: position; 
+                    from: .53 0 0; 
+                    to: -.53 0 0; 
+                    dur: 250; 
+                    dir: alternate; 
+                    loop: 1; 
+                    startEvents: animate-pos; 
+                    easing: linear"
+    animation__rad="property: geometry.radius; 
+                    from: .01; 
+                    to: .54; 
+                    dur: 125; 
+                    dir: alternate; 
+                    loop: 1; 
+                    startEvents: animate-rad; 
+                    easing: easeOutQuad">
+  </a-mixin>
+  <a-entity camera="active: true" look-controls wasd-controls position="0 1.6 0">
+    <a-entity cursor="fuse: true; maxDistance: 30; timeout: 500"
+            position="0 0 -5"
+            geometry="primitive: ring; radiusInner: 0.03; radiusOuter: 0.04"
+            material="color: white; shader: flat">
+    </a-entity>
+    <a-entity id="mouseMenu" 
+              class="clickable"
+              position="10 5 -8" 
+              geometry="primitive: plane; width: 5; height: 2"
+              material="color: white; opacity: .2; visible: true">
+    </a-entity>
+  </a-entity>
   <a-sky src="images/PIA15482.jpg"></a-sky>
   <a-text value="Rational Bonding Presents" height="4" width="8" position="-3 7 -10" color="#EF2D5E">
-      <a-text value="Alchem Fighter" height="30" width="20" position=".5 -.5 0" color="#02e8f4"></a-text>
-    </a-text>
-    <a-sphere id="proton" position="0 2.5 -6" radius=".05" color="#EF2D5E">
-      <a-sphere id="eclouds1e1"  radius=".53" color="#02e8f4" opacity=".2">
-      <a-entity id="s1e1" material="color: #02e8f4"  rotation="0 90 0"; geometry="primitive: torus; radiusTubular: 0.004" 
-      animation__pos="property: position; 
-                 from: .53 0 0; 
-                 to: -.53 0 0; 
-                 dur: 250; 
-                 dir: alternate; 
-                 loop: 1; 
-                 startEvents: animate-pos; 
-                 easing: linear"
-      animation__rad="property: geometry.radius; 
-                      from: .01; 
-                      to: .54; 
-                      dur: 125; 
-                      dir: alternate; 
-                      loop: 1; 
-                      startEvents: animate-rad; 
-                      easing: easeOutQuad">
+    <a-text value="Alchem Fighter" height="30" width="20" position=".5 -.5 0" color="#02e8f4"></a-text>
+  </a-text>
+  <a-entity id="Hyd_1" mixin="proton" dynamic-body position="0 2.5 -6">
+    <a-entity id="Hyd_1_s" mixin="s-orbit"></a-entity>
+    <a-entity id="Hyd_1s" mixin="s-electron">
         <a-entity s-orbital></a-entity>
-      </a-entity>
-    </a-sphere>
+    </a-entity>
+  </a-entity>
 </a-scene>
 
-  <!-- Scripts -->
-  <script src="scripts/index.js"></script>
 </body>
 </html>
