@@ -61,6 +61,10 @@ document.querySelector('#mouseMenu').addEventListener('mouseenter', function() {
   AFRAME.utils.entity.setComponentProperty(mMenu, 'material.visible', true);
 });
 
+document.querySelector('#mouseMenu').addEventListener('click', function() {
+    AFRAME.utils.entity.setComponentProperty(mMenu, 'material.visible', true);
+  });
+
 document.querySelector('#mouseMenu').addEventListener('mouseleave', function() {
     AFRAME.utils.entity.setComponentProperty(mMenu, 'material.visible', false);
   });
