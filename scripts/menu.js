@@ -1,3 +1,5 @@
+/* global AFRAME */
+
 dict={"Aquarium": "IMG_Aquarium_20190323_172712_processed.jpg",
 "Archer": "IMG_Archer_20190323_171500_processed.jpg",
 "Baobab": "IMG_Baobab_20190323_170953_processed.jpg",
