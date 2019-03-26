@@ -64,6 +64,7 @@ const sky = document.querySelector('#sky');
 var count = 0;
 document.querySelector('#mouseMenu').addEventListener('mouseenter', function() {
   AFRAME.utils.entity.setComponentProperty(mMenu, 'material.visible', true);
+  AFRAME.utils.entity.setComponentProperty(mMenu, 'text.opacity', 1);
 });
 
 document.querySelector('#mouseMenu').addEventListener('click', function() {
@@ -83,4 +84,5 @@ document.querySelector('#mouseMenu').addEventListener('click', function() {
 
 document.querySelector('#mouseMenu').addEventListener('mouseleave', function() {
     AFRAME.utils.entity.setComponentProperty(mMenu, 'material.visible', false);
+    AFRAME.utils.entity.setComponentProperty(mMenu, 'text.opacity', 0);
   });
