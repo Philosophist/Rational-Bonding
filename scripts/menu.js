@@ -75,9 +75,9 @@ document.querySelector('#mouseMenu').addEventListener('click', function() {
       count = 0;
     }
 
-    AFRAME.utils.entity.setComponentProperty(sky, 'src', dict[count].file);
+    AFRAME.utils.entity.setComponentProperty(sky, 'src', "images/"+dict[count].file);
 
-    AFRAME.utils.entity.setComponentProperty(mMenu, 'text', dict[count].name);
+    AFRAME.utils.entity.setComponentProperty(mMenu, 'text.value', dict[count].name);
 
   });
 
