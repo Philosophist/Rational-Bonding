@@ -60,15 +60,27 @@
     <a-entity id="mouseMenu" 
               class="clickable"
               position="10 6 -8" 
-              geometry="primitive: plane; height: auto; 
-              width: auto"
-              text="width: 20, value: Original"
+              geometry="primitive: plane; height: 1; 
+              width: 3"
+              text="width: 10; value: Original; align: center; opacity: 0"
               material="color: white; opacity: .2; visible: false">
     </a-entity>
   </a-entity>
   <a-sky id="sky" src="images/PIA15482.jpg" geometry="phiStart: 340"></a-sky>
-  <a-text value="Rational Bonding Presents" height="4" width="8" position="-2.0 4.5 -5" color="#EF2D5E">
-    <a-text value="Alchem Fighter" height="30" width="30" position="-2.2 -1 0" color="#02e8f4"></a-text>
+  <a-text position="0 4.5 -5" 
+          text="value: Rational Bonding Presents; 
+                align: center; 
+                height: 4; 
+                width: 8;
+                color: #EF2D5E">
+    <a-text 
+            position="0 -1 0"
+            text="value: Alchem Fighter; 
+                  align: center;
+                  height: 30; 
+                  width: 30; 
+                  color: #02e8f4">
+    </a-text>
   </a-text>
   <a-entity id="Hyd_1" mixin="proton" dynamic-body position="0 1.58 -4">
     <a-entity id="Hyd_1_s" mixin="s-orbit"></a-entity>

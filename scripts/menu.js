@@ -4,6 +4,7 @@
 const dict=[
 
  {name : "Original", file: "PIA15482.jpg"},
+ {name : "8-bit", file: "IMG_8bit_20190323_165923_processed.jpg"},
  {name : "Aquarium", file: "IMG_Aquarium_20190323_172712_processed.jpg"},
  {name : "Archer", file: "IMG_Archer_20190323_171500_processed.jpg"},
  {name : "Baobab", file: "IMG_Baobab_20190323_170953_processed.jpg"},
