@@ -14,7 +14,7 @@
     "budo": "^7.1.0",
     "shelljs": "^0.6.0",
     "webpack": "^1.12.9",
-    "ghpages": "0.0.3"
+    "ghpages": "0.0.10"
   },
   "keywords": [
     "aframe",
