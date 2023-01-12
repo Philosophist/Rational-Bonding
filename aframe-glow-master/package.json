@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "browserify": "^12.0.1",
-    "budo": "^7.1.0",
+    "budo": "^11.8.4",
     "shelljs": "^0.6.0",
     "webpack": "^1.12.9",
     "ghpages": "0.0.3"
