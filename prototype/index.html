@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Alchem Fighter Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed WebGL volume behind a cockpit HUD; instruments pinned to the four corners. */
+:root {
+  --void: #04060c;
+  --panel: rgba(8, 14, 26, 0.78);
+  --line: rgba(2, 232, 244, 0.22);
+  --ink: #d6e2ee;
+  --muted: #7a8ea3;
+  --cyan: #02e8f4;      /* Rational Bonding cyan: positive phase */
+  --magenta: #ef2d5e;   /* Rational Bonding magenta: negative phase */
+  --gold: #ffc65c;
+  --good: #5cf29a;
+  --font-display: "Oxanium", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--void); color: var(--ink); font: 14px/1.45 var(--font-body); }
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#gl:active { cursor: grabbing; }
+.hud { position: fixed; inset: 0; pointer-events: none;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr auto; gap: 12px; }
+.panel { pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; backdrop-filter: blur(6px); min-width: 0; }
+.tl { grid-column: 1; grid-row: 1; max-width: 360px; justify-self: start; }
+.tr { grid-column: 2; grid-row: 1; justify-self: end; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.bottom { grid-column: 1 / -1; grid-row: 3; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+h1 { font: 700 13px/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin: 0 0 6px; }
+h2 { font: 700 20px/1.15 var(--font-display); margin: 0 0 6px; text-wrap: balance; }
+.label { font: 500 10px/1.2 var(--font-data); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.data { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+p { margin: 0 0 6px; }
+.brief { color: var(--muted); font-size: 13px; }
+.objective { border-left: 2px solid var(--gold); padding-left: 8px; margin: 8px 0; }
+.bar { height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .1s linear; }
+.tabs { display: flex; gap: 4px; }
+button, select, input { font: 500 12px var(--font-data); color: var(--ink); background: rgba(2,232,244,.06); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--cyan); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var(--cyan); color: #fff; }
+.fire { font: 700 14px var(--font-display); letter-spacing: .12em; padding: 10px 18px; border-color: var(--magenta); background: rgba(239,45,94,.18); }
+.fire:hover { border-color: #fff; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 6px; }
+#grotrian { width: 230px; height: 190px; display: block; }
+#spectro { width: 100%; height: 64px; display: block; cursor: crosshair; touch-action: none; }
+.weapon { flex: 1 1 420px; min-width: 0; }
+.state { min-width: 0; }
+.lock { color: var(--good); }
+.warn { color: var(--magenta); }
+#log { font: 12px/1.5 var(--font-data); color: var(--muted); max-width: 360px; text-align: right; }
+#log div:first-child { color: var(--ink); }
+#scalebar { height: 2px; background: var(--ink); margin: 4px 0 2px; width: 100px; }
+.overlay { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; padding: 16px; }
+.overlay .panel { pointer-events: auto; max-width: 420px; text-align: center; padding: 18px 20px; }
+#lab .row { justify-content: space-between; }
+#lab select { max-width: 190px; }
+.keys { color: var(--muted); font: 11px/1.5 var(--font-data); }
+@media (max-width: 760px) {
+  .hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; }
+  .tl { max-width: none; grid-row: 2; }
+  .tr { grid-column: 1; grid-row: 1; flex-direction: row; justify-self: stretch; justify-content: space-between; }
+  .bottom { grid-row: 4; }
+  #grotrianBox, #log, .keys { display: none; }
+  h2 { font-size: 16px; }
+  .brief { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-label="Volumetric render of the electron probability cloud"></canvas>
+
+<div class="hud">
+  <section class="panel tl" id="mission">
+    <h1>Alchem Fighter · <span id="levelNum">Level 1</span></h1>
+    <h2 id="levelTitle"></h2>
+    <p class="brief" id="levelBrief"></p>
+    <div class="objective"><div class="label">Target state</div><div id="levelGoal"></div>
+      <div class="bar"><i id="holdBar"></i></div></div>
+    <div class="row"><button id="hintBtn" type="button">Hint</button><button id="restartBtn" type="button">Restart (R)</button><select id="levelSel" aria-label="Choose level"></select></div>
+    <p class="brief" id="hint" hidden></p>
+  </section>
+
+  <section class="panel tl" id="lab" hidden>
+    <h1>Orbital Lab</h1>
+    <p class="brief">Creative-mode groundwork. Hydrogen is exact. Heavier atoms use Slater-screened hydrogenic orbitals, an approximation.</p>
+    <div class="stack">
+      <div class="row"><label class="label" for="labEl">Element</label><select id="labEl"></select></div>
+      <div class="row"><label class="label" for="labView">View</label><select id="labView"><option value="orbital">One orbital</option><option value="atom">Whole atom (all electrons)</option></select></div>
+      <div class="row"><label class="label" for="labOrb">Orbital</label><select id="labOrb"></select></div>
+      <div class="row"><label class="label" for="labBasis">Basis</label><select id="labBasis"><option value="real">Real (chemistry shapes)</option><option value="complex">Complex (definite m)</option></select></div>
+      <div class="row"><label class="label" for="labMix">Superpose with</label><select id="labMix"></select></div>
+      <div class="data" id="labInfo"></div>
+    </div>
+  </section>
+
+  <div class="tr">
+    <div class="tabs panel" style="padding:4px">
+      <button type="button" id="tabCampaign" aria-pressed="true">Campaign</button>
+      <button type="button" id="tabLab" aria-pressed="false">Orbital Lab</button>
+    </div>
+    <div id="log" aria-live="polite"></div>
+  </div>
+
+  <div class="bottom">
+    <section class="panel" id="grotrianBox">
+      <div class="label">Energy levels (√ scale)</div>
+      <canvas id="grotrian" width="460" height="380"></canvas>
+    </section>
+    <section class="panel weapon" id="weapon">
+      <div class="row" style="justify-content:space-between">
+        <div><span class="label">Photon gun</span> <span class="data" id="lambdaOut"></span> <span class="data" id="lockOut"></span></div>
+        <div class="row">
+          <span class="label">Polarization</span>
+          <button type="button" data-pol="0" aria-pressed="true" title="Linear along the axis: drives Δm = 0">π</button>
+          <button type="button" data-pol="1" aria-pressed="false" title="Circular: drives Δm = +1">σ+</button>
+          <button type="button" data-pol="2" aria-pressed="false" title="Circular: drives Δm = −1">σ−</button>
+        </div>
+      </div>
+      <canvas id="spectro" width="1200" height="128" aria-label="Spectrometer: drag to tune the wavelength"></canvas>
+      <div class="row" style="justify-content:space-between">
+        <div class="data"><span class="label">Coupling</span> <span id="couplingOut"></span></div>
+        <div class="keys">Drag: fly · Q/E: tune (Shift ×10) · 1/2/3: polarization · Space: fire</div>
+        <button type="button" class="fire" id="fireBtn">FIRE</button>
+      </div>
+    </section>
+    <section class="panel state">
+      <div id="stateBox"><div class="label">Electron state</div>
+      <div class="data" style="font-size:18px" id="stateOut"></div>
+      <div class="data" id="stateDetail"></div></div>
+      <div id="scalebar"></div><div class="data" id="scaleOut"></div>
+      <div class="row" style="margin-top:6px"><label class="label" for="quality">Quality</label>
+        <select id="quality"><option value="0">Low</option><option value="1" selected>Medium</option><option value="2">High</option></select></div>
+    </section>
+  </div>
+</div>
+
+<div class="overlay" id="winBox" hidden>
+  <div class="panel"><h1>State achieved</h1><h2 id="winTitle"></h2><p class="brief" id="winText"></p>
+    <div class="row" style="justify-content:center"><button id="nextBtn" type="button">Next level</button><button id="againBtn" type="button">Replay</button></div></div>
+</div>
+<div class="overlay" id="glFail" hidden><div class="panel"><h2>WebGL2 is unavailable</h2><p class="brief">This prototype needs a browser with WebGL2 enabled.</p></div></div>
+
+<script>
+'use strict';
+// ===================================================================
+// Physics: hydrogen-like wavefunctions, spectra, decay tables
+// ===================================================================
+const HC = 1239.84193;      // eV·nm
+const RY_H = 13.598434;     // eV, hydrogen Rydberg energy (reduced-mass corrected)
+const A0_PM = 52.9177;      // Bohr radius in picometres
+const TOL = 0.004;          // resonance tolerance (relative energy) — real lines are ~1e-7 wide
+const NMAX = 4;             // campaign tracks bound states up to n = 4
+const L_NAMES = 'spdfg';
+
+const fact = n => { let f = 1; for (let i = 2; i <= n; i++) f *= i; return f; };
+
+// Generalized Laguerre L_k^a(x) by upward recurrence.
+function laguerre(k, a, x) {
+  if (k === 0) return 1;
+  let L0 = 1, L1 = 1 + a - x;
+  for (let i = 1; i < k; i++) { const L2 = ((2 * i + 1 + a - x) * L1 - (i + a) * L0) / (i + 1); L0 = L1; L1 = L2; }
+  return L1;
+}
+// Associated Legendre P_l^m(x), m >= 0, with Condon–Shortley phase.
+function legendre(l, m, x) {
+  let pmm = 1; const s = Math.sqrt(Math.max(0, 1 - x * x)); let f = 1;
+  for (let i = 0; i < m; i++) { pmm *= -f * s; f += 2; }
+  if (l === m) return pmm;
+  let pm1 = x * (2 * m + 1) * pmm;
+  if (l === m + 1) return pm1;
+  let pll = 0;
+  for (let ll = m + 2; ll <= l; ll++) { pll = (x * (2 * ll - 1) * pm1 - (ll + m - 1) * pmm) / (ll - m); pmm = pm1; pm1 = pll; }
+  return pll;
+}
+const radialNorm = (n, l, Z) => Math.sqrt(Math.pow(2 * Z / n, 3) * fact(n - l - 1) / (2 * n * fact(n + l)));
+const angularNorm = (l, m) => { const am = Math.abs(m); return Math.sqrt((2 * l + 1) / (4 * Math.PI) * fact(l - am) / fact(l + am)); };
+function radial(n, l, Z, r) { const rho = 2 * Z * r / n; return radialNorm(n, l, Z) * Math.pow(rho, l) * Math.exp(-rho / 2) * laguerre(n - l - 1, 2 * l + 1, rho); }
+// Radius (Bohr) that encloses essentially all of the n-shell density.
+const extentBohr = (n, Z) => (2.5 * n * n + 5 * n) / Z;
+
+// Peak |psi|^2 for a single orbital (used to normalise brightness).
+function peakDensity(n, l, m, Z, mode) {
+  const R = extentBohr(n, Z), am = Math.abs(m), an = angularNorm(l, m);
+  let best = 0;
+  for (let i = 0; i <= 240; i++) {
+    const rr = radial(n, l, Z, R * i / 240) ** 2;
+    for (let j = 0; j <= 60; j++) {
+      const P = legendre(l, am, Math.cos(Math.PI * j / 60)) * an;
+      best = Math.max(best, rr * P * P * (mode ? 2 : 1));
+    }
+  }
+  return best;
+}
+// Density of the surface that encloses 90% of the probability: the textbook "boundary surface".
+function isoDensity(n, l, m, Z, mode) {
+  const R = extentBohr(n, Z), am = Math.abs(m), an = angularNorm(l, m), NR = 110, NT = 40, NP = mode ? 32 : 1;
+  const samples = []; let total = 0;
+  for (let i = 0; i < NR; i++) {
+    const r = (i + 0.5) * R / NR, rr = radial(n, l, Z, r) ** 2;
+    for (let j = 0; j < NT; j++) {
+      const th = (j + 0.5) * Math.PI / NT, P = legendre(l, am, Math.cos(th)) * an, base = rr * P * P, w = r * r * Math.sin(th);
+      for (let k = 0; k < NP; k++) {
+        const ph = (k + 0.5) * 2 * Math.PI / NP, a = mode === 0 ? 1 : 2 * (mode === 1 ? Math.cos(am * ph) : Math.sin(am * ph)) ** 2;
+        const d = base * a; samples.push([d, d * w]); total += d * w;
+      }
+    }
+  }
+  samples.sort((a, b) => b[0] - a[0]);
+  let acc = 0;
+  for (const [d, p] of samples) { acc += p; if (acc >= 0.9 * total) return d; }
+  return 0;
+}
+// Shader-ready description of one orbital. mode 0 = complex e^{imφ}, 1 = cos(|m|φ), 2 = sin(|m|φ).
+function waveDesc(n, l, m, Z, real) {
+  const mode = real && m !== 0 ? (m > 0 ? 1 : 2) : 0;
+  const norm = radialNorm(n, l, Z) * angularNorm(l, m) * (mode ? Math.SQRT2 : 1);
+  return { n, l, m, Z, mode, norm, peak: peakDensity(n, l, m, Z, mode), iso: isoDensity(n, l, m, Z, mode) };
+}
+
+const REAL_NAMES = {
+  '1,0': 'p_z', '1,1': 'p_x', '1,-1': 'p_y',
+  '2,0': 'd_z²', '2,1': 'd_xz', '2,-1': 'd_yz', '2,2': 'd_x²−y²', '2,-2': 'd_xy',
+  '3,0': 'f_z³', '3,1': 'f_xz²', '3,-1': 'f_yz²', '3,2': 'f_z(x²−y²)', '3,-2': 'f_xyz', '3,3': 'f_x(x²−3y²)', '3,-3': 'f_y(3x²−y²)',
+};
+const sgn = m => (m > 0 ? '+' : m < 0 ? '−' : '') + Math.abs(m);
+const stateName = s => `${s.n}${L_NAMES[s.l]}${s.l ? ` m=${sgn(s.m)}` : ''}`;
+const levelE = n => -RY_H / (n * n);
+const lambdaFor = (a, b) => HC / Math.abs(levelE(b) - levelE(a));
+
+// Spontaneous decay of hydrogen (lifetimes in ns, branching ratios). 2s is metastable (0.12 s → effectively stable here).
+const DECAY = {
+  '2,1': { tau: 1.596, br: [[1, 0, 1]] },
+  '2,0': { tau: Infinity, br: [] },
+  '3,0': { tau: 158.6, br: [[2, 1, 1]] },
+  '3,1': { tau: 5.27, br: [[1, 0, 0.882], [2, 0, 0.118]] },
+  '3,2': { tau: 15.6, br: [[2, 1, 1]] },
+  '4,0': { tau: 226.5, br: [[2, 1, 0.584], [3, 1, 0.416]] },
+  '4,1': { tau: 12.4, br: [[1, 0, 0.841], [2, 0, 0.119], [3, 0, 0.028], [3, 2, 0.012]] },
+  '4,2': { tau: 36.5, br: [[2, 1, 0.746], [3, 1, 0.254]] },
+  '4,3': { tau: 72.6, br: [[3, 2, 1]] },
+};
+
+// Wavelength (nm) → display colour. UV and IR get dim false colours.
+function lambdaRGB(nm) {
+  if (nm < 380) return [0.55, 0.42, 1.0];
+  if (nm > 750) return [1.0, 0.25, 0.18];
+  let r = 0, g = 0, b = 0;
+  if (nm < 440) { r = -(nm - 440) / 60; b = 1; } else if (nm < 490) { g = (nm - 440) / 50; b = 1; }
+  else if (nm < 510) { g = 1; b = -(nm - 510) / 20; } else if (nm < 580) { r = (nm - 510) / 70; g = 1; }
+  else if (nm < 645) { r = 1; g = -(nm - 645) / 65; } else { r = 1; }
+  return [r, g, b];
+}
+const band = nm => (nm < 380 ? 'UV' : nm > 750 ? 'IR' : 'visible');
+
+// ===================================================================
+// Multi-electron atoms for the Lab: aufbau filling + Slater's rules
+// ===================================================================
+const ELEMENTS = 'H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr'.split(' ');
+function aufbau(Z) {
+  const order = [[1, 0], [2, 0], [2, 1], [3, 0], [3, 1], [4, 0], [3, 2], [4, 1]];
+  const out = []; let left = Z;
+  for (const [n, l] of order) { if (left <= 0) break; const k = Math.min(2 * (2 * l + 1), left); out.push({ n, l, occ: k }); left -= k; }
+  return out; // ignores the Cr/Cu exceptions
+}
+function slaterZeff(conf, Z, n, l) {
+  const groups = ['1sp', '2sp', '3sp', '3d', '4sp'];
+  const grp = (n, l) => (l >= 2 ? `${n}d` : `${n}sp`);
+  const gi = groups.indexOf(grp(n, l));
+  let S = 0;
+  for (const s of conf) {
+    const si = groups.indexOf(grp(s.n, s.l));
+    if (si === gi) S += (s.n === n && s.l === l ? s.occ - 1 : s.occ) * (n === 1 ? 0.30 : 0.35);
+    else if (si < gi) S += s.occ * (l >= 2 ? 1 : s.n === n - 1 ? 0.85 : s.n < n - 1 ? 1 : 0);
+  }
+  return Z - S;
+}
+
+// ===================================================================
+// Campaign levels: each is a physical system with a target state
+// ===================================================================
+const LEVELS = [
+  { title: 'First Light', start: { n: 1, l: 0, m: 0 }, target: { n: 2, l: 1 }, hold: 0.3, lambda0: 150,
+    brief: 'A hydrogen atom sits in its ground state. Photons are only absorbed when their energy matches a gap between levels.',
+    hint: 'Lyman-α: 1s → 2p sits at 121.6 nm in the ultraviolet. Shorter than 91.2 nm and you rip the electron off.' },
+  { title: 'Balmer Red', start: { n: 1, l: 0, m: 0 }, target: { n: 3, l: 2 }, hold: 2, lambda0: 121.6,
+    brief: 'Selection rules allow only Δl = ±1 per photon, so 1s cannot jump straight to 3d. Climb in two steps.',
+    hint: '1s → 2p at 121.6 nm, then 2p → 3d with the red H-α line at 656.5 nm. 2p decays in about 1.6 s of game time, so retune fast.' },
+  { title: 'Spin the Cloud', start: { n: 1, l: 0, m: 0 }, target: { n: 3, l: 2, m: 2 }, hold: 2, lambda0: 121.6,
+    brief: 'Circularly polarized light carries angular momentum: σ+ raises m by one. The target is the donut-shaped 3d m=+2 state.',
+    hint: 'Fire σ+ twice (121.6 nm, then 656.5 nm). σ light couples best when you fly over a pole, looking along the vertical axis.' },
+  { title: 'The Dark State', start: { n: 1, l: 0, m: 0 }, target: { n: 2, l: 0 }, hold: 3, lambda0: 102.6,
+    brief: '2s is metastable: it cannot decay by emitting one photon. But no single photon from 1s can reach it either.',
+    hint: 'Excite 1s → 3p (102.6 nm). 3p falls to 2s 12% of the time on its own, or force it: a 656.5 nm photon triggers stimulated emission 3p → 2s.' },
+  { title: 'Rydberg Ladder', start: { n: 1, l: 0, m: 0 }, target: { n: 4, l: 3, m: 3 }, hold: 3, lambda0: 121.6,
+    brief: 'Build the maximum-angular-momentum state 4f m=+3 by stacking three σ+ photons from the UV to the infrared.',
+    hint: '121.6 nm → 656.5 nm → 1875.6 nm (Paschen-α), all σ+. Stay near a pole.' },
+];
+
+// ===================================================================
+// WebGL2 volumetric renderer
+// ===================================================================
+const VERT = `#version 300 es
+in vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FRAG = `#version 300 es
+precision highp float; precision highp int;
+out vec4 outColor;
+uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCamRot; uniform float uFovT; uniform float uTime;
+uniform float uBohr;            // Bohr radii per world unit (world bounding sphere has radius 1)
+uniform int uView;              // 0 = wavefunction, 1 = whole-atom shells
+uniform ivec3 uQA; uniform int uModeA; uniform float uNormA; uniform float uZA; uniform vec2 uCA;
+uniform ivec3 uQB; uniform int uModeB; uniform float uNormB; uniform float uZB; uniform vec2 uCB;
+uniform vec4 uSh[8]; uniform int uShN;   // shells: n, l, Zeff, occ*norm^2/(4π)
+uniform float uInvMax; uniform float uGamma; uniform float uGain; uniform float uFade; uniform float uIso; // uIso: 90% boundary density, normalised
+uniform int uSteps; uniform float uAxis;
+uniform vec4 uPh[16]; uniform vec3 uPhC[16]; uniform int uPhN;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+
+float laguerre(int k, float a, float x){
+  if (k == 0) return 1.0;
+  float L0 = 1.0, L1 = 1.0 + a - x;
+  for (int i = 1; i < k; i++) { float fi = float(i); float L2 = ((2.0*fi + 1.0 + a - x)*L1 - (fi + a)*L0) / (fi + 1.0); L0 = L1; L1 = L2; }
+  return L1;
+}
+float legendre(int l, int m, float x){
+  float pmm = 1.0, s = sqrt(max(0.0, 1.0 - x*x)), f = 1.0;
+  for (int i = 0; i < m; i++) { pmm *= -f*s; f += 2.0; }
+  if (l == m) return pmm;
+  float pm1 = x*float(2*m + 1)*pmm;
+  if (l == m + 1) return pm1;
+  float pll = 0.0;
+  for (int ll = m + 2; ll <= l; ll++) { pll = (x*float(2*ll - 1)*pm1 - float(ll + m - 1)*pmm) / float(ll - m); pmm = pm1; pm1 = pll; }
+  return pll;
+}
+float radialShape(int n, int l, float Z, float r){
+  float rho = 2.0*Z*r/float(n);
+  return pow(rho, float(l)) * exp(-0.5*rho) * laguerre(n - l - 1, float(2*l + 1), rho);
+}
+// Quantization axis is world +y; φ measured in the x–z plane.
+vec2 psi(ivec3 q, int mode, float norm, float Z, vec3 p){
+  float r = length(p) + 1e-5;
+  int am = abs(q.z);
+  float A = norm * radialShape(q.x, q.y, Z, r) * legendre(q.y, am, p.y / r);
+  float phi = atan(p.z, p.x);
+  if (mode == 0) return A * vec2(cos(float(q.z)*phi), sin(float(q.z)*phi));
+  if (mode == 1) return vec2(A * cos(float(am)*phi), 0.0);
+  return vec2(A * sin(float(am)*phi), 0.0);
+}
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+
+// Phase → colour: +real cyan, −real magenta, ±imaginary violet / amber.
+vec3 phaseColor(vec2 w){
+  vec2 u = w / max(length(w), 1e-30); float ca = u.x, sa = u.y;
+  vec3 c = vec3(0.01,0.91,0.96)*max(ca,0.0) + vec3(0.94,0.18,0.37)*max(-ca,0.0)
+         + vec3(0.58,0.42,1.0)*max(sa,0.0) + vec3(1.0,0.72,0.25)*max(-sa,0.0);
+  return c / (abs(ca) + abs(sa));
+}
+vec3 shellColor(float n){
+  return n < 1.5 ? vec3(1.0,0.85,0.55) : n < 2.5 ? vec3(0.01,0.91,0.96) : n < 3.5 ? vec3(0.62,0.45,1.0) : vec3(0.94,0.18,0.37);
+}
+// Returns rgb weight in .rgb, density in .a
+vec4 sampleCloud(vec3 pw){
+  vec3 p = pw * uBohr;
+  if (uView == 1) {
+    float r = length(p) + 1e-5; float d = 0.0; vec3 c = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+      if (i >= uShN) break;
+      vec4 s = uSh[i];
+      float R = radialShape(int(s.x), int(s.y), s.z, r);
+      float di = s.w * R * R; d += di; c += shellColor(s.x) * di;
+    }
+    return vec4(c / max(d, 1e-30), d * r * r);   // radial probability r²ρ makes shells visible
+  }
+  vec2 w = cmul(uCA, psi(uQA, uModeA, uNormA, uZA, p));
+  if (dot(uCB, uCB) > 0.0) w += cmul(uCB, psi(uQB, uModeB, uNormB, uZB, p));
+  return vec4(phaseColor(w), dot(w, w));
+}
+float pointGlow(vec3 ro, vec3 rd, vec3 c, float s){
+  vec3 v = c - ro; float t = max(dot(v, rd), 0.0); float d2 = dot(v - rd*t, v - rd*t);
+  return s*s / (d2 + s*s);
+}
+vec3 stars(vec3 d){
+  vec2 sp = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0))) * 70.0;
+  vec2 cell = floor(sp); float h = hash(cell);
+  if (h < 0.982) return vec3(0.0);
+  vec2 o = vec2(hash(cell + 3.1), hash(cell + 7.7)) * 0.6 + 0.2;
+  float s = smoothstep(0.12, 0.0, length(fract(sp) - o));
+  return vec3(0.55, 0.65, 0.8) * s * (h - 0.982) * 40.0;
+}
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  vec3 rd = normalize(uCamRot * vec3(uv * uFovT * 2.0, -1.0));
+  vec3 ro = uCamPos;
+  vec3 col = vec3(0.0015, 0.0025, 0.006) + stars(rd);
+  float T = 1.0; vec3 acc = vec3(0.0);
+  float b = dot(ro, rd), c = dot(ro, ro) - 1.0, h = b*b - c;
+  if (h > 0.0) {
+    h = sqrt(h); float t0 = max(-b - h, 0.0), t1 = -b + h;
+    if (t1 > 0.0) {
+      float dt = (t1 - t0) / float(uSteps);
+      float t = t0 + dt * hash(gl_FragCoord.xy + fract(uTime) * 61.0);
+      for (int i = 0; i < 256; i++) {
+        if (i >= uSteps) break;
+        vec4 s = sampleCloud(ro + rd*t);
+        float dn = clamp(s.a * uInvMax, 0.0, 1.0);
+        if (uView == 1) dn = clamp(1.0 + log(max(dn, 1e-9)) / 6.9, 0.0, 1.0);   // log scale over three decades
+        float e = pow(dn, uGamma) * uFade;
+        if (uIso > 0.0) { float x = log(max(dn, 1e-9) / uIso) / 0.28; e += 1.4 * exp(-x*x) * uFade; }
+        acc += T * s.rgb * e * uGain * dt;
+        T *= exp(-e * 1.6 * dt);
+        t += dt;
+      }
+    }
+  }
+  col = col * T + acc;
+  // quantization axis: faint dashed vertical line through the nucleus
+  if (uAxis > 0.0) {
+    vec3 w0 = ro; float a = dot(rd, vec3(0,1,0)); float dd = dot(rd, w0), e2 = w0.y;
+    float den = 1.0 - a*a;
+    if (den > 1e-4) {
+      float tr = (a*e2 - dd) / den; float sy = e2 + a*tr;
+      if (tr > 0.0 && abs(sy) < 1.25) {
+        vec3 pr = ro + rd*tr; float dist = length(pr - vec3(0.0, sy, 0.0));
+        float dash = step(0.5, fract(sy * 8.0));
+        col += vec3(0.5, 0.6, 0.7) * uAxis * dash * smoothstep(0.006, 0.0, dist) * 0.5;
+      }
+    }
+  }
+  col += vec3(1.0, 0.82, 0.55) * pointGlow(ro, rd, vec3(0.0), 0.006) * 1.2;
+  for (int i = 0; i < 16; i++) {
+    if (i >= uPhN) break;
+    col += uPhC[i] * pointGlow(ro, rd, uPh[i].xyz, uPh[i].w);
+  }
+  col = 1.0 - exp(-col * 1.15);
+  outColor = vec4(pow(col, vec3(1.0/2.2)) , 1.0);
+}`;
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, powerPreference: 'high-performance' });
+let prog = null, U = {};
+if (!gl) { document.getElementById('glFail').hidden = false; }
+else {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
+  gl.bindAttribLocation(prog, 0, 'aPos'); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  for (const name of ['uRes','uCamPos','uCamRot','uFovT','uTime','uBohr','uView','uQA','uModeA','uNormA','uZA','uCA','uQB','uModeB','uNormB','uZB','uCB',
+    'uSh','uShN','uInvMax','uIso','uGamma','uGain','uFade','uSteps','uAxis','uPh','uPhC','uPhN']) U[name] = gl.getUniformLocation(prog, name);
+}
+
+// ===================================================================
+// Camera (the player's ship orbits the atom)
+// ===================================================================
+const cam = { yaw: 0.6, pitch: 0.35, dist: 3.1, fov: 50 * Math.PI / 180 };
+const v3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  norm: a => { const l = Math.hypot(...a); return [a[0] / l, a[1] / l, a[2] / l]; },
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+};
+function camPos() { const c = Math.cos(cam.pitch); return [cam.dist * c * Math.sin(cam.yaw), cam.dist * Math.sin(cam.pitch), cam.dist * c * Math.cos(cam.yaw)]; }
+function camBasis() {
+  const p = camPos(), f = v3.norm([-p[0], -p[1], -p[2]]);
+  const r = v3.norm(v3.cross(f, [0, 1, 0])), u = v3.cross(r, f);
+  return { p, f, r, u };
+}
+
+// ===================================================================
+// Game state
+// ===================================================================
+const game = {
+  mode: 'campaign', level: 0, atom: { n: 1, l: 0, m: 0 }, ionized: false, fade: 1,
+  trans: null, hold: 0, won: false, lambda: 150, pol: 0, photons: [], lines: [], cooldown: 0, time: 0,
+  bohr: extentBohr(1, 1), descA: null, descB: null,
+};
+const lab = { iso: 0, Z: 1, view: 'orbital', orb: '1,0,0', basis: 'real', mix: 'none', descA: null, descB: null, shells: null, bohr: 8, invMax: 1 };
+
+function log(msg, cls) {
+  const box = document.getElementById('log'); const d = document.createElement('div');
+  d.textContent = msg; if (cls) d.className = cls; box.prepend(d);
+  while (box.children.length > 4) box.lastChild.remove();
+}
+
+const descCache = new Map();
+function campaignDesc(s) {
+  const k = `${s.n},${s.l},${s.m}`;
+  if (!descCache.has(k)) descCache.set(k, waveDesc(s.n, s.l, s.m, 1, false));
+  return descCache.get(k);
+}
+
+function startLevel(i) {
+  const L = LEVELS[i]; game.level = i;
+  Object.assign(game, { atom: { ...L.start }, ionized: false, fade: 1, trans: null, hold: 0, won: false, lambda: L.lambda0, photons: [] });
+  game.descA = campaignDesc(game.atom); game.descB = null;
+  document.getElementById('levelNum').textContent = `Level ${i + 1}`;
+  document.getElementById('levelTitle').textContent = L.title;
+  document.getElementById('levelBrief').textContent = L.brief;
+  const t = L.target;
+  document.getElementById('levelGoal').textContent =
+    `${t.n}${L_NAMES[t.l]}${t.m !== undefined ? ` with m = ${sgn(t.m)}` : ' (any m)'}, held for ${L.hold} s`;
+  document.getElementById('hint').textContent = L.hint; document.getElementById('hint').hidden = true;
+  document.getElementById('levelSel').value = String(i);
+  document.getElementById('winBox').hidden = true;
+  log(`Level ${i + 1}: ${L.title}`);
+}
+
+const couplingFor = (dir, pol) => { const c2 = dir[1] * dir[1]; return pol === 0 ? 1 - c2 : (1 + c2) / 2; };
+const polQ = pol => [0, 1, -1][pol];
+const polName = pol => ['π', 'σ+', 'σ−'][pol];
+
+// All transitions a photon of energy E and polarization q could drive from state s.
+function resonances(s, lambda, pol) {
+  const E = HC / lambda, q = polQ(pol), out = [];
+  for (let n2 = 1; n2 <= NMAX; n2++) {
+    if (n2 === s.n) continue;
+    const dE = levelE(n2) - levelE(s.n), up = dE > 0;
+    if (Math.abs(E - Math.abs(dE)) / Math.abs(dE) > TOL) continue;
+    for (const l2 of [s.l - 1, s.l + 1]) {
+      if (l2 < 0 || l2 >= n2) continue;
+      const m2 = s.m + (up ? q : -q);
+      if (Math.abs(m2) > l2) continue;
+      out.push({ n: n2, l: l2, m: m2, up, w: l2 > s.l ? 2 : 1 });
+    }
+  }
+  return out;
+}
+// Same energy match but ignoring polarization, so the HUD can explain a Δm mismatch.
+const energyMatches = (s, lambda) => [0, 1, 2].some(p => resonances(s, lambda, p).length);
+
+function pickWeighted(list, wkey) {
+  let tot = list.reduce((a, x) => a + x[wkey], 0), r = Math.random() * tot;
+  for (const x of list) { r -= x[wkey]; if (r <= 0) return x; }
+  return list[list.length - 1];
+}
+function beginTransition(to) {
+  game.trans = { from: { ...game.atom }, to, t: 0, dur: 0.6 };
+  game.descB = campaignDesc(to);
+}
+function recordLine(lambda) {
+  if (!game.lines.some(l => Math.abs(l - lambda) / lambda < 1e-3)) game.lines.push(lambda);
+}
+function spawnPhoton(pos, dir, lambda, pol, interacted) {
+  const [r, g, b] = lambdaRGB(lambda), dim = band(lambda) === 'visible' ? 1 : 0.7;
+  game.photons.push({ pos: [...pos], dir, lambda, pol, interacted, life: 0, col: [r * dim, g * dim, b * dim] });
+}
+
+function fire() {
+  if (game.mode !== 'campaign' || game.cooldown > 0 || game.won) return;
+  game.cooldown = 0.18;
+  const { p, u } = camBasis();
+  const start = [p[0] - u[0] * 0.12, p[1] - u[1] * 0.12, p[2] - u[2] * 0.12];
+  spawnPhoton(start, v3.norm([-start[0], -start[1], -start[2]]), game.lambda, game.pol, false);
+}
+
+function photonArrives(ph) {
+  ph.interacted = true;
+  if (game.ionized || game.trans) return;
+  const s = game.atom, cands = resonances(s, ph.lambda, ph.pol), coupling = couplingFor(ph.dir, ph.pol);
+  if (cands.length) {
+    if (Math.random() > coupling) { log(`Resonant, but ${polName(ph.pol)} coupling was ${(coupling * 100).toFixed(0)}% from this angle: photon passed through`, 'warn'); return; }
+    const to = pickWeighted(cands, 'w');
+    recordLine(ph.lambda);
+    beginTransition({ n: to.n, l: to.l, m: to.m });
+    if (to.up) { ph.dead = true; log(`Absorbed ${ph.lambda.toFixed(1)} nm: ${stateName(s)} → ${stateName(to)}`, 'lock'); }
+    else {
+      spawnPhoton([ph.pos[0] + 0.02, ph.pos[1] + 0.02, ph.pos[2]], ph.dir, ph.lambda, ph.pol, true);
+      log(`Stimulated emission: ${stateName(s)} → ${stateName(to)}, two identical ${ph.lambda.toFixed(1)} nm photons out`, 'lock');
+    }
+    return;
+  }
+  if (HC / ph.lambda >= -levelE(s.n)) {
+    ph.dead = true; game.ionized = true;
+    log(`Ionized! ${ph.lambda.toFixed(1)} nm exceeds the ${(-levelE(s.n)).toFixed(2)} eV binding energy of ${stateName(s)}`, 'warn');
+  }
+}
+
+function spontaneousDecay(dt) {
+  if (game.trans || game.ionized) return;
+  const s = game.atom, d = DECAY[`${s.n},${s.l}`];
+  if (!d || !isFinite(d.tau)) return;
+  if (Math.random() > 1 - Math.exp(-dt / d.tau)) return;   // 1 game second = 1 ns
+  const [n2, l2] = pickWeighted(d.br.map(b => ({ b, w: b[2] })), 'w').b;
+  const ms = [-1, 0, 1].map(dm => s.m + dm).filter(m => Math.abs(m) <= l2);
+  const to = { n: n2, l: l2, m: ms[Math.floor(Math.random() * ms.length)] };
+  const lam = lambdaFor(s.n, n2);
+  const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z);
+  spawnPhoton([0, 0, 0], [rr * Math.cos(th), z, rr * Math.sin(th)], lam, s.m - to.m, true);
+  recordLine(lam);
+  beginTransition(to);
+  log(`Spontaneous emission ${lam.toFixed(1)} nm (${band(lam)}): ${stateName(s)} → ${stateName(to)}`);
+}
+
+function matchesTarget(s, t) { return s.n === t.n && s.l === t.l && (t.m === undefined || s.m === t.m); }
+
+function updateCampaign(dt) {
+  game.cooldown = Math.max(0, game.cooldown - dt);
+  for (const ph of game.photons) {
+    const step = 5.5 * dt;
+    const before = ph.pos[0] * ph.dir[0] + ph.pos[1] * ph.dir[1] + ph.pos[2] * ph.dir[2];
+    for (let k = 0; k < 3; k++) ph.pos[k] += ph.dir[k] * step;
+    if (!ph.interacted && before < 0 && before + step >= 0) photonArrives(ph);
+    ph.life += dt;
+  }
+  game.photons = game.photons.filter(p => !p.dead && Math.hypot(...p.pos) < 7 && p.life < 3);
+  if (game.trans) {
+    game.trans.t += dt;
+    if (game.trans.t >= game.trans.dur) { game.atom = game.trans.to; game.descA = game.descB; game.descB = null; game.trans = null; }
+  }
+  if (game.ionized) game.fade = Math.max(0, game.fade - dt * 0.8);
+  spontaneousDecay(dt);
+  const L = LEVELS[game.level];
+  if (!game.won && !game.trans && !game.ionized && matchesTarget(game.atom, L.target)) {
+    game.hold += dt;
+    if (game.hold >= L.hold) {
+      game.won = true;
+      document.getElementById('winTitle').textContent = L.title;
+      document.getElementById('winText').textContent = `Electron held in ${stateName(game.atom)}. ${game.lines.length} spectral lines logged so far.`;
+      document.getElementById('nextBtn').hidden = game.level >= LEVELS.length - 1;
+      document.getElementById('winBox').hidden = false;
+    }
+  } else if (!game.won) game.hold = 0;
+  const fromN = game.trans ? Math.max(game.trans.from.n, game.trans.to.n) : game.atom.n;
+  game.bohr += (extentBohr(fromN, 1) - game.bohr) * Math.min(1, dt * 3);
+}
+
+// ===================================================================
+// Lab mode setup
+// ===================================================================
+function labRebuild() {
+  const Z = lab.Z, conf = aufbau(Z);
+  const [n, l, m] = lab.orb.split(',').map(Number);
+  const zeff = (nn, ll) => (Z === 1 ? 1 : slaterZeff(conf, Z, nn, ll));
+  const real = lab.basis === 'real';
+  const info = [];
+  if (lab.view === 'atom') {
+    lab.shells = conf.map(s => { const ze = zeff(s.n, s.l); return [s.n, s.l, ze, s.occ * radialNorm(s.n, s.l, ze) ** 2 / (4 * Math.PI)]; });
+    const outer = conf.reduce((a, s) => Math.max(a, extentBohr(s.n, zeff(s.n, s.l))), 0);
+    lab.bohr = outer * 0.8;
+    let peak = 0;
+    for (let i = 1; i <= 2000; i++) {
+      const r = lab.bohr * i / 2000;
+      peak = Math.max(peak, r * r * lab.shells.reduce((a, s) => a + s[3] * (radial(s[0], s[1], s[2], r) / radialNorm(s[0], s[1], s[2])) ** 2, 0));
+    }
+    lab.invMax = 1 / peak; lab.iso = 0;
+    info.push(conf.map(s => `${s.n}${L_NAMES[s.l]}${s.occ}`).join(' '));
+    info.push('Brightness ∝ r²ρ, spherically averaged');
+  } else {
+    const ze = zeff(n, l);
+    lab.descA = waveDesc(n, l, m, ze, real);
+    lab.descB = null; lab.bohr = extentBohr(n, ze);
+    let peak = lab.descA.peak;
+    if (lab.mix !== 'none') {
+      const [n2, l2, m2] = lab.mix.split(',').map(Number), ze2 = zeff(n2, l2);
+      lab.descB = waveDesc(n2, l2, m2, ze2, real);
+      lab.bohr = Math.max(lab.bohr, extentBohr(n2, ze2));
+      peak = 0.5 * (Math.sqrt(lab.descA.peak) + Math.sqrt(lab.descB.peak)) ** 2;
+    }
+    lab.invMax = 1 / peak;
+    lab.iso = (lab.descB ? 0.5 * (lab.descA.iso + lab.descB.iso) : lab.descA.iso) / peak;
+    info.push(`Z_eff = ${ze.toFixed(2)}${Z > 1 ? ' (Slater)' : ' (exact)'}`);
+    info.push(`⟨r⟩ = ${((3 * n * n - l * (l + 1)) / (2 * ze) * A0_PM).toFixed(0)} pm`);
+  }
+  document.getElementById('labInfo').innerHTML = info.map(t => `<div>${t}</div>`).join('');
+}
+function orbitalLabel(n, l, m, real) {
+  if (real && l > 0) return `${n}${REAL_NAMES[`${l},${m}`]}`;
+  return `${n}${L_NAMES[l]}${l ? ` m=${sgn(m)}` : ''}`;
+}
+function labFillOrbitals() {
+  const conf = aufbau(lab.Z), real = lab.basis === 'real';
+  const opts = [];
+  for (const s of conf) for (let m = -s.l; m <= s.l; m++) opts.push([`${s.n},${s.l},${m}`, orbitalLabel(s.n, s.l, m, real)]);
+  // let hydrogen show excited states too
+  if (lab.Z === 1) for (let n = 2; n <= 5; n++) for (let l = 0; l < n; l++) for (let m = -l; m <= l; m++) opts.push([`${n},${l},${m}`, orbitalLabel(n, l, m, real)]);
+  const sel = document.getElementById('labOrb'), mix = document.getElementById('labMix');
+  sel.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  mix.innerHTML = '<option value="none">Nothing</option>' + opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  if (!opts.some(o => o[0] === lab.orb)) lab.orb = opts[opts.length - 1][0];
+  if (lab.mix !== 'none' && !opts.some(o => o[0] === lab.mix)) lab.mix = 'none';
+  sel.value = lab.orb; mix.value = lab.mix;
+}
+
+// ===================================================================
+// HUD instruments
+// ===================================================================
+const grot = document.getElementById('grotrian'), gctx = grot.getContext('2d');
+function drawGrotrian() {
+  const W = grot.width, H = grot.height, c = gctx; c.clearRect(0, 0, W, H);
+  const top = 44, y = n => top + (H - top - 26) / n;   // y ∝ √|E|, ionization limit at the top
+  const x = l => 70 + l * 95;
+  c.font = '500 20px "IBM Plex Mono", monospace'; c.textBaseline = 'middle';
+  for (let l = 0; l < NMAX; l++) { c.fillStyle = '#7a8ea3'; c.textAlign = 'center'; c.fillText(L_NAMES[l], x(l), 14); }
+  const ion = top - 4;
+  c.strokeStyle = 'rgba(239,45,94,.5)'; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(20, ion + 4); c.lineTo(W - 10, ion + 4); c.stroke(); c.setLineDash([]);
+  const t = LEVELS[game.level].target;
+  for (let n = 1; n <= NMAX; n++) {
+    c.fillStyle = '#7a8ea3'; c.textAlign = 'left'; c.fillText(String(n), 4, y(n));
+    for (let l = 0; l < n; l++) {
+      const isCur = !game.ionized && game.atom.n === n && game.atom.l === l;
+      const isTgt = t.n === n && t.l === l;
+      c.lineWidth = isCur ? 5 : 3;
+      c.strokeStyle = isCur ? '#02e8f4' : 'rgba(214,226,238,.45)';
+      c.beginPath(); c.moveTo(x(l) - 32, y(n)); c.lineTo(x(l) + 32, y(n)); c.stroke();
+      if (isTgt) { c.strokeStyle = '#ffc65c'; c.lineWidth = 2; c.setLineDash([4, 4]); c.strokeRect(x(l) - 38, y(n) - 12, 76, 24); c.setLineDash([]); }
+    }
+  }
+  if (!game.ionized) {
+    const s = game.atom;
+    c.fillStyle = '#02e8f4'; c.textAlign = 'center';
+    c.fillText(s.l ? `m=${sgn(s.m)}` : '', x(s.l), y(s.n) + 22);
+    for (const r of resonances(s, game.lambda, game.pol)) {
+      c.strokeStyle = '#5cf29a'; c.lineWidth = 3; c.beginPath(); c.moveTo(x(s.l), y(s.n)); c.lineTo(x(r.l), y(r.n)); c.stroke();
+      c.beginPath(); c.arc(x(r.l), y(r.n), 6, 0, Math.PI * 2); c.fillStyle = '#5cf29a'; c.fill();
+    }
+  }
+  c.fillStyle = 'rgba(239,45,94,.8)'; c.textAlign = 'right'; c.font = '500 16px "IBM Plex Mono", monospace'; c.fillText('ionization', W - 12, ion + 18);
+}
+
+const spec = document.getElementById('spectro'), sctx = spec.getContext('2d');
+const LMIN = 80, LMAX = 2000;
+const lx = (lam, W) => (Math.log(lam / LMIN) / Math.log(LMAX / LMIN)) * W;
+const xl = (x, W) => LMIN * Math.pow(LMAX / LMIN, Math.min(1, Math.max(0, x / W)));
+function drawSpectro() {
+  const W = spec.width, H = spec.height, c = sctx; c.clearRect(0, 0, W, H);
+  c.fillStyle = 'rgba(255,255,255,.04)'; c.fillRect(0, 0, W, H);
+  for (let x = Math.floor(lx(380, W)); x < lx(750, W); x++) {
+    const [r, g, b] = lambdaRGB(xl(x, W)); c.fillStyle = `rgba(${r * 255 | 0},${g * 255 | 0},${b * 255 | 0},.28)`; c.fillRect(x, 0, 1, H);
+  }
+  if (!game.ionized) { const li = HC / -levelE(game.atom.n); c.fillStyle = 'rgba(239,45,94,.16)'; c.fillRect(0, 0, lx(li, W), H); }
+  c.font = '500 20px "IBM Plex Mono", monospace'; c.textBaseline = 'top';
+  c.fillStyle = '#7a8ea3';
+  for (const t of [100, 200, 500, 1000, 2000]) { const x = lx(t, W); c.fillRect(x, H - 10, 2, 10); c.textAlign = t === 2000 ? 'right' : 'center'; c.fillText(`${t}`, Math.min(x, W - 2), H - 32); }
+  c.textAlign = 'left'; c.fillText('UV', 8, 6); c.textAlign = 'right'; c.fillText('IR', W - 8, 6); c.textAlign = 'center'; c.fillText('visible', lx(530, W), 6);
+  for (const lam of game.lines) {
+    const x = lx(lam, W), [r, g, b] = lambdaRGB(lam);
+    c.fillStyle = `rgb(${r * 255 | 0},${g * 255 | 0},${b * 255 | 0})`; c.fillRect(x - 1.5, 30, 3, H - 66);
+    c.fillText(lam.toFixed(1), x, H - 58);
+  }
+  const x = lx(game.lambda, W); c.fillStyle = '#fff'; c.fillRect(x - 2, 0, 4, H);
+}
+function setLambda(l) { game.lambda = Math.min(LMAX, Math.max(LMIN, l)); }
+let specDrag = false;
+const specAt = e => { const r = spec.getBoundingClientRect(); setLambda(xl((e.clientX - r.left) / r.width * spec.width, spec.width)); };
+spec.addEventListener('pointerdown', e => { specDrag = true; spec.setPointerCapture(e.pointerId); specAt(e); });
+spec.addEventListener('pointermove', e => { if (specDrag) specAt(e); });
+spec.addEventListener('pointerup', () => { specDrag = false; });
+
+let lastHud = '';
+function updateHud() {
+  const s = game.atom, { f } = camBasis();
+  const lockAny = resonances(s, game.lambda, game.pol).length > 0, eOnly = energyMatches(s, game.lambda);
+  const ion = !game.ionized && HC / game.lambda >= -levelE(s.n);
+  const coupling = couplingFor(f, game.pol);
+  const L = LEVELS[game.level];
+  const key = [game.lambda.toFixed(2), game.pol, lockAny, eOnly, ion, coupling.toFixed(2), JSON.stringify(s), game.ionized, !!game.trans, game.lines.length, game.mode].join('|');
+  document.getElementById('holdBar').style.width = `${Math.min(1, game.hold / L.hold) * 100}%`;
+  if (key === lastHud) return; lastHud = key;
+  const E = HC / game.lambda;
+  document.getElementById('lambdaOut').textContent = `${game.lambda.toFixed(1)} nm · ${E.toFixed(3)} eV · ${band(game.lambda)}`;
+  const lo = document.getElementById('lockOut');
+  lo.textContent = lockAny ? '◆ RESONANCE LOCK' : eOnly ? `◇ right energy, ${polName(game.pol)} not allowed` : ion ? '▲ will ionize' : '';
+  lo.className = 'data ' + (lockAny ? 'lock' : ion || eOnly ? 'warn' : '');
+  const ang = Math.acos(Math.min(1, Math.abs(f[1]))) * 180 / Math.PI;
+  document.getElementById('couplingOut').textContent = `${(coupling * 100).toFixed(0)}% (${polName(game.pol)}, ${ang.toFixed(0)}° from axis)`;
+  document.querySelectorAll('[data-pol]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.pol) === game.pol)));
+  if (game.ionized) { document.getElementById('stateOut').textContent = 'H⁺ + free e⁻'; document.getElementById('stateDetail').textContent = 'Atom ionized. Press R to restart.'; }
+  else {
+    const d = DECAY[`${s.n},${s.l}`];
+    document.getElementById('stateOut').textContent = (game.trans ? `${stateName(game.trans.from)} ⇢ ${stateName(game.trans.to)}` : stateName(s));
+    document.getElementById('stateDetail').textContent = `E = ${levelE(s.n).toFixed(3)} eV · τ = ${!d ? 'stable' : isFinite(d.tau) ? `${d.tau} ns` : 'metastable (0.12 s)'}`;
+  }
+}
+function updateScaleBar(bohr) {
+  const pxPerWorld = (canvas.clientHeight) / (cam.dist * 2 * Math.tan(cam.fov / 2));
+  const pxPerBohr = pxPerWorld / bohr;
+  const nice = [0.5, 1, 2, 5, 10, 20, 50, 100].find(v => v * pxPerBohr >= 60) || 100;
+  document.getElementById('scalebar').style.width = `${Math.min(160, nice * pxPerBohr)}px`;
+  document.getElementById('scaleOut').textContent = `${nice} a₀ = ${(nice * A0_PM).toFixed(0)} pm`;
+}
+
+// ===================================================================
+// Input
+// ===================================================================
+let drag = null;
+canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.yaw -= (e.clientX - drag.x) * 0.006; cam.pitch = Math.max(-1.52, Math.min(1.52, cam.pitch + (e.clientY - drag.y) * 0.006));
+  drag = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('pointerup', () => { drag = null; });
+canvas.addEventListener('wheel', e => { cam.dist = Math.max(1.6, Math.min(6, cam.dist * Math.exp(e.deltaY * 0.001))); e.preventDefault(); }, { passive: false });
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  keys.add(e.code);
+  const k = e.shiftKey ? 0.02 : 0.002;
+  if (e.code === 'KeyQ') setLambda(game.lambda * (1 - k));
+  if (e.code === 'KeyE') setLambda(game.lambda * (1 + k));
+  if (e.code === 'Digit1') game.pol = 0; if (e.code === 'Digit2') game.pol = 1; if (e.code === 'Digit3') game.pol = 2;
+  if (e.code === 'Space') { fire(); e.preventDefault(); }
+  if (e.code === 'KeyR') startLevel(game.level);
+});
+addEventListener('keyup', e => keys.delete(e.code));
+document.getElementById('fireBtn').addEventListener('click', fire);
+document.querySelectorAll('[data-pol]').forEach(b => b.addEventListener('click', () => { game.pol = Number(b.dataset.pol); }));
+document.getElementById('restartBtn').addEventListener('click', () => startLevel(game.level));
+document.getElementById('hintBtn').addEventListener('click', () => { const h = document.getElementById('hint'); h.hidden = !h.hidden; });
+document.getElementById('nextBtn').addEventListener('click', () => startLevel(game.level + 1));
+document.getElementById('againBtn').addEventListener('click', () => startLevel(game.level));
+const levelSel = document.getElementById('levelSel');
+levelSel.innerHTML = LEVELS.map((L, i) => `<option value="${i}">${i + 1}. ${L.title}</option>`).join('');
+levelSel.addEventListener('change', () => startLevel(Number(levelSel.value)));
+
+function setMode(mode) {
+  game.mode = mode;
+  document.getElementById('tabCampaign').setAttribute('aria-pressed', String(mode === 'campaign'));
+  document.getElementById('tabLab').setAttribute('aria-pressed', String(mode === 'lab'));
+  for (const id of ['mission', 'weapon', 'grotrianBox', 'stateBox']) document.getElementById(id).hidden = mode !== 'campaign';
+  document.getElementById('lab').hidden = mode !== 'lab';
+  if (mode === 'lab') labRebuild();
+}
+document.getElementById('tabCampaign').addEventListener('click', () => setMode('campaign'));
+document.getElementById('tabLab').addEventListener('click', () => setMode('lab'));
+const labEl = document.getElementById('labEl');
+labEl.innerHTML = ELEMENTS.map((s, i) => `<option value="${i + 1}">${i + 1} ${s}</option>`).join('');
+labEl.addEventListener('change', () => { lab.Z = Number(labEl.value); lab.orb = 'x'; labFillOrbitals(); labRebuild(); });
+for (const [id, key] of [['labView', 'view'], ['labOrb', 'orb'], ['labBasis', 'basis'], ['labMix', 'mix']]) {
+  document.getElementById(id).addEventListener('change', e => { lab[key] = e.target.value; if (key === 'basis') labFillOrbitals(); labRebuild(); });
+}
+const QUALITY = [{ scale: 0.5, steps: 48 }, { scale: 0.75, steps: 80 }, { scale: 1, steps: 128 }];
+let quality = 1;
+document.getElementById('quality').addEventListener('change', e => { quality = Number(e.target.value); });
+
+// ===================================================================
+// Main loop
+// ===================================================================
+const phBuf = new Float32Array(64), phCol = new Float32Array(48);
+let last = performance.now(), slowFrames = 0;
+function setWave(prefix, d, coef) {
+  gl.uniform3i(U[`uQ${prefix}`], d.n, d.l, d.m); gl.uniform1i(U[`uMode${prefix}`], d.mode);
+  gl.uniform1f(U[`uNorm${prefix}`], d.norm); gl.uniform1f(U[`uZ${prefix}`], d.Z); gl.uniform2f(U[`uC${prefix}`], coef[0], coef[1]);
+}
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; game.time += dt;
+  // adaptive quality: drop a level if frames stay slow
+  if (dt > 0.034) slowFrames++; else slowFrames = Math.max(0, slowFrames - 1);
+  if (slowFrames > 90 && quality > 0) { quality--; slowFrames = 0; document.getElementById('quality').value = String(quality); log('Lowered render quality to keep the frame rate up'); }
+  const kr = 1.6 * dt;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) cam.yaw += kr;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) cam.yaw -= kr;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) cam.pitch = Math.min(1.52, cam.pitch + kr);
+  if (keys.has('KeyS') || keys.has('ArrowDown')) cam.pitch = Math.max(-1.52, cam.pitch - kr);
+
+  if (game.mode === 'campaign') { updateCampaign(dt); updateHud(); drawGrotrian(); drawSpectro(); }
+
+  if (gl) {
+    const Q = QUALITY[quality], dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(canvas.clientWidth * dpr * Q.scale)), h = Math.max(1, Math.round(canvas.clientHeight * dpr * Q.scale));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    gl.viewport(0, 0, w, h);
+    const { p, f, r, u } = camBasis();
+    gl.uniform2f(U.uRes, w, h); gl.uniform3f(U.uCamPos, ...p);
+    gl.uniformMatrix3fv(U.uCamRot, false, new Float32Array([...r, ...u, -f[0], -f[1], -f[2]]));
+    gl.uniform1f(U.uFovT, Math.tan(cam.fov / 2)); gl.uniform1f(U.uTime, game.time); gl.uniform1i(U.uSteps, Q.steps);
+
+    let bohr;
+    if (game.mode === 'campaign') {
+      bohr = game.bohr;
+      gl.uniform1i(U.uView, 0);
+      if (game.trans) {
+        const T = game.trans, x = Math.min(1, T.t / T.dur), s = x * x * (3 - 2 * x), ph = -2 * Math.PI * 2.5 * game.time;
+        setWave('A', game.descA, [Math.cos(s * Math.PI / 2), 0]);
+        const cb = Math.sin(s * Math.PI / 2);
+        setWave('B', game.descB, [cb * Math.cos(ph), cb * Math.sin(ph)]);
+        const pk = Math.max(game.descA.peak, game.descB.peak);
+        gl.uniform1f(U.uInvMax, 1 / pk);
+        gl.uniform1f(U.uIso, ((1 - s) * game.descA.iso + s * game.descB.iso) / pk);
+      } else {
+        setWave('A', game.descA, [1, 0]); setWave('B', game.descA, [0, 0]);
+        gl.uniform1f(U.uInvMax, 1 / game.descA.peak); gl.uniform1f(U.uIso, game.descA.iso / game.descA.peak);
+      }
+      gl.uniform1f(U.uFade, game.fade * (game.ionized ? 1 + (1 - game.fade) * 2 : 1));
+      gl.uniform1f(U.uGamma, 0.5); gl.uniform1f(U.uGain, 1.3); gl.uniform1f(U.uAxis, 1);
+      const n = Math.min(16, game.photons.length);
+      for (let i = 0; i < n; i++) { const P = game.photons[i]; phBuf.set([...P.pos, 0.02], i * 4); phCol.set(P.col.map(c => c * 0.9), i * 3); }
+      gl.uniform4fv(U.uPh, phBuf); gl.uniform3fv(U.uPhC, phCol); gl.uniform1i(U.uPhN, n);
+      if (game.ionized) bohr = game.bohr * (1 + (1 - game.fade) * 2);
+    } else {
+      bohr = lab.bohr;
+      gl.uniform1i(U.uPhN, 0); gl.uniform1f(U.uFade, 1); gl.uniform1f(U.uAxis, 0.6);
+      if (lab.view === 'atom') {
+        gl.uniform1i(U.uView, 1);
+        const sh = new Float32Array(32); lab.shells.forEach((s, i) => sh.set(s, i * 4));
+        gl.uniform4fv(U.uSh, sh); gl.uniform1i(U.uShN, lab.shells.length);
+        gl.uniform1f(U.uInvMax, lab.invMax); gl.uniform1f(U.uIso, 0); gl.uniform1f(U.uGamma, 4.0); gl.uniform1f(U.uGain, 3.0);
+      } else {
+        gl.uniform1i(U.uView, 0);
+        const k = lab.descB ? Math.SQRT1_2 : 1, ph = -2 * Math.PI * 0.6 * game.time;
+        setWave('A', lab.descA, [k, 0]);
+        setWave('B', lab.descB || lab.descA, lab.descB ? [k * Math.cos(ph), k * Math.sin(ph)] : [0, 0]);
+        gl.uniform1f(U.uInvMax, lab.invMax); gl.uniform1f(U.uIso, lab.iso); gl.uniform1f(U.uGamma, 0.5); gl.uniform1f(U.uGain, 1.3);
+      }
+    }
+    gl.uniform1f(U.uBohr, bohr);
+    updateScaleBar(bohr);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  requestAnimationFrame(frame);
+}
+
+labFillOrbitals();
+startLevel(0);
+setMode('campaign');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
