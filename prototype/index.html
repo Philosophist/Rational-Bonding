@@ -56,7 +56,8 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
 .stack { display: flex; flex-direction: column; gap: 6px; }
 #grotrian { width: 230px; height: 190px; display: block; }
 #spectro { width: 100%; height: 64px; display: block; cursor: crosshair; touch-action: none; }
-.weapon { flex: 1 1 420px; min-width: 0; }
+.weapon { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+#stateMini { display: none; }
 .state { min-width: 0; }
 .lock { color: var(--good); }
 .warn { color: var(--magenta); }
@@ -69,13 +70,24 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
 #lab select { max-width: 190px; }
 .keys { color: var(--muted); font: 11px/1.5 var(--font-data); }
 @media (max-width: 760px) {
-  .hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; }
+  /* Phones: compact top and bottom bars; the atom is drawn centred in the gap between them. */
+  .hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; gap: 8px; }
+  .panel { padding: 8px 10px; }
   .tl { max-width: none; grid-row: 2; }
   .tr { grid-column: 1; grid-row: 1; flex-direction: row; justify-self: stretch; justify-content: space-between; }
   .bottom { grid-row: 4; }
-  #grotrianBox, #log, .keys { display: none; }
-  h2 { font-size: 16px; }
+  #grotrianBox, #log, .keys, .state, #weapon .label { display: none; }
+  #stateMini { display: block; }
+  h1 { font-size: 11px; margin-bottom: 2px; }
+  h2 { font-size: 15px; margin: 0; }
   .brief { display: none; }
+  .objective { margin: 4px 0 6px; }
+  #mission .row { flex-wrap: nowrap; }
+  #mission select { flex: 1 1 auto; min-width: 0; }
+  button, select { padding: 5px 8px; font-size: 11px; }
+  .fire { padding: 8px 16px; font-size: 13px; }
+  #spectro { height: 40px; }
+  #lab .stack { gap: 4px; }
 }
 @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
 </style>
@@ -121,20 +133,21 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
       <canvas id="grotrian" width="460" height="380"></canvas>
     </section>
     <section class="panel weapon" id="weapon">
+      <div><span class="label">Photon gun</span> <span class="data" id="lambdaOut"></span> <span class="data" id="lockOut"></span></div>
       <div class="row" style="justify-content:space-between">
-        <div><span class="label">Photon gun</span> <span class="data" id="lambdaOut"></span> <span class="data" id="lockOut"></span></div>
         <div class="row">
           <span class="label">Polarization</span>
           <button type="button" data-pol="0" aria-pressed="true" title="Linear along the axis: drives Δm = 0">π</button>
           <button type="button" data-pol="1" aria-pressed="false" title="Circular: drives Δm = +1">σ+</button>
           <button type="button" data-pol="2" aria-pressed="false" title="Circular: drives Δm = −1">σ−</button>
         </div>
+        <button type="button" class="fire" id="fireBtn">FIRE</button>
       </div>
       <canvas id="spectro" width="1200" height="128" aria-label="Spectrometer: drag to tune the wavelength"></canvas>
       <div class="row" style="justify-content:space-between">
         <div class="data"><span class="label">Coupling</span> <span id="couplingOut"></span></div>
+        <div class="data" id="stateMini"></div>
         <div class="keys">Drag: fly · Q/E: tune (Shift ×10) · 1/2/3: polarization · Space: fire</div>
-        <button type="button" class="fire" id="fireBtn">FIRE</button>
       </div>
     </section>
     <section class="panel state">
@@ -319,7 +332,7 @@ in vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const FRAG = `#version 300 es
 precision highp float; precision highp int;
 out vec4 outColor;
-uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCamRot; uniform float uFovT; uniform float uTime;
+uniform vec2 uRes; uniform vec2 uCenter; uniform float uViewH; uniform vec3 uCamPos; uniform mat3 uCamRot; uniform float uFovT; uniform float uTime;
 uniform float uBohr;            // Bohr radii per world unit (world bounding sphere has radius 1)
 uniform int uView;              // 0 = wavefunction, 1 = whole-atom shells
 uniform ivec3 uQA; uniform int uModeA; uniform float uNormA; uniform float uZA; uniform vec2 uCA;
@@ -403,7 +416,7 @@ vec3 stars(vec3 d){
   return vec3(0.55, 0.65, 0.8) * s * (h - 0.982) * 40.0;
 }
 void main(){
-  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  vec2 uv = (gl_FragCoord.xy - uCenter) / uViewH;
   vec3 rd = normalize(uCamRot * vec3(uv * uFovT * 2.0, -1.0));
   vec3 ro = uCamPos;
   vec3 col = vec3(0.0015, 0.0025, 0.006) + stars(rd);
@@ -465,7 +478,7 @@ else {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  for (const name of ['uRes','uCamPos','uCamRot','uFovT','uTime','uBohr','uView','uQA','uModeA','uNormA','uZA','uCA','uQB','uModeB','uNormB','uZB','uCB',
+  for (const name of ['uRes','uCenter','uViewH','uCamPos','uCamRot','uFovT','uTime','uBohr','uView','uQA','uModeA','uNormA','uZA','uCA','uQB','uModeB','uNormB','uZB','uCB',
     'uSh','uShN','uInvMax','uIso','uGamma','uGain','uFade','uSteps','uAxis','uPh','uPhC','uPhN']) U[name] = gl.getUniformLocation(prog, name);
 }
 
@@ -783,6 +796,7 @@ function updateHud() {
   const ang = Math.acos(Math.min(1, Math.abs(f[1]))) * 180 / Math.PI;
   document.getElementById('couplingOut').textContent = `${(coupling * 100).toFixed(0)}% (${polName(game.pol)}, ${ang.toFixed(0)}° from axis)`;
   document.querySelectorAll('[data-pol]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.pol) === game.pol)));
+  document.getElementById('stateMini').textContent = game.ionized ? 'Ionized · press Restart' : `State: ${game.trans ? `${stateName(game.trans.from)} ⇢ ${stateName(game.trans.to)}` : stateName(s)}`;
   if (game.ionized) { document.getElementById('stateOut').textContent = 'H⁺ + free e⁻'; document.getElementById('stateDetail').textContent = 'Atom ionized. Press R to restart.'; }
   else {
     const d = DECAY[`${s.n},${s.l}`];
@@ -790,8 +804,19 @@ function updateHud() {
     document.getElementById('stateDetail').textContent = `E = ${levelE(s.n).toFixed(3)} eV · τ = ${!d ? 'stable' : isFinite(d.tau) ? `${d.tau} ns` : 'metastable (0.12 s)'}`;
   }
 }
+// On phones the HUD covers the top and bottom of the screen, so frame the atom in the gap between them.
+function viewRegion() {
+  const H = canvas.clientHeight, W = canvas.clientWidth;
+  if (W > 760) return { cy: H / 2, h: H };
+  let top = 0, bottom = H;
+  for (const el of document.querySelectorAll('.tr, #mission, #lab')) { if (!el.hidden) top = Math.max(top, el.getBoundingClientRect().bottom); }
+  for (const el of document.querySelectorAll('#weapon')) { if (!el.hidden) bottom = Math.min(bottom, el.getBoundingClientRect().top); }
+  const h = Math.max(H * 0.3, bottom - top);
+  return { cy: bottom - top >= H * 0.3 ? (top + bottom) / 2 : H / 2, h };
+}
+let view = { cy: 0, h: 1 };
 function updateScaleBar(bohr) {
-  const pxPerWorld = (canvas.clientHeight) / (cam.dist * 2 * Math.tan(cam.fov / 2));
+  const pxPerWorld = view.h / (cam.dist * 2 * Math.tan(cam.fov / 2));
   const pxPerBohr = pxPerWorld / bohr;
   const nice = [0.5, 1, 2, 5, 10, 20, 50, 100].find(v => v * pxPerBohr >= 60) || 100;
   document.getElementById('scalebar').style.width = `${Math.min(160, nice * pxPerBohr)}px`;
@@ -880,7 +905,10 @@ function frame(now) {
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     gl.viewport(0, 0, w, h);
     const { p, f, r, u } = camBasis();
-    gl.uniform2f(U.uRes, w, h); gl.uniform3f(U.uCamPos, ...p);
+    view = viewRegion();
+    const k = h / canvas.clientHeight;
+    gl.uniform2f(U.uRes, w, h); gl.uniform2f(U.uCenter, w / 2, h - view.cy * k); gl.uniform1f(U.uViewH, view.h * k);
+    gl.uniform3f(U.uCamPos, ...p);
     gl.uniformMatrix3fv(U.uCamRot, false, new Float32Array([...r, ...u, -f[0], -f[1], -f[2]]));
     gl.uniform1f(U.uFovT, Math.tan(cam.fov / 2)); gl.uniform1f(U.uTime, game.time); gl.uniform1i(U.uSteps, Q.steps);
 
