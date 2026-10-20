@@ -176,13 +176,70 @@ probability density |ψ|² through a bounding sphere.
   filled subshells are spherically symmetric (Unsöld's theorem) and are summed
   radially.
 
-## 8. Time scaling
+## 8. Time: honest slow motion
 
-Atomic events happen in nanoseconds; nuclear and chemical ones span from
-femtoseconds to billions of years. Each level declares a **time dilation**
-(the prototype uses 1 game second = 1 ns) and keeps **ratios** between
-lifetimes real. Players learn that 2p decays ten times faster than 3d because it
-actually does.
+No single slow-down factor shows everything. Light crosses an atom in about
+an attosecond (10⁻¹⁸ s), one cycle of its field takes about a femtosecond, and
+an excited atom waits nanoseconds before it fluoresces. These span a factor of
+a billion.
+
+So the game changes the **time scale** instead of the physics. Light always
+moves at c, and every process runs at its real rate for the current scale.
+The HUD always shows the scale ("1 s = 10.6 as") and a real-time clock in
+nanoseconds.
+
+| View | 1 screen second = | What you can see |
+|---|---|---|
+| Light | ~5–20 attoseconds | Photons crossing the scene at c |
+| Wave | ~1 femtosecond | The field oscillating; the cloud sloshing at the light's frequency during absorption |
+| Decay | 1 nanosecond | Fluorescence delays: 2p after ~1.6 ns, 3d after ~15.6 ns |
+| **Auto** (default) | switches between the three | Drops to light view the instant a photon is fired or emitted, slows to wave view during absorption, then returns to decay view while you wait |
+
+Because the decay view keeps lifetimes at their real ratios, players learn
+that 2p decays ten times faster than 3d. The log shows each fluorescence
+delay next to the state's lifetime ("after 2.13 ns, τ = 1.60 ns"). Elastic
+scattering, the atom's version of reflection, happens within a femtosecond.
+
+## 8a. The photon as a wave-particle
+
+- **Wave.** Each photon is drawn as a short electromagnetic wave packet: the
+  electric field E in the photon's colour, and the magnetic field B, paler, at
+  right angles. Linear (π) light oscillates in a plane along the atom's axis.
+  Circular (σ±) light draws a left- or right-handed helix. The pattern moves
+  rigidly at c, which is how a wave in vacuum behaves.
+- **Particle.** The packet carries one quantum of energy, hν. It is absorbed
+  all at once, never partly.
+- **Scale honesty.** Real ultraviolet and visible wavelengths are about 1,000
+  times larger than the atom, so in reality the atom sits inside a single wave
+  crest. The drawn wave is compressed to fit, and the HUD shows by how much
+  ("wave drawn 5,800× shorter than real"). Wavelength ordering and
+  polarization are kept exactly.
+- **Laser or lamp.** Laser: one photon, exact wavelength, perfectly straight.
+  Lamp: a cone of seven photons (4° half-angle) with a ±0.4% spread of
+  wavelengths, like natural light. It is easier to find a line with the lamp
+  but harder to drive a precise transition.
+
+## 8b. What decides whether a photon interacts
+
+| Factor | Physics | In the game |
+|---|---|---|
+| Energy match | Absorption needs hν = E_upper − E_lower | Lorentzian line shape; the HUD shows the real natural width (e.g. 1.5×10⁻⁵ nm for H-α) next to the widened game width |
+| Orbital shapes | Dipole overlap ⟨f\|r\|i⟩: selection rules Δl = ±1, and the oscillator strength f | Real hydrogen f values (1s→2p 0.416, 1s→4p 0.029) set each line's hit chance |
+| Polarization and angle | Δm = 0 for π, ±1 for σ±; coupling depends on the angle to the axis | Coupling shown live as you fly |
+| Above threshold | Photoionization, largest just past threshold, falling roughly as (E_th/E)³ | Ionization chance shown before you fire |
+| Far from any line | Rayleigh scattering ∝ λ⁻⁴ | Photon bounces off, same colour, no delay |
+
+The width of a line is set by the excited state's **lifetime**, not by how
+big the orbital is.
+
+## 8c. Same speed of light for every observer (planned)
+
+Relativity becomes visible only when the observer moves fast. The planned
+mechanic: the ship can fly at a large fraction of c. Your photons then reach
+the atom **Doppler-shifted** (flying toward it blue-shifts your gun, so speed
+becomes a way to tune), and the sky shows **aberration**. Every speed readout,
+in your frame and in the atom's, still says c. Lasers in real labs use the same
+effect to cool atoms.
 
 ## 9. Technology
 
@@ -210,6 +267,11 @@ Done:
       spontaneous emission with real lifetimes and branching ratios, stimulated
       emission
 - [x] Five campaign levels with target states
+- [x] Crosshair aiming with straight, converging shots; laser and lamp beams
+- [x] Photons drawn as E/B wave packets with correct polarization
+- [x] Automatic time dilation (atto- to nanoseconds) with a live real-time clock
+- [x] Oscillator strengths, photoionization cross-section, Rayleigh scattering,
+      fluorescence delays
 - [x] Orbital Lab: elements H–Kr, Slater screening, real/complex basis,
       superpositions, whole-atom shell view
 
@@ -225,8 +287,16 @@ Next:
 
 ## 11. Honest limits of the current prototype
 
-- Fine structure, Lamb shift and hyperfine splitting are ignored; resonance
-  tolerance (±0.4%) is far wider than real linewidths so the game is playable.
+- Fine structure, Lamb shift and hyperfine splitting are ignored. Line widths
+  are about 10⁵ times wider than real so they can be hit; the HUD says so.
+- Hit chances fold the oscillator strength in as f/(f + 0.1) and Rayleigh
+  scattering is boosted so it can be seen. The ordering is real; the absolute
+  numbers are tuned for play.
+- The drawn wavelength is compressed (shown in the HUD), so the number of
+  crests passing the atom doesn't match the cloud's oscillation rate. The
+  cloud's rate is the real one.
+- A transition never takes more than about 6 screen seconds, even in the
+  slowest view.
 - Decay picks the final m uniformly among allowed values instead of using
   Clebsch–Gordan weights.
 - Absorption to n ≥ 5 is not modelled; such photons pass through.
