@@ -58,6 +58,9 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
 #spectro { width: 100%; height: 64px; display: block; cursor: crosshair; touch-action: none; }
 .weapon { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 #stateMini { display: none; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+.speed input { flex: 1 1 140px; min-width: 0; accent-color: var(--cyan); }
+#tuneDown, #tuneUp { padding: 4px 10px; touch-action: none; }
 .fine { font-size: 11px; color: var(--muted); }
 #crosshair { position: fixed; left: -20px; top: -20px; width: 40px; height: 40px; pointer-events: none; color: rgba(214,226,238,.7); }
 #crosshair.on { color: var(--good); }
@@ -82,7 +85,8 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
   .tl { max-width: none; grid-row: 2; }
   .tr { grid-column: 1; grid-row: 1; flex-direction: row; justify-self: stretch; justify-content: space-between; }
   .bottom { grid-row: 4; }
-  #grotrianBox, #log, .keys, .keys.touch, .state, #weapon .label, #lineInfo, #waveInfo { display: none; }
+  #grotrianBox, #log, .keys, .keys.touch, .state, #weapon .label, #lineInfo, #waveInfo, #betaOut { display: none; }
+  #weapon .speed .label { display: inline; }
   .tr { flex-wrap: wrap; gap: 6px; }
   #clock { padding: 4px 8px; font-size: 10px; gap: 6px; }
   #clock .label, #clockT { display: none; }
@@ -145,7 +149,7 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
       <canvas id="grotrian" width="460" height="380"></canvas>
     </section>
     <section class="panel weapon" id="weapon">
-      <div><span class="label">Photon gun</span> <span class="data" id="lambdaOut"></span> <span class="data" id="lockOut"></span></div>
+      <div class="row"><button type="button" id="tuneDown" aria-label="Shorter wavelength" title="Shorter wavelength (Q)">◀</button><span class="label">Photon gun</span> <span class="data" id="lambdaOut"></span><button type="button" id="tuneUp" aria-label="Longer wavelength" title="Longer wavelength (E)">▶</button> <span class="data" id="lockOut"></span></div>
       <div class="row" style="justify-content:space-between">
         <div class="row">
           <span class="label">Polarization</span>
@@ -160,17 +164,18 @@ button[aria-pressed="true"] { background: rgba(2,232,244,.22); border-color: var
       </div>
       <canvas id="spectro" width="1200" height="128" aria-label="Spectrometer: drag to tune the wavelength"></canvas>
       <div class="data fine" id="lineInfo"></div>
+      <div class="row speed"><label class="label" for="beta">Ship speed</label><input type="range" id="beta" min="-0.3" max="0.3" step="0.0005" value="0"><span class="data fine" id="betaOut"></span></div>
       <div class="row" style="justify-content:space-between">
         <div class="data"><span class="label">Coupling</span> <span id="couplingOut"></span></div>
         <div class="data" id="stateMini"></div>
         <div class="data fine" id="waveInfo"></div>
       </div>
-      <div class="keys">Mouse: aim · Click/Space: fire · Right-drag or WASD: fly · Q/E: tune (Shift ×10) · 1/2/3: polarization · L: laser/lamp</div>
+      <div class="keys">Mouse: aim · Click/Space: fire · Right-drag or WASD: fly · Q/E: tune (Shift ×20) · Z/X: speed · 1/2/3: polarization · L: laser/lamp</div>
       <div class="keys touch">One finger: aim · Tap: fire · Two fingers: fly
       </div>
     </section>
     <section class="panel state">
-      <div id="stateBox"><div class="label">Electron state</div>
+      <div id="stateBox"><div class="label" id="stateLabel">Electron state</div>
       <div class="data" style="font-size:18px" id="stateOut"></div>
       <div class="data" id="stateDetail"></div></div>
       <div id="scalebar"></div><div class="data" id="scaleOut"></div>
@@ -325,21 +330,28 @@ function slaterZeff(conf, Z, n, l) {
 // Campaign levels: each is a physical system with a target state
 // ===================================================================
 const LEVELS = [
-  { title: 'First Light', start: { n: 1, l: 0, m: 0 }, target: { n: 2, l: 1 }, hold: 0.3, lambda0: 150,
+  { title: 'First Light', atoms: [{ start: { n: 1, l: 0, m: 0 } }], target: { n: 2, l: 1 }, hold: 0.3, lambda0: 150,
     brief: 'A hydrogen atom sits in its ground state. Photons are only absorbed when their energy matches a gap between levels.',
-    hint: 'Lyman-α: 1s → 2p sits at 121.6 nm in the ultraviolet. Shorter than 91.2 nm and you may rip the electron off. Lamp mode (L) sprays a cone with a spread of wavelengths, which helps you find a line.' },
-  { title: 'Balmer Red', start: { n: 1, l: 0, m: 0 }, target: { n: 3, l: 2 }, hold: 2, lambda0: 121.6,
+    hint: 'Lyman-α: 1s → 2p sits at 121.6 nm in the ultraviolet. Drag the spectrometer close, then use ◀ ▶ to fine-tune until it says LOCK. Shorter than 91.2 nm and you may rip the electron off.' },
+  { title: 'Balmer Red', atoms: [{ start: { n: 1, l: 0, m: 0 } }], target: { n: 3, l: 2 }, hold: 2, lambda0: 121.6,
     brief: 'Selection rules allow only Δl = ±1 per photon, so 1s cannot jump straight to 3d. Climb in two steps.',
-    hint: '1s → 2p at 121.6 nm, then 2p → 3d with the red H-α line at 656.5 nm. 2p decays in about 1.6 ns, so retune fast. Time runs at 1 ns per second while you wait.' },
-  { title: 'Spin the Cloud', start: { n: 1, l: 0, m: 0 }, target: { n: 3, l: 2, m: 2 }, hold: 2, lambda0: 121.6,
+    hint: '1s → 2p at 121.6 nm, then 2p → 3d with the red H-α line at 656.5 nm. 2p decays in about 1.6 ns, so retune fast. Lines you have seen snap the spectrometer.' },
+  { title: 'Spin the Cloud', atoms: [{ start: { n: 1, l: 0, m: 0 } }], target: { n: 3, l: 2, m: 2 }, hold: 2, lambda0: 121.6,
     brief: 'Circularly polarized light carries angular momentum: σ+ raises m by one. The target is the donut-shaped 3d m=+2 state.',
     hint: 'Fire σ+ twice (121.6 nm, then 656.5 nm). σ light couples best when you fly over a pole, looking along the vertical axis.' },
-  { title: 'The Dark State', start: { n: 1, l: 0, m: 0 }, target: { n: 2, l: 0 }, hold: 3, lambda0: 102.6,
+  { title: 'The Dark State', atoms: [{ start: { n: 1, l: 0, m: 0 } }], target: { n: 2, l: 0 }, hold: 3, lambda0: 102.6,
     brief: '2s is metastable: it cannot decay by emitting one photon. But no single photon from 1s can reach it either.',
     hint: 'Excite 1s → 3p (102.6 nm). 3p falls to 2s 12% of the time on its own, or force it: a 656.5 nm photon triggers stimulated emission 3p → 2s.' },
-  { title: 'Rydberg Ladder', start: { n: 1, l: 0, m: 0 }, target: { n: 4, l: 3, m: 3 }, hold: 3, lambda0: 121.6,
+  { title: 'Rydberg Ladder', atoms: [{ start: { n: 1, l: 0, m: 0 } }], target: { n: 4, l: 3, m: 3 }, hold: 3, lambda0: 121.6,
     brief: 'Build the maximum-angular-momentum state 4f m=+3 by stacking three σ+ photons from the UV to the infrared.',
     hint: '121.6 nm → 656.5 nm → 1875.6 nm (Paschen-α), all σ+. Stay near a pole.' },
+  { title: 'Pass It On', atoms: [{ start: { n: 1, l: 0, m: 0 } }, { start: { n: 1, l: 0, m: 0 }, pos: [-24, 4, -14] }],
+    target: { atom: 1, n: 2, l: 1, relay: true }, hold: 0, lambda0: 121.6,
+    brief: 'A second hydrogen atom floats 1.5 nm away. Excite it using only light re-emitted by the first atom: no direct hits.',
+    hint: 'Excite the near atom to 2p with Lyman-α. When it fluoresces, its photon spreads out as a wave in all directions and may be absorbed by the far atom. The light can bounce back and forth: that is radiation trapping.' },
+  { title: 'Doppler Tuner', atoms: [{ start: { n: 1, l: 0, m: 0 } }], target: { n: 2, l: 1 }, hold: 0.3, lambda0: 125, lockLambda: true,
+    brief: 'Your gun is jammed at 125.0 nm, too long for Lyman-α. Fly toward the atom fast enough that it sees your light blue-shifted onto the line.',
+    hint: 'You need about 2.8% of light speed toward the atom (8,350 km/s). Watch the cyan "atom sees" marker on the spectrometer. Every speed readout still says c.' },
 ];
 
 // ===================================================================
@@ -352,14 +364,19 @@ const FRAG = `#version 300 es
 precision highp float; precision highp int;
 out vec4 outColor;
 uniform vec2 uRes; uniform vec2 uCenter; uniform float uViewH; uniform vec3 uCamPos; uniform mat3 uCamRot; uniform float uFovT; uniform float uTime;
-uniform float uBohr;            // Bohr radii per world unit (world bounding sphere has radius 1)
-uniform int uView;              // 0 = wavefunction, 1 = whole-atom shells
-uniform ivec3 uQA; uniform int uModeA; uniform float uNormA; uniform float uZA; uniform vec2 uCA;
-uniform ivec3 uQB; uniform int uModeB; uniform float uNormB; uniform float uZB; uniform vec2 uCB;
+uniform int uView;              // 0 = wavefunction, 1 = whole-atom shells (atom 0 only)
+uniform int uNA;                // atoms in the scene (1–3)
+uniform vec3 uAP[3];            // atom centres (world)
+uniform float uAR[3];           // bounding-sphere radius (world)
+uniform float uAS[3];           // Bohr radii per world unit
+uniform ivec3 uQA[3]; uniform int uModeA[3]; uniform float uNormA[3]; uniform float uZA[3]; uniform vec2 uCA[3];
+uniform ivec3 uQB[3]; uniform int uModeB[3]; uniform float uNormB[3]; uniform float uZB[3]; uniform vec2 uCB[3];
+uniform float uInvMax[3]; uniform float uIso[3]; uniform float uFade[3];
 uniform vec4 uSh[8]; uniform int uShN;   // shells: n, l, Zeff, occ*norm^2/(4π)
-uniform float uInvMax; uniform float uGamma; uniform float uGain; uniform float uFade; uniform float uIso; // uIso: 90% boundary density, normalised
+uniform float uGamma; uniform float uGain;
 uniform int uSteps; uniform float uAxis;
 uniform vec4 uPh[16]; uniform vec3 uPhC[16]; uniform int uPhN;
+uniform vec3 uBeta;             // ship velocity in units of c
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
@@ -406,20 +423,20 @@ vec3 shellColor(float n){
   return n < 1.5 ? vec3(1.0,0.85,0.55) : n < 2.5 ? vec3(0.01,0.91,0.96) : n < 3.5 ? vec3(0.62,0.45,1.0) : vec3(0.94,0.18,0.37);
 }
 // Returns rgb weight in .rgb, density in .a
-vec4 sampleCloud(vec3 pw){
-  vec3 p = pw * uBohr;
+vec4 sampleCloud(int i, vec3 pw){
+  vec3 p = (pw - uAP[i]) * uAS[i];
   if (uView == 1) {
     float r = length(p) + 1e-5; float d = 0.0; vec3 c = vec3(0.0);
-    for (int i = 0; i < 8; i++) {
-      if (i >= uShN) break;
-      vec4 s = uSh[i];
+    for (int k = 0; k < 8; k++) {
+      if (k >= uShN) break;
+      vec4 s = uSh[k];
       float R = radialShape(int(s.x), int(s.y), s.z, r);
       float di = s.w * R * R; d += di; c += shellColor(s.x) * di;
     }
     return vec4(c / max(d, 1e-30), d * r * r);   // radial probability r²ρ makes shells visible
   }
-  vec2 w = cmul(uCA, psi(uQA, uModeA, uNormA, uZA, p));
-  if (dot(uCB, uCB) > 0.0) w += cmul(uCB, psi(uQB, uModeB, uNormB, uZB, p));
+  vec2 w = cmul(uCA[i], psi(uQA[i], uModeA[i], uNormA[i], uZA[i], p));
+  if (dot(uCB[i], uCB[i]) > 0.0) w += cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], uZB[i], p));
   return vec4(phaseColor(w), dot(w, w));
 }
 float pointGlow(vec3 ro, vec3 rd, vec3 c, float s){
@@ -434,33 +451,58 @@ vec3 stars(vec3 d){
   float s = smoothstep(0.12, 0.0, length(fract(sp) - o));
   return vec3(0.55, 0.65, 0.8) * s * (h - 0.982) * 40.0;
 }
+// Relativistic aberration and Doppler shift of the starfield seen from the moving ship.
+vec3 movingStars(vec3 rd){
+  float b = length(uBeta);
+  if (b < 1e-4) return stars(rd);
+  vec3 v = uBeta / b; float c1 = dot(rd, v);
+  float cs = (c1 - b) / (1.0 - b*c1);                 // direction of the star in the rest frame
+  vec3 perp = rd - v*c1; float pl = length(perp); perp = pl > 1e-5 ? perp / pl : vec3(0.0);
+  vec3 src = normalize(v*cs + perp*sqrt(max(0.0, 1.0 - cs*cs)));
+  float D = (1.0 + b*cs) / sqrt(1.0 - b*b);           // Doppler factor: > 1 ahead (blue), < 1 behind (red)
+  vec3 s = stars(src) * min(D*D*D, 8.0);
+  vec3 tint = D > 1.0 ? mix(vec3(1.0), vec3(0.55, 0.7, 1.4), min(1.0, (D - 1.0)*2.0)) : mix(vec3(1.0), vec3(1.4, 0.55, 0.35), min(1.0, (1.0 - D)*2.0));
+  return s * tint;
+}
+void marchAtom(int i, vec3 ro, vec3 rd, float t0, float t1, inout vec3 acc, inout float T){
+  float dt = (t1 - t0) / float(uSteps);
+  float t = t0 + dt * hash(gl_FragCoord.xy + fract(uTime) * 61.0 + float(i) * 7.3);
+  float k = dt / uAR[i];
+  for (int s = 0; s < 256; s++) {
+    if (s >= uSteps) break;
+    vec4 c = sampleCloud(i, ro + rd*t);
+    float dn = clamp(c.a * uInvMax[i], 0.0, 1.0);
+    if (uView == 1) dn = clamp(1.0 + log(max(dn, 1e-9)) / 6.9, 0.0, 1.0);   // log scale over three decades
+    float e = pow(dn, uGamma) * uFade[i];
+    if (uIso[i] > 0.0) { float x = log(max(dn, 1e-9) / uIso[i]) / 0.28; e += 1.4 * exp(-x*x) * uFade[i]; }
+    acc += T * c.rgb * e * uGain * k;
+    T *= exp(-e * 1.6 * k);
+    t += dt;
+  }
+}
 void main(){
   vec2 uv = (gl_FragCoord.xy - uCenter) / uViewH;
   vec3 rd = normalize(uCamRot * vec3(uv * uFovT * 2.0, -1.0));
   vec3 ro = uCamPos;
-  vec3 col = vec3(0.0015, 0.0025, 0.006) + stars(rd);
+  vec3 col = vec3(0.0015, 0.0025, 0.006) + movingStars(rd);
   float T = 1.0; vec3 acc = vec3(0.0);
-  float b = dot(ro, rd), c = dot(ro, ro) - 1.0, h = b*b - c;
-  if (h > 0.0) {
-    h = sqrt(h); float t0 = max(-b - h, 0.0), t1 = -b + h;
-    if (t1 > 0.0) {
-      float dt = (t1 - t0) / float(uSteps);
-      float t = t0 + dt * hash(gl_FragCoord.xy + fract(uTime) * 61.0);
-      for (int i = 0; i < 256; i++) {
-        if (i >= uSteps) break;
-        vec4 s = sampleCloud(ro + rd*t);
-        float dn = clamp(s.a * uInvMax, 0.0, 1.0);
-        if (uView == 1) dn = clamp(1.0 + log(max(dn, 1e-9)) / 6.9, 0.0, 1.0);   // log scale over three decades
-        float e = pow(dn, uGamma) * uFade;
-        if (uIso > 0.0) { float x = log(max(dn, 1e-9) / uIso) / 0.28; e += 1.4 * exp(-x*x) * uFade; }
-        acc += T * s.rgb * e * uGain * dt;
-        T *= exp(-e * 1.6 * dt);
-        t += dt;
-      }
-    }
+  // Find each atom's bounding sphere along the ray, then march them front to back.
+  float tA[3], tB[3]; int ord[3];
+  for (int i = 0; i < 3; i++) {
+    ord[i] = i; tA[i] = 1e9; tB[i] = -1.0;
+    if (i >= uNA) continue;
+    vec3 oc = ro - uAP[i]; float b = dot(oc, rd), c = dot(oc, oc) - uAR[i]*uAR[i], h = b*b - c;
+    if (h > 0.0) { h = sqrt(h); tA[i] = max(-b - h, 0.0); tB[i] = -b + h; }
+  }
+  for (int a = 0; a < 2; a++) for (int k = 0; k < 2; k++) {
+    if (tA[ord[k]] > tA[ord[k + 1]]) { int tmp = ord[k]; ord[k] = ord[k + 1]; ord[k + 1] = tmp; }
+  }
+  for (int j = 0; j < 3; j++) {
+    int i = ord[j];
+    if (i < uNA && tB[i] > tA[i]) marchAtom(i, ro, rd, tA[i], tB[i], acc, T);
   }
   col = col * T + acc;
-  // quantization axis: faint dashed vertical line through the nucleus
+  // quantization axis: faint dashed vertical line through the first nucleus
   if (uAxis > 0.0) {
     vec3 w0 = ro; float a = dot(rd, vec3(0,1,0)); float dd = dot(rd, w0), e2 = w0.y;
     float den = 1.0 - a*a;
@@ -473,7 +515,7 @@ void main(){
       }
     }
   }
-  col += vec3(1.0, 0.82, 0.55) * pointGlow(ro, rd, vec3(0.0), 0.006) * 1.2;
+  for (int i = 0; i < 3; i++) { if (i >= uNA) break; col += vec3(1.0, 0.82, 0.55) * pointGlow(ro, rd, uAP[i], 0.006) * 1.2 * uFade[i]; }
   for (int i = 0; i < 16; i++) {
     if (i >= uPhN) break;
     col += uPhC[i] * pointGlow(ro, rd, uPh[i].xyz, uPh[i].w);
@@ -512,8 +554,9 @@ else {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  for (const name of ['uRes','uCenter','uViewH','uCamPos','uCamRot','uFovT','uTime','uBohr','uView','uQA','uModeA','uNormA','uZA','uCA','uQB','uModeB','uNormB','uZB','uCB',
-    'uSh','uShN','uInvMax','uIso','uGamma','uGain','uFade','uSteps','uAxis','uPh','uPhC','uPhN']) U[name] = gl.getUniformLocation(prog, name);
+  for (const name of ['uRes','uCenter','uViewH','uCamPos','uCamRot','uFovT','uTime','uView','uNA','uAP','uAR','uAS',
+    'uQA','uModeA','uNormA','uZA','uCA','uQB','uModeB','uNormB','uZB','uCB','uInvMax','uIso','uFade',
+    'uSh','uShN','uGamma','uGain','uSteps','uAxis','uPh','uPhC','uPhN','uBeta']) U[name] = gl.getUniformLocation(prog, name);
 
   lineProg = gl.createProgram();
   gl.attachShader(lineProg, sh(gl.VERTEX_SHADER, LINE_VERT)); gl.attachShader(lineProg, sh(gl.FRAGMENT_SHADER, LINE_FRAG));
@@ -527,7 +570,7 @@ else {
 }
 
 // ===================================================================
-// Camera (the player's ship orbits the atom)
+// Camera (the player's ship orbits the first atom)
 // ===================================================================
 const cam = { yaw: 0.6, pitch: 0.35, dist: 3.1, fov: 50 * Math.PI / 180 };
 const v3 = {
@@ -545,6 +588,14 @@ function camBasis() {
   const r = v3.norm(v3.cross(f, [0, 1, 0])), u = v3.cross(r, f);
   return { p, f, r, u };
 }
+// Uniformly random direction, optionally weighted by a radiation pattern (rejection sampling).
+function randomDir(weight) {
+  for (;;) {
+    const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z);
+    const d = [rr * Math.cos(th), z, rr * Math.sin(th)];
+    if (!weight || Math.random() < weight(d)) return d;
+  }
+}
 
 // ===================================================================
 // Light, time and interaction constants
@@ -553,9 +604,10 @@ const C = 299792458;          // m/s: the same in every frame, at every time sca
 const A0_M = 5.29177e-11;     // Bohr radius in metres
 const H_EV = 4.135667696e-15; // Planck constant, eV·s
 const S_DECAY = 1e-9;         // decay view: one screen second = 1 ns
-const R_HIT = 0.5;            // world units: aim must pass this close to the nucleus
+const R_HIT = 0.5;            // world units: a laser must pass this close to a nucleus
 const GAME_WIDTH = 0.0025;    // resonance half-width (relative energy), widened for play
-const LAMP = { count: 7, cone: 0.07, spread: 0.004 };   // cone half-angle (rad), wavelength spread (relative)
+const LAMP = { cone: 8 * Math.PI / 180, width: 0.003 };   // lamp: cone half-angle, bandwidth (relative)
+const PACKET_CYCLES = 9;
 
 // Absorption oscillator strengths for hydrogen (lower > upper), NIST/Wiese values.
 const OSC = {
@@ -571,18 +623,21 @@ function naturalWidthNm(lam, upper) {
   if (!d || !isFinite(d.tau)) return 0;
   return (lam * 1e-9) ** 2 / (2 * Math.PI * C * d.tau * 1e-9) * 1e9;
 }
+// Relativistic Doppler: light between ship and atom closing at β (fraction of c, positive = approaching).
+const dopplerFactor = beta => Math.sqrt((1 - beta) / (1 + beta));   // multiply a wavelength to get the other frame's
 
 // ===================================================================
-// Game state
+// Game state. Physics positions are in Bohr radii; the view scales them by game.bohr.
 // ===================================================================
 const game = {
-  mode: 'campaign', level: 0, atom: { n: 1, l: 0, m: 0 }, ionized: false, fade: 1,
-  trans: null, hold: 0, won: false, lambda: 150, pol: 0, beam: 'laser', photons: [], lines: [], cooldown: 0, time: 0,
-  bohr: extentBohr(1, 1), descA: null, descB: null,
-  timeMode: 'auto', S: S_DECAY, clock: 0, excitedAt: 0, beatPhase: 0,
+  mode: 'campaign', level: 0, atoms: [], won: false, hold: 0,
+  lambda: 150, pol: 0, beam: 'laser', beta: 0,
+  photons: [], fronts: [], flashes: [], lines: [], cooldown: 0, time: 0,
+  bohr: extentBohr(1, 1), timeMode: 'auto', S: S_DECAY, clock: 0,
 };
 const lab = { iso: 0, Z: 1, view: 'orbital', orb: '1,0,0', basis: 'real', mix: 'none', descA: null, descB: null, shells: null, bohr: 8, invMax: 1 };
 const aim = { x: 0, y: 0, set: false };
+const ATOM_NAMES = ['A', 'B', 'C'];
 
 function log(msg, cls) {
   const box = document.getElementById('log'); const d = document.createElement('div');
@@ -600,20 +655,27 @@ function campaignDesc(s) {
   if (!descCache.has(k)) descCache.set(k, waveDesc(s.n, s.l, s.m, 1, false));
   return descCache.get(k);
 }
+const atomLabel = i => (game.atoms.length > 1 ? `atom ${ATOM_NAMES[i]} ` : '');
+function makeAtom(def) {
+  return { pos: def.pos || [0, 0, 0], st: { ...def.start }, trans: null, descA: campaignDesc(def.start), descB: null,
+    excitedAt: 0, beat: 0, ionized: false, fade: 1, by: 'none' };
+}
 
 function startLevel(i) {
   const L = LEVELS[i]; game.level = i;
-  Object.assign(game, { atom: { ...L.start }, ionized: false, fade: 1, trans: null, hold: 0, won: false, lambda: L.lambda0, photons: [], clock: 0, excitedAt: 0 });
-  game.descA = campaignDesc(game.atom); game.descB = null;
+  Object.assign(game, { atoms: L.atoms.map(makeAtom), won: false, hold: 0, lambda: L.lambda0, photons: [], fronts: [], flashes: [], clock: 0 });
+  if (!L.lockLambda) game.beta = 0;
   document.getElementById('levelNum').textContent = `Level ${i + 1}`;
   document.getElementById('levelTitle').textContent = L.title;
   document.getElementById('levelBrief').textContent = L.brief;
   const t = L.target;
   document.getElementById('levelGoal').textContent =
-    `${t.n}${L_NAMES[t.l]}${t.m !== undefined ? ` with m = ${sgn(t.m)}` : ' (any m)'}, held for ${L.hold} ns`;
+    `${t.atom ? `Atom ${ATOM_NAMES[t.atom]}: ` : ''}${t.n}${L_NAMES[t.l]}${t.m !== undefined ? ` with m = ${sgn(t.m)}` : ' (any m)'}` +
+    (t.relay ? ', excited by the other atom\'s light' : `, held for ${L.hold} ns`);
   document.getElementById('hint').textContent = L.hint; document.getElementById('hint').hidden = true;
   document.getElementById('levelSel').value = String(i);
   document.getElementById('winBox').hidden = true;
+  document.getElementById('beta').value = String(game.beta);
   log(`Level ${i + 1}: ${L.title}`);
 }
 
@@ -621,13 +683,14 @@ const couplingFor = (dir, pol) => { const c2 = dir[1] * dir[1]; return pol === 0
 const polQ = pol => [0, 1, -1][pol];
 const polName = pol => ['π', 'σ+', 'σ−'][pol];
 
-// Transitions a photon could drive from state s, each with its line-shape factor L (Lorentzian) and strength f.
-function resonances(s, lambda, pol) {
-  const E = HC / lambda, out = [];
+// Transitions a photon of (atom-frame) wavelength λ could drive from state s.
+// L is the line-shape factor: a Lorentzian whose width adds the line's width and the photon's own bandwidth.
+function resonances(s, lambda, pol, bandwidth = 0) {
+  const E = HC / lambda, out = [], G = GAME_WIDTH + bandwidth;
   for (let n2 = 1; n2 <= NMAX; n2++) {
     if (n2 === s.n) continue;
     const dE = levelE(n2) - levelE(s.n), up = dE > 0;
-    const delta = (E - Math.abs(dE)) / Math.abs(dE), L = 1 / (1 + (delta / GAME_WIDTH) ** 2);
+    const delta = (E - Math.abs(dE)) / Math.abs(dE), L = (GAME_WIDTH / G) / (1 + (delta / G) ** 2);
     if (L < 0.05) continue;
     for (const l2 of [s.l - 1, s.l + 1]) {
       if (l2 < 0 || l2 >= n2) continue;
@@ -640,7 +703,18 @@ function resonances(s, lambda, pol) {
   }
   return out;
 }
-const energyMatches = (s, lambda) => resonances(s, lambda, null).length > 0;
+const energyMatches = (s, lambda, bw) => resonances(s, lambda, null, bw).length > 0;
+// Nearest allowed line (any polarization), for the tuning meter.
+function nearestLine(s, lambda) {
+  let best = null;
+  for (let n2 = 1; n2 <= NMAX; n2++) {
+    if (n2 === s.n) continue;
+    if (![s.l - 1, s.l + 1].some(l2 => l2 >= 0 && l2 < n2 && oscStrength(s, { n: n2, l: l2 }))) continue;
+    const line = lambdaFor(s.n, n2), off = (lambda - line) / line;
+    if (!best || Math.abs(off) < Math.abs(best.off)) best = { n: n2, line, off };
+  }
+  return best;
+}
 // Chance a photon that reaches the atom drives this transition: polarization coupling × line shape × strength.
 const hitChance = (c, coupling) => coupling * c.L * c.f / (c.f + 0.1);
 // Photoionization: zero below threshold, largest at threshold, falling roughly as (E_th/E)³ (Kramers).
@@ -655,47 +729,67 @@ function pickWeighted(list, wkey) {
 }
 
 // Time: game.S is how many real seconds pass per screen second. Light always moves at c.
-const flightScale = () => 3 * game.bohr * A0_M / C;   // a photon crosses 3 world units in about one screen second
-function photonsInFlight() { return game.photons.some(p => !p.done && v3.len(p.pos) < 4.5); }
+const flightScale = () => 3 * game.bohr * A0_M / C;   // light crosses 3 view units in about one screen second
+const sceneR = () => 7 * game.bohr;
+function lightInFlight() {
+  return game.photons.some(p => v3.len(p.pos) < sceneR()) || game.fronts.some(f => f.R < sceneR());
+}
 function targetScale() {
   switch (game.timeMode) {
     case 'light': return flightScale();
     case 'wave': return 1e-15;
     case 'decay': return S_DECAY;
   }
-  if (photonsInFlight()) return flightScale();
-  if (game.trans) return game.trans.dur / 1.5;
+  if (lightInFlight()) return flightScale();
+  const tr = game.atoms.find(a => a.trans);
+  if (tr) return tr.trans.dur / 1.5;
   return S_DECAY;
 }
 function stepTimeScale(dt) {
-  const t = targetScale();
-  if (t < game.S) game.S = Math.exp(Math.log(game.S) + (Math.log(t) - Math.log(game.S)) * Math.min(1, dt * 12));
-  else game.S = Math.exp(Math.log(game.S) + (Math.log(t) - Math.log(game.S)) * Math.min(1, dt * 2.2));
+  const t = targetScale(), rate = t < game.S ? 12 : 2.2;
+  game.S = Math.exp(Math.log(game.S) + (Math.log(t) - Math.log(game.S)) * Math.min(1, dt * rate));
 }
 // Freeze the moment: snap straight to the light-speed view so a new photon isn't gone in one frame.
-const snapToLight = () => { if (game.timeMode === 'auto') game.S = flightScale(); };
+const snapToLight = () => { if (game.timeMode === 'auto') game.S = Math.min(game.S, flightScale()); };
 
-function beginTransition(to, lambda) {
-  const dE = Math.abs(levelE(to.n) - levelE(game.atom.n));
+function beginTransition(atom, to, lambda, by) {
+  const dE = Math.abs(levelE(to.n) - levelE(atom.st.n));
   // Absorbing or emitting takes a few optical cycles; meanwhile the cloud oscillates at the light's own frequency.
-  game.trans = { from: { ...game.atom }, to, t: 0, dur: 5 * lambda * 1e-9 / C, freq: dE / H_EV };
-  game.descB = campaignDesc(to);
+  atom.trans = { from: { ...atom.st }, to, t: 0, dur: 5 * lambda * 1e-9 / C, freq: dE / H_EV, by };
+  atom.descB = campaignDesc(to);
 }
 function recordLine(lambda) {
   if (!game.lines.some(l => Math.abs(l - lambda) / lambda < 1e-3)) game.lines.push(lambda);
 }
-function spawnPhoton(pos, dir, lambda, pol, done) {
-  const [r, g, b] = lambdaRGB(lambda), dim = band(lambda) === 'visible' ? 1 : 0.75;
-  game.photons.push({ pos: [...pos], dir, lambda, pol, done, life: 0, col: [r * dim, g * dim, b * dim] });
+function photonColor(lamSeen) {
+  const [r, g, b] = lambdaRGB(lamSeen), dim = band(lamSeen) === 'visible' ? 1 : 0.75;
+  return [r * dim, g * dim, b * dim];
 }
+// Laser photon: a narrow wave packet travelling in a straight line.
+function spawnPacket(pos, dir, lamAtom, lamSeen, pol, from) {
+  game.photons.push({ pos: [...pos], dir, lam: lamAtom, lamSeen, pol, from, passed: new Set(from === 'ship' ? [] : [from]), life: 0, dim: 1, col: photonColor(lamSeen) });
+}
+// Spreading photon: a wavefront expanding at c from `center`, inside a cone (or a whole sphere with a dipole pattern).
+function spawnFront(o) {
+  game.fronts.push({ R: 0, tested: new Set(o.from === 'ship' ? [] : [o.from]), life: 0, bandwidth: 0, cosA: -2, pattern: 0, axis: [0, 1, 0], dir: [0, 0, 1], ...o, col: photonColor(o.lamSeen) });
+}
+const flash = (pos, col, big) => game.flashes.push({ pos: [...pos], col, t: 0, big });
 
-// Ray from the ship through the crosshair.
+// Ray from the ship through the crosshair (view units).
 function aimRay() {
   const { p, f, r, u } = camBasis(), t = 2 * Math.tan(cam.fov / 2);
   const x = (aim.x - canvas.clientWidth / 2) / view.h, y = (view.cy - aim.y) / view.h;
   return { o: p, d: v3.norm([f[0] + (r[0] * x + u[0] * y) * t, f[1] + (r[1] * x + u[1] * y) * t, f[2] + (r[2] * x + u[2] * y) * t]) };
 }
-const missDistance = (o, d) => { const k = -v3.dot(o, d); return k < 0 ? Infinity : v3.len(v3.add(o, v3.scale(d, k))); };
+const missDistance = (o, d, c) => { const oc = v3.sub(o, c), k = -v3.dot(oc, d); return k < 0 ? Infinity : v3.len(v3.add(oc, v3.scale(d, k))); };
+const atomWorld = a => v3.scale(a.pos, 1 / game.bohr);
+// The atom under the crosshair (or atom A): the instruments read out this one.
+function focusAtom() {
+  const { o, d } = aimRay();
+  let best = 0, bd = Infinity;
+  game.atoms.forEach((a, i) => { const m = missDistance(o, d, atomWorld(a)); if (m < bd) { bd = m; best = i; } });
+  return bd < 1.2 ? best : 0;
+}
 
 function fire() {
   if (game.mode !== 'campaign' || game.cooldown > 0 || game.won) return;
@@ -703,115 +797,159 @@ function fire() {
   // so each shot flies dead straight and you see its wave from the side.
   const ray = aimRay(), { r, u } = camBasis(), k = Math.max(1, -v3.dot(ray.o, ray.d));
   const gun = v3.add(ray.o, v3.add(v3.scale(r, 0.6), v3.scale(u, -0.5)));
-  const o = gun, d = v3.norm(v3.sub(v3.add(ray.o, v3.scale(ray.d, k)), gun));
+  const d = v3.norm(v3.sub(v3.add(ray.o, v3.scale(ray.d, k)), gun));
+  const lamAtom = game.lambda * dopplerFactor(game.beta);
   if (game.beam === 'laser') {
     game.cooldown = 0.2;
-    spawnPhoton(v3.add(o, v3.scale(d, 0.3)), d, game.lambda, game.pol, false);
+    spawnPacket(v3.scale(v3.add(gun, v3.scale(d, 0.3)), game.bohr), d, lamAtom, game.lambda, game.pol, 'ship');
   } else {
-    // A lamp: a cone of photons with a small spread of wavelengths, like most natural light sources.
-    game.cooldown = 0.5;
-    const a = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), b = v3.cross(d, a);
-    for (let i = 0; i < LAMP.count; i++) {
-      const th = LAMP.cone * Math.sqrt(Math.random()), ph = Math.random() * Math.PI * 2;
-      const dir = v3.norm(v3.add(v3.scale(d, Math.cos(th)), v3.scale(v3.add(v3.scale(a, Math.cos(ph)), v3.scale(b, Math.sin(ph))), Math.sin(th))));
-      const g = (Math.random() + Math.random() + Math.random() - 1.5) * 1.4;   // roughly Gaussian
-      spawnPhoton(v3.add(o, v3.scale(dir, 0.3 + Math.random() * 0.4)), dir, game.lambda * (1 + g * LAMP.spread), game.pol, false);
-    }
+    game.cooldown = 0.35;
+    spawnFront({ center: v3.scale(gun, game.bohr), dir: d, cosA: Math.cos(LAMP.cone), lam: lamAtom, lamSeen: game.lambda,
+      pol: game.pol, from: 'ship', bandwidth: LAMP.width, R: 0.3 * game.bohr });
   }
   snapToLight();
 }
 
-function photonArrives(ph) {
-  ph.done = true;
-  if (game.ionized || game.trans) return;
-  const s = game.atom, coupling = couplingFor(ph.dir, ph.pol);
-  const cands = resonances(s, ph.lambda, ph.pol).map(c => ({ ...c, p: hitChance(c, coupling) }));
-  const total = cands.reduce((a, c) => a + c.p, 0);
-  if (cands.length && Math.random() < Math.min(0.97, total)) {
+// A photon reaches atom i. `capture` is how much of the photon's wave overlaps the atom.
+// Returns 'absorbed' | 'stimulated' | 'ionized' | 'scattered' | 'passed'.
+function interact(i, ph, coupling, capture) {
+  const atom = game.atoms[i];
+  if (atom.ionized || atom.trans) return 'passed';
+  const s = atom.st;
+  const cands = resonances(s, ph.lam, ph.pol, ph.bandwidth || 0).map(c => ({ ...c, p: hitChance(c, coupling) }));
+  const total = Math.min(0.97, cands.reduce((a, c) => a + c.p, 0)) * capture;
+  if (cands.length && Math.random() < total) {
     const to = pickWeighted(cands, 'p');
     recordLine(to.line);
-    beginTransition({ n: to.n, l: to.l, m: to.m }, ph.lambda);
-    if (to.up) { ph.dead = true; log(`Absorbed ${ph.lambda.toFixed(1)} nm: ${stateName(s)} → ${stateName(to)} (f = ${to.f})`, 'lock'); }
-    else {
-      spawnPhoton(v3.add(ph.pos, [0.02, 0.02, 0]), ph.dir, ph.lambda, ph.pol, true);
-      log(`Stimulated emission: ${stateName(s)} → ${stateName(to)}, two identical ${ph.lambda.toFixed(1)} nm photons out`, 'lock');
-    }
-    return;
+    beginTransition(atom, { n: to.n, l: to.l, m: to.m }, ph.lam, ph.from === 'ship' ? 'ship' : 'atom');
+    flash(atom.pos, ph.col, false);
+    if (to.up) { log(`${atomLabel(i)}absorbed ${ph.lam.toFixed(1)} nm: ${stateName(s)} → ${stateName(to)}`, 'lock'); return 'absorbed'; }
+    log(`${atomLabel(i)}stimulated emission ${stateName(s)} → ${stateName(to)}: two identical ${ph.lam.toFixed(1)} nm photons`, 'lock');
+    return 'stimulated';
   }
-  if (Math.random() < ionChance(s, ph.lambda)) {
-    ph.dead = true; game.ionized = true;
-    log(`Ionized! ${(HC / ph.lambda).toFixed(2)} eV beats the ${(-levelE(s.n)).toFixed(2)} eV binding energy of ${stateName(s)}`, 'warn');
-    return;
+  if (Math.random() < ionChance(s, ph.lam) * capture) {
+    atom.ionized = true; flash(atom.pos, [1, 0.25, 0.45], true);
+    log(`Ker-splash! ${atomLabel(i)}ionized: ${(HC / ph.lam).toFixed(2)} eV beats the ${(-levelE(s.n)).toFixed(2)} eV binding energy`, 'warn');
+    return 'ionized';
   }
-  if (Math.random() < scatterChance(ph.lambda)) {
-    const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z);
-    ph.dir = [rr * Math.cos(th), z, rr * Math.sin(th)]; ph.life = 0;
-    log(`Elastic scatter (reflection): same ${ph.lambda.toFixed(1)} nm, re-emitted within ~1 fs`);
-    return;
-  }
-  if (cands.length) log(`Resonant, but it passed through (${(Math.min(0.97, total) * 100).toFixed(0)}% chance from this angle)`, 'warn');
+  if (Math.random() < scatterChance(ph.lam) * capture) return 'scattered';
+  if (cands.length) log(`Resonant, but it passed through (${(total * 100).toFixed(0)}% chance)`, 'warn');
+  return 'passed';
 }
 
-function spontaneousDecay(dtPhys) {
-  if (game.trans || game.ionized) return;
-  const s = game.atom, d = DECAY[`${s.n},${s.l}`];
+function spontaneousDecay(i, dtPhys) {
+  const atom = game.atoms[i];
+  if (atom.trans || atom.ionized) return;
+  const s = atom.st, d = DECAY[`${s.n},${s.l}`];
   if (!d || !isFinite(d.tau)) return;
   if (Math.random() > 1 - Math.exp(-dtPhys / (d.tau * 1e-9))) return;
   const [n2, l2] = pickWeighted(d.br.map(b => ({ b, w: b[2] })), 'w').b;
   const ms = [-1, 0, 1].map(dm => s.m + dm).filter(m => Math.abs(m) <= l2);
   const to = { n: n2, l: l2, m: ms[Math.floor(Math.random() * ms.length)] };
-  const lam = lambdaFor(s.n, n2);
-  const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z);
-  const dir = [rr * Math.cos(th), z, rr * Math.sin(th)];
-  spawnPhoton(v3.scale(dir, 0.05), dir, lam, [0, 1, 2].find(p => polQ(p) === s.m - to.m), true);
+  const lam = lambdaFor(s.n, n2), q = s.m - to.m;
+  // The emitted photon leaves as a wave in every direction at once, brightest where its dipole radiates most.
+  spawnFront({ center: atom.pos, lam, lamSeen: lam * dopplerFactor(game.beta), pol: [0, 1, 2].find(p => polQ(p) === q),
+    from: i, pattern: q === 0 ? 1 : 2, axis: [0, 1, 0] });
   recordLine(lam);
-  const delay = (game.clock - game.excitedAt) * 1e9;
-  beginTransition(to, lam);
+  const delay = (game.clock - atom.excitedAt) * 1e9;
+  beginTransition(atom, to, lam, 'decay');
   snapToLight();
-  log(`Fluorescence ${lam.toFixed(1)} nm (${band(lam)}) after ${delay.toFixed(2)} ns (τ = ${d.tau} ns): ${stateName(s)} → ${stateName(to)}`);
+  log(`${atomLabel(i)}fluoresced ${lam.toFixed(1)} nm (${band(lam)}) after ${delay.toFixed(2)} ns (τ = ${d.tau} ns)`);
 }
-
-function matchesTarget(s, t) { return s.n === t.n && s.l === t.l && (t.m === undefined || s.m === t.m); }
 
 function updateCampaign(dt) {
   game.cooldown = Math.max(0, game.cooldown - dt);
   stepTimeScale(dt);
   const dtPhys = game.S * dt;
   game.clock += dtPhys;
-  const step = C * dtPhys / (game.bohr * A0_M);   // world units travelled at c this frame
+  const step = C * dtPhys / A0_M;   // Bohr radii travelled at c this frame
+  const rHit = R_HIT * game.bohr;
+  // Laser packets: straight lines; test each atom as the packet passes its point of closest approach.
   for (const ph of game.photons) {
-    const before = v3.dot(ph.pos, ph.dir);
+    const pos0 = [...ph.pos];
     for (let k = 0; k < 3; k++) ph.pos[k] += ph.dir[k] * step;
-    if (!ph.done && before < 0 && before + step >= 0) {
-      const closest = v3.sub(ph.pos, v3.scale(ph.dir, before + step));
-      if (v3.len(closest) < R_HIT) photonArrives(ph); else ph.done = true;
+    for (let i = 0; i < game.atoms.length && !ph.dead; i++) {
+      if (ph.passed.has(i)) continue;
+      const a = game.atoms[i], before = v3.dot(v3.sub(pos0, a.pos), ph.dir);
+      if (!(before < 0 && before + step >= 0)) continue;
+      ph.passed.add(i);
+      if (v3.len(v3.sub(v3.sub(pos0, a.pos), v3.scale(ph.dir, before))) > rHit) continue;
+      const res = interact(i, ph, couplingFor(ph.dir, ph.pol), 1);
+      if (res === 'absorbed' || res === 'ionized') ph.dead = true;
+      else if (res === 'stimulated') spawnPacket(v3.add(a.pos, v3.scale(ph.dir, 0.5)), ph.dir, ph.lam, ph.lamSeen, ph.pol, i);
+      else if (res === 'scattered') {
+        // An atom isn't a mirror: the light shakes the electron, which re-radiates as a dipole wave
+        // in all directions at once (dark along the field it was shaken by).
+        ph.dead = true;
+        let e1 = v3.sub([0, 1, 0], v3.scale(ph.dir, ph.dir[1])); e1 = v3.len(e1) < 0.05 ? v3.cross(ph.dir, [1, 0, 0]) : e1;
+        spawnFront({ center: a.pos, lam: ph.lam, lamSeen: ph.lamSeen, pol: ph.pol, from: i,
+          pattern: ph.pol === 0 ? 1 : 2, axis: ph.pol === 0 ? v3.norm(e1) : ph.dir });
+        log(`${atomLabel(i)}scattered ${ph.lam.toFixed(1)} nm elastically: re-radiated in all directions within ~1 fs`);
+      } else ph.dim = 0.35;   // passed through: fade so it doesn't read as a bounce
     }
     ph.life += dt;
   }
-  game.photons = game.photons.filter(p => !p.dead && v3.len(p.pos) < 8 && p.life < 6);
-  if (game.trans) {
-    // Never let one transition take more than ~6 screen seconds, even in the slowest view.
-    const eff = Math.max(dtPhys, dt * game.trans.dur / 6);
-    game.trans.t += eff; game.beatPhase += 2 * Math.PI * game.trans.freq * eff;
-    if (game.trans.t >= game.trans.dur) {
-      game.atom = game.trans.to; game.descA = game.descB; game.descB = null; game.trans = null; game.excitedAt = game.clock;
+  game.photons = game.photons.filter(p => !p.dead && v3.len(p.pos) < 10 * game.bohr && p.life < 8);
+  // Wavefronts: when the front sweeps over an atom, that atom gets one chance to take the whole photon.
+  for (const fr of game.fronts) {
+    fr.R += step;
+    for (let i = 0; i < game.atoms.length && !fr.dead; i++) {
+      if (fr.tested.has(i)) continue;
+      const a = game.atoms[i], rel = v3.sub(a.pos, fr.center), dist = v3.len(rel);
+      if (dist > fr.R) continue;
+      fr.tested.add(i);
+      const n = v3.scale(rel, 1 / dist);
+      let capture;
+      if (fr.cosA > -1) {
+        if (v3.dot(n, fr.dir) < fr.cosA) continue;
+        const cap = 2 * Math.PI * dist * dist * (1 - fr.cosA);   // area of the wavefront when it arrives
+        capture = Math.min(1, Math.PI * rHit * rHit / cap);
+      } else {
+        // An atom's resonant cross-section (~λ²/2π) dwarfs the wavefront area at these distances.
+        const ax = v3.dot(n, fr.axis);
+        capture = 0.9 * (fr.pattern === 1 ? 1 - ax * ax : 0.5 * (1 + ax * ax));
+      }
+      const res = interact(i, { ...fr, dir: n }, fr.cosA > -1 ? couplingFor(n, fr.pol) : 1, capture);
+      if (res === 'absorbed' || res === 'ionized') {
+        fr.dead = true;
+        if (fr.cosA <= -1) log('The whole spreading wave vanished at once: one photon, absorbed in one place');
+      } else if (res === 'stimulated') spawnFront({ ...fr, tested: new Set(fr.tested), col: undefined });
     }
+    fr.life += dt;
   }
-  if (game.ionized) game.fade = Math.max(0, game.fade - dt * 0.8);
-  spontaneousDecay(dtPhys);
-  const L = LEVELS[game.level];
-  if (!game.won && !game.trans && !game.ionized && matchesTarget(game.atom, L.target)) {
+  game.fronts = game.fronts.filter(f => !f.dead && f.R < 14 * game.bohr);
+  for (const fl of game.flashes) fl.t += dt;
+  game.flashes = game.flashes.filter(f => f.t < (f.big ? 1.2 : 0.6));
+
+  game.atoms.forEach((atom, i) => {
+    if (atom.trans) {
+      // Never let one transition take more than ~6 screen seconds, even in the slowest view.
+      const eff = Math.max(dtPhys, dt * atom.trans.dur / 6);
+      atom.trans.t += eff; atom.beat += 2 * Math.PI * atom.trans.freq * eff;
+      if (atom.trans.t >= atom.trans.dur) {
+        if (atom.trans.by !== 'decay') atom.by = atom.trans.by;
+        atom.st = atom.trans.to; atom.descA = atom.descB; atom.descB = null; atom.trans = null; atom.excitedAt = game.clock;
+      }
+    }
+    if (atom.ionized) atom.fade = Math.max(0, atom.fade - dt * 0.8);
+    spontaneousDecay(i, dtPhys);
+  });
+
+  const L = LEVELS[game.level], t = L.target, ta = game.atoms[t.atom || 0];
+  const ok = !ta.trans && !ta.ionized && ta.st.n === t.n && ta.st.l === t.l && (t.m === undefined || ta.st.m === t.m) && (!t.relay || ta.by === 'atom');
+  if (!game.won && ok) {
     game.hold += dtPhys;
     if (game.hold * 1e9 >= L.hold) {
       game.won = true;
       document.getElementById('winTitle').textContent = L.title;
-      document.getElementById('winText').textContent = `Electron held in ${stateName(game.atom)} for ${L.hold} ns. ${game.lines.length} spectral lines logged so far.`;
+      document.getElementById('winText').textContent = `${t.atom ? `Atom ${ATOM_NAMES[t.atom]}` : 'Electron'} reached ${stateName(ta.st)}. ${game.lines.length} spectral lines logged so far.`;
       document.getElementById('nextBtn').hidden = game.level >= LEVELS.length - 1;
       document.getElementById('winBox').hidden = false;
     }
   } else if (!game.won) game.hold = 0;
-  const fromN = game.trans ? Math.max(game.trans.from.n, game.trans.to.n) : game.atom.n;
-  game.bohr += (extentBohr(fromN, 1) - game.bohr) * Math.min(1, dt * 3);
+  let maxN = 1;
+  for (const a of game.atoms) maxN = Math.max(maxN, a.st.n, a.trans ? a.trans.to.n : 0);
+  game.bohr += (extentBohr(maxN, 1) - game.bohr) * Math.min(1, dt * 3);
 }
 
 // ===================================================================
@@ -820,23 +958,61 @@ function updateCampaign(dt) {
 // ===================================================================
 const drawnWavelength = lam => 0.035 + 0.11 * Math.log(lam / LMIN) / Math.log(LMAX / LMIN);
 function waveVerts(ph, out) {
-  const lw = drawnWavelength(ph.lambda), L = 6 * lw, N = 72, A = 0.07, d = ph.dir, q = polQ(ph.pol);
+  const lw = drawnWavelength(ph.lamSeen), L = PACKET_CYCLES * lw, N = PACKET_CYCLES * 12, A = 0.07, d = ph.dir, q = polQ(ph.pol);
   let e1 = v3.sub([0, 1, 0], v3.scale(d, d[1]));                // linear π light: E along the quantization axis
   if (v3.len(e1) < 0.05) e1 = v3.cross(d, [1, 0, 0]);
   e1 = v3.norm(e1); const e2 = v3.cross(d, e1);
-  const [cr, cg, cb] = ph.col, fade = Math.min(1, ph.life * 6);
-  const seg = (a, b, r, g, bl, al) => out.push(...a, r, g, bl, al, ...b, r, g, bl, al);
+  const k = Math.min(1, ph.life * 6) * ph.dim, [cr, cg, cb] = ph.col.map(c => c * k);
+  const pos = v3.scale(ph.pos, 1 / game.bohr);
+  const seg = (a, b, r, g, bl) => out.push(...a, r, g, bl, 1, ...b, r, g, bl, 1);
   let prevE = null, prevB = null;
   for (let i = 0; i <= N; i++) {
-    const s = -L / 2 + L * i / N, env = Math.cos(Math.PI * s / L) ** 2 * A, ph0 = 2 * Math.PI * s / lw;
+    const s = -L / 2 + L * i / N, env = Math.cos(Math.PI * s / L) ** 2 * A, ph0 = 2 * Math.PI * s / lw;   // faded ends
     const Ev = q === 0 ? v3.scale(e1, Math.cos(ph0) * env) : v3.add(v3.scale(e1, Math.cos(ph0) * env), v3.scale(e2, q * Math.sin(ph0) * env));
     const Bv = v3.scale(v3.cross(d, Ev), 0.8);
-    const base = v3.add(ph.pos, v3.scale(d, s)), pe = v3.add(base, Ev), pb = v3.add(base, Bv);
-    if (prevE) { seg(prevE, pe, cr, cg, cb, fade); seg(prevB, pb, 0.35 * fade, 0.4 * fade, 0.5 * fade, fade); }
-    if (i % 3 === 0) seg(base, pe, cr * 0.35 * fade, cg * 0.35 * fade, cb * 0.35 * fade, fade);
+    const base = v3.add(pos, v3.scale(d, s)), pe = v3.add(base, Ev), pb = v3.add(base, Bv);
+    if (prevE) { seg(prevE, pe, cr, cg, cb); seg(prevB, pb, 0.35 * k, 0.4 * k, 0.5 * k); }
+    if (i % 3 === 0) seg(base, pe, cr * 0.35, cg * 0.35, cb * 0.35);
     prevE = pe; prevB = pb;
   }
-  seg(v3.add(ph.pos, v3.scale(d, -L / 2)), v3.add(ph.pos, v3.scale(d, L / 2)), 0.12 * fade, 0.12 * fade, 0.14 * fade, fade);
+  seg(v3.add(pos, v3.scale(d, -L / 2)), v3.add(pos, v3.scale(d, L / 2)), 0.12 * k, 0.12 * k, 0.14 * k);
+}
+// Spreading photon: four crests of the wavefront (a cut with faded ends). A lamp's cone is drawn as arcs
+// across its cap; an atom's emission as rings around its axis, brightest where the dipole radiates most.
+function frontVerts(F, out) {
+  const kw = 1 / game.bohr, c = v3.scale(F.center, kw), R0 = F.R * kw, lw = drawnWavelength(F.lamSeen) * 1.2;
+  const fade = Math.min(1, F.life * 5) * 1.6 / (1 + R0 * 0.3), [cr, cg, cb] = F.col;
+  const seg = (a, b, w) => out.push(...a, cr * w, cg * w, cb * w, 1, ...b, cr * w, cg * w, cb * w, 1);
+  const basis = ax => { const a = v3.norm(v3.cross(ax, Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])); return [a, v3.cross(ax, a)]; };
+  for (let j = 0; j < 4; j++) {
+    const R = R0 - j * lw;
+    if (R <= 0.02) break;
+    const cut = (j === 0 || j === 3 ? 0.4 : 1) * fade;
+    if (F.cosA > -1) {
+      // ripples across the cap: rings from behind, arcs from the side
+      const alpha = Math.acos(F.cosA), [a, b] = basis(F.dir), N = 36;
+      for (let ring = 1; ring <= 4; ring++) {
+        const th = alpha * ring / 4, w = cut * (0.25 + 0.75 * Math.cos(th / alpha * Math.PI / 2.4) ** 2);
+        let prev = null;
+        for (let i = 0; i <= N; i++) {
+          const ph = 2 * Math.PI * i / N, p = v3.add(c, v3.scale(v3.add(v3.scale(F.dir, Math.cos(th)), v3.scale(v3.add(v3.scale(a, Math.cos(ph)), v3.scale(b, Math.sin(ph))), Math.sin(th))), R));
+          if (prev) seg(prev, p, w);
+          prev = p;
+        }
+      }
+    } else {
+      const [a, b] = basis(F.axis), N = 40;
+      for (let ring = 1; ring < 12; ring++) {
+        const th = ring * Math.PI / 12, ax = Math.cos(th), w = F.pattern === 1 ? 1 - ax * ax : 0.5 * (1 + ax * ax);
+        let prev = null;
+        for (let i = 0; i <= N; i++) {
+          const ph = 2 * Math.PI * i / N, p = v3.add(c, v3.scale(v3.add(v3.scale(F.axis, ax), v3.add(v3.scale(a, Math.sin(th) * Math.cos(ph)), v3.scale(b, Math.sin(th) * Math.sin(ph)))), R));
+          if (prev) seg(prev, p, cut * w * 0.6);
+          prev = p;
+        }
+      }
+    }
+  }
 }
 
 // ===================================================================
@@ -896,11 +1072,12 @@ function labFillOrbitals() {
   sel.value = lab.orb; mix.value = lab.mix;
 }
 
+
 // ===================================================================
 // HUD instruments
 // ===================================================================
 const grot = document.getElementById('grotrian'), gctx = grot.getContext('2d');
-function drawGrotrian() {
+function drawGrotrian(atom, lamAtom, bw) {
   const W = grot.width, H = grot.height, c = gctx; c.clearRect(0, 0, W, H);
   const top = 44, y = n => top + (H - top - 26) / n;   // y ∝ √|E|, ionization limit at the top
   const x = l => 70 + l * 95;
@@ -908,22 +1085,22 @@ function drawGrotrian() {
   for (let l = 0; l < NMAX; l++) { c.fillStyle = '#7a8ea3'; c.textAlign = 'center'; c.fillText(L_NAMES[l], x(l), 14); }
   const ion = top - 4;
   c.strokeStyle = 'rgba(239,45,94,.5)'; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(20, ion + 4); c.lineTo(W - 10, ion + 4); c.stroke(); c.setLineDash([]);
-  const t = LEVELS[game.level].target;
+  const t = LEVELS[game.level].target, isTargetAtom = game.atoms[t.atom || 0] === atom;
   for (let n = 1; n <= NMAX; n++) {
     c.fillStyle = '#7a8ea3'; c.textAlign = 'left'; c.fillText(String(n), 4, y(n));
     for (let l = 0; l < n; l++) {
-      const isCur = !game.ionized && game.atom.n === n && game.atom.l === l;
+      const isCur = !atom.ionized && atom.st.n === n && atom.st.l === l;
       c.lineWidth = isCur ? 5 : 3;
       c.strokeStyle = isCur ? '#02e8f4' : 'rgba(214,226,238,.45)';
       c.beginPath(); c.moveTo(x(l) - 32, y(n)); c.lineTo(x(l) + 32, y(n)); c.stroke();
-      if (t.n === n && t.l === l) { c.strokeStyle = '#ffc65c'; c.lineWidth = 2; c.setLineDash([4, 4]); c.strokeRect(x(l) - 38, y(n) - 12, 76, 24); c.setLineDash([]); }
+      if (isTargetAtom && t.n === n && t.l === l) { c.strokeStyle = '#ffc65c'; c.lineWidth = 2; c.setLineDash([4, 4]); c.strokeRect(x(l) - 38, y(n) - 12, 76, 24); c.setLineDash([]); }
     }
   }
-  if (!game.ionized) {
-    const s = game.atom;
+  if (!atom.ionized) {
+    const s = atom.st;
     c.fillStyle = '#02e8f4'; c.textAlign = 'center';
     c.fillText(s.l ? `m=${sgn(s.m)}` : '', x(s.l), y(s.n) + 22);
-    for (const r of resonances(s, game.lambda, game.pol)) {
+    for (const r of resonances(s, lamAtom, game.pol, bw)) {
       c.globalAlpha = 0.3 + 0.7 * r.L;
       c.strokeStyle = '#5cf29a'; c.lineWidth = 1 + 4 * r.f / (r.f + 0.1); c.beginPath(); c.moveTo(x(s.l), y(s.n)); c.lineTo(x(r.l), y(r.n)); c.stroke();
       c.beginPath(); c.arc(x(r.l), y(r.n), 6, 0, Math.PI * 2); c.fillStyle = '#5cf29a'; c.fill();
@@ -937,67 +1114,104 @@ const spec = document.getElementById('spectro'), sctx = spec.getContext('2d');
 const LMIN = 80, LMAX = 2000;
 const lx = (lam, W) => (Math.log(lam / LMIN) / Math.log(LMAX / LMIN)) * W;
 const xl = (x, W) => LMIN * Math.pow(LMAX / LMIN, Math.min(1, Math.max(0, x / W)));
-function drawSpectro() {
+function drawSpectro(atom) {
   const W = spec.width, H = spec.height, c = sctx; c.clearRect(0, 0, W, H);
   c.fillStyle = 'rgba(255,255,255,.04)'; c.fillRect(0, 0, W, H);
   for (let x = Math.floor(lx(380, W)); x < lx(750, W); x++) {
     const [r, g, b] = lambdaRGB(xl(x, W)); c.fillStyle = `rgba(${r * 255 | 0},${g * 255 | 0},${b * 255 | 0},.28)`; c.fillRect(x, 0, 1, H);
   }
-  if (!game.ionized) { const li = HC / -levelE(game.atom.n); c.fillStyle = 'rgba(239,45,94,.16)'; c.fillRect(0, 0, lx(li, W), H); }
+  if (!atom.ionized) { const li = HC / -levelE(atom.st.n); c.fillStyle = 'rgba(239,45,94,.16)'; c.fillRect(0, 0, lx(li, W), H); }
   c.font = '500 20px "IBM Plex Mono", monospace'; c.textBaseline = 'top';
   c.fillStyle = '#7a8ea3';
   for (const t of [100, 200, 500, 1000, 2000]) { const x = lx(t, W); c.fillRect(x, H - 10, 2, 10); c.textAlign = t === 2000 ? 'right' : 'center'; c.fillText(`${t}`, Math.min(x, W - 2), H - 32); }
   c.textAlign = 'left'; c.fillText('UV', 8, 6); c.textAlign = 'right'; c.fillText('IR', W - 8, 6); c.textAlign = 'center'; c.fillText('visible', lx(530, W), 6);
-  for (const lam of game.lines) {
+  for (const lam of game.lines) {   // lines as the atom emits them (rest frame)
     const x = lx(lam, W), [r, g, b] = lambdaRGB(lam);
     c.fillStyle = `rgb(${r * 255 | 0},${g * 255 | 0},${b * 255 | 0})`; c.fillRect(x - 1.5, 30, 3, H - 66);
     c.fillText(lam.toFixed(1), x, H - 58);
   }
-  const x = lx(game.lambda, W);
-  if (game.beam === 'lamp') { c.fillStyle = 'rgba(255,255,255,.18)'; const w = lx(game.lambda * (1 + 2 * LAMP.spread), W) - x; c.fillRect(x - w, 0, 2 * w, H); }
+  const x = lx(game.lambda, W), xa = lx(game.lambda * dopplerFactor(game.beta), W);
+  if (game.beam === 'lamp') { c.fillStyle = 'rgba(255,255,255,.18)'; const w = lx(game.lambda * (1 + 2 * LAMP.width), W) - x; c.fillRect(xa - w, 0, 2 * w, H); }
+  if (Math.abs(game.beta) > 1e-4) { c.fillStyle = '#02e8f4'; c.fillRect(xa - 2, 0, 4, H); }
   c.fillStyle = '#fff'; c.fillRect(x - 2, 0, 4, H);
 }
-function setLambda(l) { game.lambda = Math.min(LMAX, Math.max(LMIN, l)); }
+const gunLocked = () => game.mode === 'campaign' && LEVELS[game.level].lockLambda;
+function setLambda(l) {
+  if (gunLocked()) { log('This gun is jammed at 125.0 nm. Change your speed instead.', 'warn'); return; }
+  game.lambda = Math.min(LMAX, Math.max(LMIN, l));
+}
 let specDrag = false;
-const specAt = e => { const r = spec.getBoundingClientRect(); setLambda(xl((e.clientX - r.left) / r.width * spec.width, spec.width)); };
+// Dragging is coarse (about 1% per pixel on a phone), so it snaps onto lines you have already seen.
+const specAt = e => {
+  const r = spec.getBoundingClientRect(), dop = dopplerFactor(game.beta);
+  let lam = xl((e.clientX - r.left) / r.width * spec.width, spec.width);
+  for (const line of game.lines) if (Math.abs(lam * dop - line) / line < 0.012) lam = line / dop;
+  setLambda(lam);
+};
 spec.addEventListener('pointerdown', e => { specDrag = true; spec.setPointerCapture(e.pointerId); specAt(e); });
 spec.addEventListener('pointermove', e => { if (specDrag) specAt(e); });
 spec.addEventListener('pointerup', () => { specDrag = false; });
+// Fine tuning: 0.1% per step; hold to repeat and speed up.
+let tuneTimer = null;
+function startTune(dir) {
+  let n = 0;
+  const stepOnce = () => { setLambda(game.lambda * (1 + dir * (n > 15 ? 0.004 : 0.001))); n++; tuneTimer = setTimeout(stepOnce, n === 1 ? 350 : 70); };
+  stepOnce();
+}
+const stopTune = () => { clearTimeout(tuneTimer); tuneTimer = null; };
+for (const [id, dir] of [['tuneDown', -1], ['tuneUp', 1]]) {
+  const b = document.getElementById(id);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); startTune(dir); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stopTune);
+}
+const betaIn = document.getElementById('beta');
+betaIn.addEventListener('input', () => { game.beta = Number(betaIn.value); });
 
 let lastHud = '';
-function updateHud() {
-  const s = game.atom, { d } = aimRay();
-  const res = game.ionized ? [] : resonances(s, game.lambda, game.pol), eOnly = !game.ionized && energyMatches(s, game.lambda);
-  const coupling = couplingFor(d, game.pol), pIon = game.ionized ? 0 : ionChance(s, game.lambda);
+function updateHud(ai) {
+  const atom = game.atoms[ai], s = atom.st, { d } = aimRay();
+  const dop = dopplerFactor(game.beta), lamA = game.lambda * dop, bw = game.beam === 'lamp' ? LAMP.width : 0;
+  const res = atom.ionized ? [] : resonances(s, lamA, game.pol, bw), eOnly = !atom.ionized && energyMatches(s, lamA, bw);
+  const coupling = couplingFor(d, game.pol), pIon = atom.ionized ? 0 : ionChance(s, lamA);
   const L = LEVELS[game.level];
-  document.getElementById('holdBar').style.width = `${Math.min(1, game.hold * 1e9 / L.hold) * 100}%`;
+  document.getElementById('holdBar').style.width = `${L.hold ? Math.min(1, game.hold * 1e9 / L.hold) * 100 : (game.won ? 100 : 0)}%`;
   document.getElementById('clockOut').textContent = `1 s = ${fmtTime(game.S)}`;
   document.getElementById('clockT').textContent = `· t = ${(game.clock * 1e9).toFixed(3)} ns`;
-  const key = [game.lambda.toFixed(2), game.pol, game.beam, res.length, eOnly, pIon.toFixed(2), coupling.toFixed(2), JSON.stringify(s), game.ionized, !!game.trans, game.lines.length, game.bohr.toFixed(1)].join('|');
+  const key = [ai, game.lambda.toFixed(3), game.pol, game.beam, game.beta, res.length, eOnly, pIon.toFixed(2), coupling.toFixed(2), JSON.stringify(s), atom.ionized, !!atom.trans, game.lines.length, game.bohr.toFixed(1)].join('|');
   if (key === lastHud) return; lastHud = key;
   const E = HC / game.lambda, k = game.lambda * 1e-9 / (drawnWavelength(game.lambda) * game.bohr * A0_M);
-  document.getElementById('lambdaOut').textContent = `${game.lambda.toFixed(1)} nm · ${E.toFixed(3)} eV · ${band(game.lambda)}`;
+  document.getElementById('lambdaOut').textContent = `${game.lambda.toFixed(1)} nm · ${E.toFixed(3)} eV · ${band(game.lambda)}` +
+    (Math.abs(game.beta) > 1e-4 ? ` · atom sees ${lamA.toFixed(1)} nm` : '');
   const lo = document.getElementById('lockOut'), li = document.getElementById('lineInfo');
-  if (res.length) {
-    const best = res.reduce((a, c) => (hitChance(c, coupling) > hitChance(a, coupling) ? c : a));
-    lo.textContent = `◆ LOCK ${stateName(s)}→${best.n}${L_NAMES[best.l]} · f ${best.f} · hit ${(Math.min(0.97, hitChance(best, coupling)) * 100).toFixed(0)}%`;
+  const who = game.atoms.length > 1 ? `${ATOM_NAMES[ai]} ` : '';
+  const best = res.length ? res.reduce((a, c) => (hitChance(c, coupling) > hitChance(a, coupling) ? c : a)) : null;
+  const locked = best && hitChance(best, coupling) >= 0.15;
+  if (locked) {
+    lo.textContent = `◆ LOCK ${who}${stateName(s)}→${best.n}${L_NAMES[best.l]} · f ${best.f} · hit ${(Math.min(0.97, hitChance(best, coupling)) * 100).toFixed(0)}%`;
     const upper = best.up ? best : s, nat = naturalWidthNm(best.line, upper);
-    li.textContent = nat ? `Real line width ${nat.toExponential(1)} nm; drawn ${(2 * GAME_WIDTH * best.line / nat).toExponential(0)}× wider so you can hit it` : '';
+    li.textContent = nat ? `Real line width ${nat.toExponential(1)} nm, set by the ${upper.n}${L_NAMES[upper.l]} lifetime; drawn ${(2 * GAME_WIDTH * best.line / nat).toExponential(0)}× wider so you can hit it` : '';
   } else {
-    lo.textContent = eOnly ? `◇ right energy, ${polName(game.pol)} not allowed` : pIon ? `▲ ionizes ${(pIon * 100).toFixed(0)}% of hits` : '';
+    const nl = atom.ionized ? null : nearestLine(s, lamA);
+    lo.textContent = best ? `◇ close to ${stateName(s)}→${best.n}${L_NAMES[best.l]}: keep tuning (hit ${(hitChance(best, coupling) * 100).toFixed(0)}%)`
+      : eOnly ? `◇ right energy, ${polName(game.pol)} not allowed` : pIon ? `▲ ionizes ${(pIon * 100).toFixed(0)}% of hits`
+      : nl && Math.abs(nl.off) < 0.06 ? `◇ ${(Math.abs(nl.off) * 100).toFixed(1)}% from ${stateName(s)}→n=${nl.n} (${nl.line.toFixed(1)} nm): tune ${nl.off > 0 ? 'shorter ◀' : 'longer ▶'}` : '';
     li.textContent = pIon ? 'Above the binding energy: ionization is likeliest just past threshold and falls off as 1/E³' : '';
   }
-  lo.className = 'data ' + (res.length ? 'lock' : pIon || eOnly ? 'warn' : '');
+  lo.className = 'data ' + (locked ? 'lock' : pIon || eOnly ? 'warn' : '');
   document.getElementById('waveInfo').textContent = `wave drawn ${Math.round(k).toLocaleString()}× shorter than real`;
+  document.getElementById('betaOut').textContent = `${game.beta >= 0 ? '+' : '−'}${Math.abs(game.beta).toFixed(4)} c (${Math.round(Math.abs(game.beta) * C / 1000).toLocaleString()} km/s ${game.beta >= 0 ? 'toward' : 'away'}) · light still measured at c`;
   const ang = Math.acos(Math.min(1, Math.abs(d[1]))) * 180 / Math.PI;
   document.getElementById('couplingOut').textContent = `${(coupling * 100).toFixed(0)}% (${polName(game.pol)}, ${ang.toFixed(0)}° from axis)`;
   document.querySelectorAll('[data-pol]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.pol) === game.pol)));
   document.querySelectorAll('[data-beam]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.beam === game.beam)));
-  document.getElementById('stateMini').textContent = game.ionized ? 'Ionized · press Restart' : `State: ${game.trans ? `${stateName(game.trans.from)} ⇢ ${stateName(game.trans.to)}` : stateName(s)}`;
-  if (game.ionized) { document.getElementById('stateOut').textContent = 'H⁺ + free e⁻'; document.getElementById('stateDetail').textContent = 'Atom ionized. Press R to restart.'; }
+  for (const id of ['tuneDown', 'tuneUp']) document.getElementById(id).disabled = !!gunLocked();
+  const name = atom.trans ? `${stateName(atom.trans.from)} ⇢ ${stateName(atom.trans.to)}` : stateName(s);
+  document.getElementById('stateMini').textContent = atom.ionized ? 'Ionized · press Restart' : `${who ? `Atom ${who}` : 'State: '}${name}`;
+  document.getElementById('stateLabel').textContent = who ? `Atom ${who}state` : 'Electron state';
+  if (atom.ionized) { document.getElementById('stateOut').textContent = 'H⁺ + free e⁻'; document.getElementById('stateDetail').textContent = 'Atom ionized. Press R to restart.'; }
   else {
     const dd = DECAY[`${s.n},${s.l}`];
-    document.getElementById('stateOut').textContent = (game.trans ? `${stateName(game.trans.from)} ⇢ ${stateName(game.trans.to)}` : stateName(s));
+    document.getElementById('stateOut').textContent = name;
     document.getElementById('stateDetail').textContent = `E = ${levelE(s.n).toFixed(3)} eV · τ = ${!dd ? 'stable' : isFinite(dd.tau) ? `${dd.tau} ns` : 'metastable (0.12 s)'}`;
   }
 }
@@ -1028,7 +1242,7 @@ function updateCrosshair() {
   if (!aim.set) { aim.x = canvas.clientWidth / 2; aim.y = view.cy; }
   crosshair.style.transform = `translate(${aim.x}px, ${aim.y}px)`;
   const { o, d } = aimRay();
-  crosshair.classList.toggle('on', missDistance(o, d) < R_HIT);
+  crosshair.classList.toggle('on', game.atoms.some(a => missDistance(o, d, atomWorld(a)) < R_HIT));
 }
 
 // ===================================================================
@@ -1069,14 +1283,15 @@ const endPointer = e => {
 };
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('wheel', e => { cam.dist = Math.max(1.6, Math.min(6, cam.dist * Math.exp(e.deltaY * 0.001))); e.preventDefault(); }, { passive: false });
+canvas.addEventListener('wheel', e => { cam.dist = Math.max(1.6, Math.min(8, cam.dist * Math.exp(e.deltaY * 0.001))); e.preventDefault(); }, { passive: false });
 const keys = new Set();
 addEventListener('keydown', e => {
   if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
   keys.add(e.code);
-  const k = e.shiftKey ? 0.02 : 0.002;
+  const k = e.shiftKey ? 0.02 : 0.001;
   if (e.code === 'KeyQ') setLambda(game.lambda * (1 - k));
   if (e.code === 'KeyE') setLambda(game.lambda * (1 + k));
+  if (e.code === 'KeyZ' || e.code === 'KeyX') { game.beta = Math.max(-0.3, Math.min(0.3, game.beta + (e.code === 'KeyX' ? 1 : -1) * (e.shiftKey ? 0.01 : 0.0005))); betaIn.value = String(game.beta); }
   if (e.code === 'Digit1') game.pol = 0; if (e.code === 'Digit2') game.pol = 1; if (e.code === 'Digit3') game.pol = 2;
   if (e.code === 'KeyL') game.beam = game.beam === 'laser' ? 'lamp' : 'laser';
   if (e.code === 'KeyC') aim.set = false;
@@ -1119,12 +1334,29 @@ document.getElementById('quality').addEventListener('change', e => { quality = N
 // ===================================================================
 // Main loop
 // ===================================================================
+const MAXA = 3;
+const AU = {   // per-atom uniform staging
+  ap: new Float32Array(9), ar: new Float32Array(3), as: new Float32Array(3),
+  qa: new Int32Array(9), ma: new Int32Array(3), na: new Float32Array(3), za: new Float32Array(3), ca: new Float32Array(6),
+  qb: new Int32Array(9), mb: new Int32Array(3), nb: new Float32Array(3), zb: new Float32Array(3), cb: new Float32Array(6),
+  inv: new Float32Array(3), iso: new Float32Array(3), fade: new Float32Array(3),
+};
+function stageAtom(i, pos, scale, radius, dA, cA, dB, cB, invMax, iso, fade) {
+  AU.ap.set(pos, i * 3); AU.ar[i] = radius; AU.as[i] = scale;
+  AU.qa.set([dA.n, dA.l, dA.m], i * 3); AU.ma[i] = dA.mode; AU.na[i] = dA.norm; AU.za[i] = dA.Z; AU.ca.set(cA, i * 2);
+  AU.qb.set([dB.n, dB.l, dB.m], i * 3); AU.mb[i] = dB.mode; AU.nb[i] = dB.norm; AU.zb[i] = dB.Z; AU.cb.set(cB, i * 2);
+  AU.inv[i] = invMax; AU.iso[i] = iso; AU.fade[i] = fade;
+}
+function uploadAtoms(n) {
+  gl.uniform1i(U.uNA, n);
+  gl.uniform3fv(U.uAP, AU.ap); gl.uniform1fv(U.uAR, AU.ar); gl.uniform1fv(U.uAS, AU.as);
+  gl.uniform3iv(U.uQA, AU.qa); gl.uniform1iv(U.uModeA, AU.ma); gl.uniform1fv(U.uNormA, AU.na); gl.uniform1fv(U.uZA, AU.za); gl.uniform2fv(U.uCA, AU.ca);
+  gl.uniform3iv(U.uQB, AU.qb); gl.uniform1iv(U.uModeB, AU.mb); gl.uniform1fv(U.uNormB, AU.nb); gl.uniform1fv(U.uZB, AU.zb); gl.uniform2fv(U.uCB, AU.cb);
+  gl.uniform1fv(U.uInvMax, AU.inv); gl.uniform1fv(U.uIso, AU.iso); gl.uniform1fv(U.uFade, AU.fade);
+}
 const phBuf = new Float32Array(64), phCol = new Float32Array(48);
 let last = performance.now(), slowFrames = 0;
-function setWave(prefix, d, coef) {
-  gl.uniform3i(U[`uQ${prefix}`], d.n, d.l, d.m); gl.uniform1i(U[`uMode${prefix}`], d.mode);
-  gl.uniform1f(U[`uNorm${prefix}`], d.norm); gl.uniform1f(U[`uZ${prefix}`], d.Z); gl.uniform2f(U[`uC${prefix}`], coef[0], coef[1]);
-}
+
 function frame(now) {
   const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now; game.time += dt;
   if (dt > 0.034) slowFrames++; else slowFrames = Math.max(0, slowFrames - 1);
@@ -1137,7 +1369,11 @@ function frame(now) {
 
   view = viewRegion();
   updateCrosshair();
-  if (game.mode === 'campaign') { updateCampaign(dt); updateHud(); drawGrotrian(); drawSpectro(); }
+  if (game.mode === 'campaign') {
+    updateCampaign(dt);
+    const ai = focusAtom(), lamA = game.lambda * dopplerFactor(game.beta);
+    updateHud(ai); drawGrotrian(game.atoms[ai], lamA, game.beam === 'lamp' ? LAMP.width : 0); drawSpectro(game.atoms[ai]);
+  }
 
   if (gl) {
     const Q = QUALITY[quality], dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1152,53 +1388,60 @@ function frame(now) {
     gl.uniformMatrix3fv(U.uCamRot, false, new Float32Array([...r, ...u, -f[0], -f[1], -f[2]]));
     gl.uniform1f(U.uFovT, Math.tan(cam.fov / 2)); gl.uniform1f(U.uTime, game.time); gl.uniform1i(U.uSteps, Q.steps);
 
-    let bohr;
+    let scaleBohr, nPh = 0;
     if (game.mode === 'campaign') {
-      bohr = game.bohr;
+      scaleBohr = game.bohr;
       gl.uniform1i(U.uView, 0);
-      if (game.trans) {
-        const T = game.trans, x = Math.min(1, T.t / T.dur), s = x * x * (3 - 2 * x), ph = -game.beatPhase;
-        setWave('A', game.descA, [Math.cos(s * Math.PI / 2), 0]);
-        const cb = Math.sin(s * Math.PI / 2);
-        setWave('B', game.descB, [cb * Math.cos(ph), cb * Math.sin(ph)]);
-        const pk = Math.max(game.descA.peak, game.descB.peak);
-        gl.uniform1f(U.uInvMax, 1 / pk);
-        gl.uniform1f(U.uIso, ((1 - s) * game.descA.iso + s * game.descB.iso) / pk);
-      } else {
-        setWave('A', game.descA, [1, 0]); setWave('B', game.descA, [0, 0]);
-        gl.uniform1f(U.uInvMax, 1 / game.descA.peak); gl.uniform1f(U.uIso, game.descA.iso / game.descA.peak);
-      }
-      gl.uniform1f(U.uFade, game.fade * (game.ionized ? 1 + (1 - game.fade) * 2 : 1));
+      game.atoms.forEach((a, i) => {
+        const spread = a.ionized ? 1 + (1 - a.fade) * 2 : 1, sc = game.bohr / spread;
+        const maxN = Math.max(a.st.n, a.trans ? a.trans.to.n : 0), rad = extentBohr(maxN, 1) / sc;
+        if (a.trans) {
+          const T = a.trans, x = Math.min(1, T.t / T.dur), s = x * x * (3 - 2 * x), cb = Math.sin(s * Math.PI / 2);
+          const pk = Math.max(a.descA.peak, a.descB.peak);
+          stageAtom(i, atomWorld(a), sc, rad, a.descA, [Math.cos(s * Math.PI / 2), 0], a.descB, [cb * Math.cos(-a.beat), cb * Math.sin(-a.beat)],
+            1 / pk, ((1 - s) * a.descA.iso + s * a.descB.iso) / pk, a.fade);
+        } else stageAtom(i, atomWorld(a), sc, rad, a.descA, [1, 0], a.descA, [0, 0], 1 / a.descA.peak, a.descA.iso / a.descA.peak, a.fade);
+      });
+      uploadAtoms(game.atoms.length);
       gl.uniform1f(U.uGamma, 0.5); gl.uniform1f(U.uGain, 1.3); gl.uniform1f(U.uAxis, 1);
-      const n = Math.min(16, game.photons.length);
-      for (let i = 0; i < n; i++) { const P = game.photons[i]; phBuf.set([...P.pos, 0.012], i * 4); phCol.set(P.col.map(c => c * 0.8), i * 3); }
-      gl.uniform4fv(U.uPh, phBuf); gl.uniform3fv(U.uPhC, phCol); gl.uniform1i(U.uPhN, n);
-      if (game.ionized) bohr = game.bohr * (1 + (1 - game.fade) * 2);
+      for (const P of game.photons) { if (nPh >= 16) break; phBuf.set([...v3.scale(P.pos, 1 / game.bohr), 0.012], nPh * 4); phCol.set(P.col.map(c => c * 0.8 * P.dim), nPh * 3); nPh++; }
+      for (const F of game.flashes) {   // ker-splash: a quick burst of light where a photon lands
+        if (nPh >= 16) break;
+        const life = F.big ? 1.2 : 0.6, x = F.t / life;
+        phBuf.set([...v3.scale(F.pos, 1 / game.bohr), (F.big ? 0.5 : 0.18) * Math.sqrt(x) + 0.01], nPh * 4);
+        phCol.set(F.col.map(c => c * (1 - x) * (F.big ? 1.6 : 1.1)), nPh * 3); nPh++;
+      }
+      const { f: fw } = camBasis();
+      gl.uniform3f(U.uBeta, fw[0] * game.beta, fw[1] * game.beta, fw[2] * game.beta);
     } else {
-      bohr = lab.bohr;
-      gl.uniform1i(U.uPhN, 0); gl.uniform1f(U.uFade, 1); gl.uniform1f(U.uAxis, 0.6);
+      scaleBohr = lab.bohr;
+      gl.uniform1f(U.uAxis, 0.6); gl.uniform3f(U.uBeta, 0, 0, 0);
+      const rad = 1;
       if (lab.view === 'atom') {
         gl.uniform1i(U.uView, 1);
         const sh = new Float32Array(32); lab.shells.forEach((s, i) => sh.set(s, i * 4));
         gl.uniform4fv(U.uSh, sh); gl.uniform1i(U.uShN, lab.shells.length);
-        gl.uniform1f(U.uInvMax, lab.invMax); gl.uniform1f(U.uIso, 0); gl.uniform1f(U.uGamma, 4.0); gl.uniform1f(U.uGain, 3.0);
+        const dummy = { n: 1, l: 0, m: 0, mode: 0, norm: 1, Z: 1 };
+        stageAtom(0, [0, 0, 0], lab.bohr, rad, dummy, [1, 0], dummy, [0, 0], lab.invMax, 0, 1);
+        gl.uniform1f(U.uGamma, 4.0); gl.uniform1f(U.uGain, 3.0);
       } else {
         gl.uniform1i(U.uView, 0);
         const kk = lab.descB ? Math.SQRT1_2 : 1, ph = -2 * Math.PI * 0.6 * game.time;
-        setWave('A', lab.descA, [kk, 0]);
-        setWave('B', lab.descB || lab.descA, lab.descB ? [kk * Math.cos(ph), kk * Math.sin(ph)] : [0, 0]);
-        gl.uniform1f(U.uInvMax, lab.invMax); gl.uniform1f(U.uIso, lab.iso); gl.uniform1f(U.uGamma, 0.5); gl.uniform1f(U.uGain, 1.3);
+        stageAtom(0, [0, 0, 0], lab.bohr, rad, lab.descA, [kk, 0], lab.descB || lab.descA, lab.descB ? [kk * Math.cos(ph), kk * Math.sin(ph)] : [0, 0], lab.invMax, lab.iso, 1);
+        gl.uniform1f(U.uGamma, 0.5); gl.uniform1f(U.uGain, 1.3);
       }
+      uploadAtoms(1);
     }
-    gl.uniform1f(U.uBohr, bohr);
-    updateScaleBar(bohr);
+    gl.uniform4fv(U.uPh, phBuf); gl.uniform3fv(U.uPhC, phCol); gl.uniform1i(U.uPhN, nPh);
+    updateScaleBar(scaleBohr);
     gl.bindVertexArray(quadVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    // Photon wave packets drawn on top with additive blending.
-    if (game.mode === 'campaign' && game.photons.length) {
+    // Photons drawn on top with additive blending: laser packets and spreading wavefronts.
+    if (game.mode === 'campaign' && (game.photons.length || game.fronts.length)) {
       const verts = [];
       for (const P of game.photons) waveVerts(P, verts);
+      for (const F of game.fronts) frontVerts(F, verts);
       gl.useProgram(lineProg);
       gl.uniform3f(LU.uCamPos, ...p); gl.uniform3f(LU.uR, ...r); gl.uniform3f(LU.uU, ...u); gl.uniform3f(LU.uF, ...f);
       gl.uniform2f(LU.uRes, w, h); gl.uniform2f(LU.uCenter, ...center); gl.uniform1f(LU.uViewH, viewH); gl.uniform1f(LU.uFovT, Math.tan(cam.fov / 2));

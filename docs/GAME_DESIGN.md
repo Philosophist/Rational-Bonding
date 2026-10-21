@@ -214,10 +214,39 @@ scattering, the atom's version of reflection, happens within a femtosecond.
   crest. The drawn wave is compressed to fit, and the HUD shows by how much
   ("wave drawn 5,800× shorter than real"). Wavelength ordering and
   polarization are kept exactly.
-- **Laser or lamp.** Laser: one photon, exact wavelength, perfectly straight.
-  Lamp: a cone of seven photons (4° half-angle) with a ±0.4% spread of
-  wavelengths, like natural light. It is easier to find a line with the lamp
-  but harder to drive a precise transition.
+- **Every photon spreads.** A photon is a wave, and waves diffract, so every
+  beam widens into a cone. A laser's cone is tiny because the beam is many
+  wavelengths wide; an atom's emission goes out in all directions at once.
+- **Laser (narrow wave packet).** One photon with an exact wavelength that
+  travels in a straight line. Drawn as the E/B packet above, nine cycles long
+  with faded ends.
+- **Lamp (spreading wavefront).** One photon whose wavefront opens into an 8°
+  cone, drawn as ripples (rings from behind, arcs from the side) with four
+  crests and faded ends. It has a ±0.3% spread of wavelengths, so it is easier
+  to find a line with but weaker on it. Its chance of landing on an atom
+  shrinks as the wavefront spreads over a bigger area.
+- **Emission (spherical wavefront).** Fluorescence and scattered light leave
+  as rings expanding around the atom. They are brightest where the atom's
+  dipole radiates most: around its waist for Δm = 0, more evenly for Δm = ±1.
+  When the wave reaches another atom, that atom gets one chance to absorb it.
+  If it does, the whole wave vanishes at once, because one photon is absorbed
+  in one place.
+
+### Reflection is not a billiard bounce
+
+A single atom does not reflect light like a mirror or a billiard ball. The
+light shakes the electron cloud, and the shaken cloud re-radiates a fresh
+wave in all directions (Rayleigh scattering), dark along the direction it was
+shaken. Mirror-like reflection only appears when billions of atoms in a
+surface re-radiate together and their waves add up in one direction.
+Billiard-like recoil does happen for X-rays hitting free electrons (Compton
+scattering), which suits a future high-energy gun.
+
+### Systems of atoms
+
+Levels can hold up to three atoms. Light re-emitted by one atom can be
+absorbed by another, then re-emitted again. This is **radiation trapping**,
+the reason the glow of a dense hydrogen gas escapes slowly.
 
 ## 8b. What decides whether a photon interacts
 
@@ -232,14 +261,24 @@ scattering, the atom's version of reflection, happens within a femtosecond.
 The width of a line is set by the excited state's **lifetime**, not by how
 big the orbital is.
 
-## 8c. Same speed of light for every observer (planned)
+## 8c. Same speed of light for every observer
 
-Relativity becomes visible only when the observer moves fast. The planned
-mechanic: the ship can fly at a large fraction of c. Your photons then reach
-the atom **Doppler-shifted** (flying toward it blue-shifts your gun, so speed
-becomes a way to tune), and the sky shows **aberration**. Every speed readout,
-in your frame and in the atom's, still says c. Lasers in real labs use the same
-effect to cool atoms.
+Relativity only becomes visible when the observer moves fast, so the ship has
+a speed control (up to ±0.3 c, toward or away from the atom).
+
+- **Doppler shift.** The atom sees your light at λ·√((1−β)/(1+β)). Flying
+  toward it blue-shifts your gun, so speed becomes a way to tune. The
+  spectrometer shows both what you fire (white) and what the atom sees (cyan).
+  The atom's own glow reaches you shifted the same way.
+- **Aberration.** The stars crowd toward the direction you fly and turn bluer
+  and brighter; behind you they thin out and redden.
+- **Invariance.** Photons cross the screen at the same speed whatever your
+  speed, and the readout always says c. Speed changes light's colour, never
+  how fast it moves.
+- Level 7, "Doppler Tuner", jams the gun at 125.0 nm. The only way to reach
+  Lyman-α is to fly at about 2.8% of c (8,350 km/s).
+- For playability, the view stays at a fixed distance from the atom while the
+  ship is "moving".
 
 ## 9. Technology
 
@@ -272,6 +311,10 @@ Done:
 - [x] Automatic time dilation (atto- to nanoseconds) with a live real-time clock
 - [x] Oscillator strengths, photoionization cross-section, Rayleigh scattering,
       fluorescence delays
+- [x] Fine tuning (◀ ▶ buttons, snapping to discovered lines, a "how close" meter)
+- [x] Spreading wavefronts for lamp light, fluorescence and scattering
+- [x] Multi-atom levels with radiation trapping (level 6)
+- [x] Relativistic Doppler shift and aberration (level 7)
 - [x] Orbital Lab: elements H–Kr, Slater screening, real/complex basis,
       superpositions, whole-atom shell view
 
@@ -280,6 +323,10 @@ Next:
 - [ ] Ship flight model and hazards (stray photons, other atoms) so the fighter
       part has stakes
 - [ ] Electron gun and electron-impact cross sections
+- [ ] Electric field lines around charges (p⁺, e⁻, ions) that the ship flies through
+- [ ] "Dots" view of the electron cloud: random positions sampled from |ψ|²,
+      showing where measurements would find the electron
+- [ ] Compton scattering gun (X-rays) with billiard-like recoil
 - [ ] Hartree–Fock radial tables for Tier 2 atoms
 - [ ] Two-atom level: H₂ bonding with baked molecular orbitals
 - [ ] Data-provenance format for imported research results
