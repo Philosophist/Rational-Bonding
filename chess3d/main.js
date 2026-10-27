@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
-  initialState, legalMovesFrom, applyMove, replay, resign, findKing,
+  initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 
@@ -380,7 +380,8 @@ async function tryMove(move) {
   let promo;
   if (move.promotion) {
     promo = await askPromotion();
-    if (!promo) return;
+    // The game may have moved on while the dialog was open (resign, rematch, resync).
+    if (!promo || !canAct()) return;
   }
   const next = applyMove(app.game, { from: move.from, to: move.to, promo });
   if (!next) return;
@@ -551,6 +552,7 @@ function gameFromSaved(moves, result) {
 function syncPayload() {
   return {
     type: 'sync',
+    version: RULES_VERSION,
     guestColor: other(app.hostColor),
     moves: app.game.history.map(({ from, to, promo }) => ({ from, to, promo })),
     result: app.game.result,
@@ -620,7 +622,11 @@ function onNetMessage(msg) {
       link.close();
       break;
     case 'sync':
-      if (link.role !== 'guest') break;
+      if (link.role !== 'guest' || !['w', 'b'].includes(msg.guestColor)) break;
+      if (msg.version !== RULES_VERSION) {
+        addChat('system', VERSION_WARNING);
+        link.send({ type: 'version-mismatch' });
+      }
       setMyColor(msg.guestColor);
       {
         const before = g.history.length;
@@ -636,6 +642,9 @@ function onNetMessage(msg) {
       else link.send({ type: 'sync-request' });
       break;
     }
+    case 'version-mismatch':
+      addChat('system', VERSION_WARNING);
+      break;
     case 'sync-request':
       if (link.role === 'host') link.send(syncPayload());
       break;
@@ -651,6 +660,8 @@ function onNetMessage(msg) {
   }
   renderPanel();
 }
+
+const VERSION_WARNING = 'You and your friend are running different versions of the game. Both of you should refresh the page.';
 
 function rematch() {
   app.hostColor = other(app.hostColor);
@@ -735,9 +746,11 @@ function wireUI() {
     } else if (link.role === 'host') {
       if (app.game.history.length && !app.game.result && !confirm('Start a new game? Colours will swap.')) return;
       rematch();
-    } else {
+    } else if (link.connected) {
       link.send({ type: 'rematch-request' });
       addChat('system', 'Asked the host for a new game.');
+    } else {
+      addChat('system', 'Not connected to the host, so a new game can’t be requested yet.');
     }
   };
   $('resign-btn').onclick = () => {
@@ -816,4 +829,4 @@ if (params.get('host')) {
 
 requestAnimationFrame(animate);
 // Debug/test hook.
-window.__chess3d = { app, onSquareClick, idx, setFocus, camera, worldPos };
+window.__chess3d = { app, link, onSquareClick, idx, setFocus, camera, worldPos };

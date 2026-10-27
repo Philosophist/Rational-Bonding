@@ -24,12 +24,13 @@ Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to t
 
 - **Setup:** White's back rank is on the bottom near edge (rank 1, level A), with its pawns one step diagonally toward the enemy (rank 2, level B). Black mirrors this on the opposite edge (rank 8, level H; pawns on rank 7, level G). The pieces keep their usual order, so the kings face each other along the e-file.
 - **Rook:** any distance along one axis (6 directions).
-- **Bishop:** any distance diagonally within a plane (12 directions).
-- **Queen:** any straight line, including the 8 space diagonals (26 directions).
+- **Bishop:** any distance along any diagonal: within a flat plane (including planes that cross levels) or corner to corner through the cube (20 directions). Unlike flat chess, a bishop can change square colour.
+- **Queen:** rook + bishop, so any straight line (26 directions).
 - **King:** one step in any of 26 directions. Castles along its back rank under the normal rules.
 - **Knight:** 2 along one axis and 1 along another (24 jumps).
-- **Pawn:** forward means both up the ranks and up the levels toward the enemy. It moves 1 step (2 on its first move) along either. It captures one forward step plus one file sideways, or one step diagonally forward in both. It promotes on reaching the enemy's back-rank edge.
-- Check, checkmate, stalemate, insufficient material and the 50-move rule all apply. There is no en passant.
+- **Pawn:** forward means both up the ranks and up the levels toward the enemy. It moves straight 1 step (2 on its first move) along either, and can't capture straight ahead. It captures one diagonal step (any bishop direction) that goes forward on at least one of those axes, e.g. forward a rank while dropping a level. So two pawns meeting head-on across levels can take each other instead of just blocking. It promotes on reaching the enemy's back-rank edge.
+- Check, checkmate, stalemate, insufficient material and the 50-move rule all apply.
+- There is deliberately **no en passant**.
 
 ## Development
 ```

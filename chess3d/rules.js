@@ -6,6 +6,9 @@
 // y=7,z=7. Each pawn row sits one step diagonally toward the enemy
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
+// Bump whenever move rules change, so online players on different versions are warned.
+export const RULES_VERSION = 2;
+
 export const N = 8;
 export const SIZE = N * N * N;
 export const FILES = 'abcdefgh';
@@ -27,11 +30,11 @@ for (let dx = -1; dx <= 1; dx++)
       if (dx || dy || dz) ALL_DIRS.push([dx, dy, dz]);
 
 const nonZero = (d) => d.filter((v) => v !== 0).length;
-// Rook: along one axis. Bishop: diagonal across two axes. Queen: any line
-// (axes, planar diagonals and the 8 space diagonals). King: one step any way.
+// Rook: along one axis. Bishop: any diagonal, whether within a plane (two
+// axes change) or corner to corner through the cube (all three change).
+// Queen: rook + bishop. King: one step any way.
 export const ROOK_DIRS = ALL_DIRS.filter((d) => nonZero(d) === 1);
-export const BISHOP_DIRS = ALL_DIRS.filter((d) => nonZero(d) === 2);
-export const TRIAGONAL_DIRS = ALL_DIRS.filter((d) => nonZero(d) === 3);
+export const BISHOP_DIRS = ALL_DIRS.filter((d) => nonZero(d) >= 2);
 export const QUEEN_DIRS = ALL_DIRS;
 export const KING_DIRS = ALL_DIRS;
 
@@ -49,9 +52,11 @@ export const pawnForward = (c) => {
   const s = pawnSign(c);
   return [[0, s, 0], [0, 0, s]];
 };
+// A pawn captures one diagonal step (any bishop direction) that moves it forward
+// on at least one of its forward axes, e.g. forward a rank while dropping a level.
 export const pawnCaptures = (c) => {
   const s = pawnSign(c);
-  return [[1, s, 0], [-1, s, 0], [1, 0, s], [-1, 0, s], [0, s, s]];
+  return BISHOP_DIRS.filter((d) => d[1] === s || d[2] === s);
 };
 const promotionEdge = (c) => (c === 'w' ? N - 1 : 0);
 export const isPromotionSquare = (c, i) => {
@@ -109,7 +114,7 @@ export function isAttacked(board, sq, by) {
     }
     return false;
   };
-  if (ray(ROOK_DIRS, 'RQ') || ray(BISHOP_DIRS, 'BQ') || ray(TRIAGONAL_DIRS, 'Q')) return true;
+  if (ray(ROOK_DIRS, 'RQ') || ray(BISHOP_DIRS, 'BQ')) return true;
   for (const d of KNIGHT_JUMPS) {
     const t = step(sq, d);
     if (t >= 0 && hit(t, 'N')) return true;

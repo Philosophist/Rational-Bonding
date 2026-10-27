@@ -11,6 +11,19 @@ const peerOptions = () => window.CHESS3D_PEER_OPTIONS || {};
 export const randomCode = () =>
   Array.from({ length: 6 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
 
+// Identifies this tab across reloads, so a returning guest can take back its seat
+// before the host has noticed the old connection died. Per tab, not per browser,
+// so two tabs on one machine don't keep kicking each other out.
+function guestId() {
+  try {
+    let id = sessionStorage.getItem('chess3d-guest-id');
+    if (!id) sessionStorage.setItem('chess3d-guest-id', (id = randomCode() + randomCode()));
+    return id;
+  } catch {
+    return randomCode() + randomCode();
+  }
+}
+
 export class Link {
   constructor({ onMessage, onStatus }) {
     this.onMessage = onMessage;
@@ -34,14 +47,21 @@ export class Link {
     this.peer = peer;
     peer.on('open', () => this.onStatus('Waiting for your friend to join…'));
     peer.on('connection', (conn) => {
-      if (this.connected) {
-        conn.on('open', () => {
+      const id = conn.metadata?.guestId;
+      if (this.connected && id !== this.guestId) {
+        // Answer the guest's hello, so we know its side of the channel is listening.
+        conn.on('data', (msg) => {
+          if (msg?.type !== 'hello') return;
           conn.send({ type: 'full' });
-          setTimeout(() => conn.close(), 500);
+          setTimeout(() => conn.close(), 1000);
         });
         return;
       }
+      // Same guest coming back (or the seat is free): the new connection wins.
+      const old = this.conn;
+      this.guestId = id;
       this.attach(conn);
+      if (old && old !== conn) old.close();
     });
     peer.on('disconnected', () => {
       if (!peer.destroyed) peer.reconnect();
@@ -76,7 +96,8 @@ export class Link {
   }
 
   dial() {
-    if (this.peer && !this.peer.destroyed) this.attach(this.peer.connect(PREFIX + this.code, { reliable: true }));
+    if (!this.peer || this.peer.destroyed) return;
+    this.attach(this.peer.connect(PREFIX + this.code, { reliable: true, metadata: { guestId: guestId() } }));
   }
 
   // Guests keep trying to reach a host that dropped (e.g. refreshed the page).
@@ -89,12 +110,17 @@ export class Link {
     this.conn = conn;
     conn.on('open', () => {
       this.everConnected = true;
+      if (this.role === 'guest') conn.send({ type: 'hello' });
       this.onStatus('Connected');
       this.onMessage({ type: 'connected' });
     });
-    conn.on('data', (msg) => this.onMessage(msg));
+    conn.on('data', (msg) => {
+      if (this.conn === conn) this.onMessage(msg);
+    });
     conn.on('close', () => {
-      if (this.conn === conn) this.conn = null;
+      // A connection we already replaced closing is not a disconnect.
+      if (this.conn !== conn) return;
+      this.conn = null;
       this.onStatus(this.role === 'host' ? 'Friend disconnected. Waiting for them to rejoin…' : 'Lost the host. Reconnecting…');
       this.onMessage({ type: 'disconnected' });
       if (this.role === 'guest' && this.peer && !this.peer.destroyed) this.scheduleRedial();
@@ -107,8 +133,11 @@ export class Link {
 
   close() {
     clearTimeout(this.redialTimer);
-    if (this.peer) this.peer.destroy();
+    // Detach first: destroying the peer fires our close handlers synchronously.
+    const peer = this.peer;
     this.peer = null;
     this.conn = null;
+    this.guestId = null;
+    if (peer) peer.destroy();
   }
 }

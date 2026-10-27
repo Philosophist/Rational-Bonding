@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   initialState, allLegalMoves, legalMovesFrom, applyMove, idx, SIZE, replay, sqName,
-  KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS,
+  KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures,
 } from '../rules.js';
 
 const empty = (pieces, turn = 'w') => {
@@ -13,7 +13,9 @@ const empty = (pieces, turn = 'w') => {
 
 test('direction sets', () => {
   assert.equal(ROOK_DIRS.length, 6);
-  assert.equal(BISHOP_DIRS.length, 12);
+  assert.equal(BISHOP_DIRS.length, 20); // 12 planar diagonals + 8 corner-to-corner
+  assert.equal(pawnCaptures('w').length, 13);
+  assert.equal(pawnCaptures('b').length, 13);
   assert.equal(QUEEN_DIRS.length, 26);
   assert.equal(KNIGHT_JUMPS.length, 24);
 });
@@ -117,4 +119,52 @@ test('random playouts stay consistent', () => {
     assert.ok(s);
     assert.equal(s.board.filter((p) => p && p.t === 'K').length, 2);
   }
+});
+
+test('bishop crosses the cube corner to corner', () => {
+  const s = empty([
+    [idx(0, 0, 0), 'B', 'w'], [idx(7, 7, 7), 'R', 'b'], [idx(7, 0, 0), 'K', 'w'], [idx(0, 7, 7), 'K', 'b'],
+  ]);
+  const targets = legalMovesFrom(s, idx(0, 0, 0)).map((m) => m.to);
+  assert.ok(targets.includes(idx(7, 7, 7)), 'a1A to h8H');
+  assert.ok(targets.includes(idx(3, 3, 3)));
+  // Planar diagonals across levels still work: a1A to a8H through the rank/level plane.
+  assert.ok(targets.includes(idx(0, 6, 6)));
+  // A blocker stops the long diagonal.
+  s.board[idx(4, 4, 4)] = { t: 'P', c: 'w', m: true };
+  assert.ok(!legalMovesFrom(s, idx(0, 0, 0)).some((m) => m.to === idx(7, 7, 7)));
+});
+
+test('bishop attack along a space diagonal gives check', () => {
+  const s = empty([[idx(0, 0, 0), 'K', 'w'], [idx(5, 5, 5), 'B', 'b'], [idx(7, 7, 0), 'K', 'b']]);
+  const moves = legalMovesFrom(s, idx(0, 0, 0)).map((m) => m.to);
+  assert.ok(!moves.includes(idx(1, 1, 1)), 'king may not step onto the diagonal');
+});
+
+test('pawns capture forward-and-down diagonally, both ways', () => {
+  // White pawn heading up the ranks meets a black pawn one rank ahead, one level lower.
+  const s = empty([
+    [idx(4, 3, 3), 'P', 'w'], [idx(4, 4, 2), 'P', 'b'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 7), 'K', 'b'],
+  ]);
+  assert.ok(legalMovesFrom(s, idx(4, 3, 3)).some((m) => m.to === idx(4, 4, 2) && m.capture));
+  const b = { ...s, turn: 'b' };
+  assert.ok(legalMovesFrom(b, idx(4, 4, 2)).some((m) => m.to === idx(4, 3, 3) && m.capture));
+  // A corner-to-corner forward step is also a capture.
+  s.board[idx(5, 4, 4)] = { t: 'N', c: 'b', m: true };
+  assert.ok(legalMovesFrom(s, idx(4, 3, 3)).some((m) => m.to === idx(5, 4, 4) && m.capture));
+  // But never straight ahead, and never purely backwards.
+  s.board[idx(4, 4, 3)] = { t: 'N', c: 'b', m: true };
+  s.board[idx(4, 2, 2)] = { t: 'N', c: 'b', m: true };
+  const t = legalMovesFrom(s, idx(4, 3, 3)).map((m) => m.to);
+  assert.ok(!t.includes(idx(4, 4, 3)));
+  assert.ok(!t.includes(idx(4, 2, 2)));
+});
+
+test('no en passant', () => {
+  const s = empty([
+    [idx(3, 3, 1), 'P', 'w'], [idx(4, 5, 1), 'P', 'b', false], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 7), 'K', 'b'],
+  ], 'b');
+  const n = applyMove(s, { from: idx(4, 5, 1), to: idx(4, 3, 1) }); // double step lands beside the white pawn
+  assert.ok(n);
+  assert.ok(!legalMovesFrom(n, idx(3, 3, 1)).some((m) => m.to === idx(4, 4, 1)));
 });
