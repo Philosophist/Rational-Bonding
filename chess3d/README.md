@@ -23,7 +23,7 @@ Some strict corporate or mobile networks block peer-to-peer connections; if join
 Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to top).
 
 - **Setup:** White's back rank is on the bottom near edge (rank 1, level A), with its pawns one step diagonally toward the enemy (rank 2, level B). Black mirrors this on the opposite edge (rank 8, level H; pawns on rank 7, level G). The pieces keep their usual order, so the kings face each other along the e-file.
-- **Rook:** any distance along one axis (6 directions), or a single step along a planar diagonal, where two coordinates change by one but never all three (12 more).
+- **Rook:** any distance along one axis (6 directions), and, in Classic mode by default, any distance along a flat diagonal, where two coordinates change but never all three (12 more). The diagonal move can be switched off in the rules panel.
 - **Bishop:** any distance along any diagonal: within a flat plane (including planes that cross levels) or corner to corner through the cube (20 directions). Unlike flat chess, a bishop can change square colour.
 - **Queen:** rook + bishop, so any straight line (26 directions).
 - **King:** one step in any of 26 directions.
@@ -37,6 +37,24 @@ Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to t
   - It promotes on reaching the enemy's back-rank edge.
 - Check, checkmate, stalemate, insufficient material and the 50-move rule all apply.
 - There is deliberately **no en passant**.
+
+## Rule modes
+Pick these in the **Game rules** panel. They can be changed until the first move. Online, the host picks them.
+
+### Classic
+All pieces use the board's own axes, as described above.
+- Toggle: **Rooks also slide along flat diagonals** (on by default).
+
+### Relative
+Every piece faces a direction, and space is relative to it. Its own three straight axes are its facing and the two directions square to it. Both armies start facing each other across the cube's diagonal: White faces up the ranks and levels at once (→8H), and Black faces back down (→1A).
+
+- On a cube grid only four sets of three square axes exist. One is the board's own axes. The other three are the board turned 45° about one axis: that axis stays, and the other two become the diagonals of the cross-section. So a piece can face along an axis or a flat diagonal, but not corner to corner. Facing along an axis, it can be square to the board or turned 45° (◇).
+- A piece facing a flat diagonal, such as the starting facing, has as its straight lines the file and the two diagonals of its rank/level plane. Those diagonals are straight lines for it.
+- **Rook:** any distance along its own three axes.
+- **Pawn:** straight ahead along its facing, 1 square (2 on its first move). It captures one step ahead-and-sideways in its own frame. By default it may only face toward the enemy. It promotes on the enemy's back-rank edge as usual.
+- After you move a rook or pawn, you choose its new facing. The picker previews where it could go next. Other pieces move as in Classic and keep their facing.
+- Toggles: **Turned rooks keep the board's straight lines too**, and **Pawns may face any direction**.
+- Move notation adds the new facing, e.g. `e2B-e3C →8`: files a/h, ranks 1/8, levels A/H.
 
 ## Development
 ```

@@ -24,6 +24,15 @@
         <div id="turn-banner"></div>
         <div id="hover-label"></div>
       </div>
+      <div id="facing-picker" hidden>
+        <div class="fp-title">Which way should it face?</div>
+        <div class="fp-hint">Pick one to preview where it could go next (blue), then confirm. <span class="legend">a/h files · 1/8 ranks · A/H levels · ◇ turned 45°</span></div>
+        <div id="facing-options"></div>
+        <div class="row">
+          <button id="facing-confirm" class="primary">Confirm</button>
+          <button id="facing-cancel">Undo move</button>
+        </div>
+      </div>
       <div id="help-tip">Drag to orbit · scroll to zoom · right-drag to pan · <kbd>[</kbd> <kbd>]</kbd> step through levels · <kbd>0</kbd> show all</div>
     </main>
 
@@ -53,6 +62,20 @@
           </div>
           <div id="net-status"></div>
         </div>
+      </section>
+
+      <section id="rules-box">
+        <h2>Game rules</h2>
+        <label>Mode
+          <select id="rule-mode">
+            <option value="classic">Classic: board axes for everyone</option>
+            <option value="relative">Relative: pieces face a direction</option>
+          </select>
+        </label>
+        <label class="check" data-for="classic"><input type="checkbox" id="rule-rookDiagonals" /> Rooks also slide along flat diagonals</label>
+        <label class="check" data-for="relative"><input type="checkbox" id="rule-gridLines" /> Turned rooks keep the board's straight lines too</label>
+        <label class="check" data-for="relative"><input type="checkbox" id="rule-pawnsAnyFacing" /> Pawns may face any direction</label>
+        <div id="rules-note"></div>
       </section>
 
       <section id="status-box">
@@ -90,7 +113,7 @@
       <details id="rules">
         <summary>How pieces move in 3D</summary>
         <ul>
-          <li><b>Rook</b> – straight along any of the 3 axes, any distance; or one step along a diagonal that changes two coordinates (never all three).</li>
+          <li><b>Rook</b> – straight along any of the 3 axes, any distance. In Classic mode (toggle) also any distance along a flat diagonal, one that changes two coordinates but never all three.</li>
           <li><b>Bishop</b> – any diagonal: within a plane, including between levels, or corner to corner through the cube (20 directions).</li>
           <li><b>Queen</b> – rook + bishop: any straight line (26 directions).</li>
           <li><b>King</b> – one step to any of the 26 neighbouring cells.</li>
@@ -98,6 +121,13 @@
           <li><b>Knight</b> – 2 along one axis then 1 along another (24 jumps).</li>
           <li><b>Pawn</b> – forward is both “up the ranks” and “up the levels” toward the enemy edge. Moves straight 1 (or 2 on its first move) along either, but can't capture straight ahead. Captures one diagonal step that goes forward on at least one of those, e.g. forward a rank while dropping a level, so pawns meeting head-on can take each other. <b>Up-forward</b> (forward a rank and up a level at once) is both forward and diagonal: the pawn can move <i>or</i> capture 1 square that way, or 2 on its first move if the square in between is empty (Black: down-forward). Promotes on the enemy back-rank edge. No en passant.</li>
           <li>White's back rank sits on the near bottom edge (rank 1, level A) with its pawns one step diagonally in front (rank 2, level B). Black mirrors this on the far top edge (rank 8, level H; pawns on rank 7, level G).</li>
+        </ul>
+        <p><b>Relative mode.</b> Each piece faces a direction, and space is relative to it: its own three straight axes are its facing and the two directions square to it. Facing a flat diagonal, those are the file plus the two diagonals of its rank/level plane, so the diagonals become straight lines for it. Both armies start facing each other across the cube's diagonal.</p>
+        <ul>
+          <li><b>Rook</b> – any distance along its own three axes.</li>
+          <li><b>Pawn</b> – straight ahead along its facing, 1 square (2 on its first move); captures one step ahead-and-sideways in its own frame. By default it may only face toward the enemy.</li>
+          <li>After moving a rook or pawn you choose its new facing. Other pieces move as in Classic.</li>
+          <li>A piece can face along an axis or a flat diagonal, not corner to corner, because only those have square axes on the grid. Facing along an axis, it can be square to the board or turned 45° (◇).</li>
         </ul>
       </details>
     </aside>
