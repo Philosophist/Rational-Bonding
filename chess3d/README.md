@@ -28,7 +28,9 @@ Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to t
 - **Queen:** rook + bishop, so any straight line (26 directions).
 - **King:** one step in any of 26 directions. Castles along its back rank under the normal rules.
 - **Knight:** 2 along one axis and 1 along another (24 jumps).
-- **Pawn:** forward means both up the ranks and up the levels toward the enemy. It moves straight 1 step (2 on its first move) along either, and can't capture straight ahead. It captures one diagonal step (any bishop direction) that goes forward on at least one of those axes, e.g. forward a rank while dropping a level. So two pawns meeting head-on across levels can take each other instead of just blocking. It promotes on reaching the enemy's back-rank edge.
+- **Pawn:** forward means both up the ranks and up the levels toward the enemy. It moves straight 1 step (2 on its first move) along either, and can't capture straight ahead. It captures one diagonal step (any bishop direction) that goes forward on at least one of those axes, e.g. forward a rank while dropping a level. So two pawns meeting head-on across levels can take each other instead of just blocking.
+  - **Up-forward** (forward a rank and up a level at once, toward the enemy edge) is both forward and diagonal. Along it a pawn can move *or* capture, 1 or 2 squares, on any turn, as long as the square in between is empty.
+  - It promotes on reaching the enemy's back-rank edge.
 - Check, checkmate, stalemate, insufficient material and the 50-move rule all apply.
 - There is deliberately **no en passant**.
 

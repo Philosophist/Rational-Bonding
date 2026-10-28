@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   initialState, allLegalMoves, legalMovesFrom, applyMove, idx, SIZE, replay, sqName,
-  KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures,
+  KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures, inCheck,
 } from '../rules.js';
 
 const empty = (pieces, turn = 'w') => {
@@ -30,7 +30,7 @@ test('initial position', () => {
   const moves = allLegalMoves(s);
   assert.ok(moves.length > 20, `got ${moves.length}`);
   // Each pawn: one/two steps up a rank, one/two steps up a level.
-  assert.equal(legalMovesFrom(s, idx(0, 1, 1)).length, 4);
+  assert.equal(legalMovesFrom(s, idx(0, 1, 1)).length, 6); // 2 up the ranks, 2 up the levels, 2 up-forward
   assert.equal(moves.filter((m) => m.capture).length, 0, 'no captures on move one');
 });
 
@@ -167,4 +167,42 @@ test('no en passant', () => {
   const n = applyMove(s, { from: idx(4, 5, 1), to: idx(4, 3, 1) }); // double step lands beside the white pawn
   assert.ok(n);
   assert.ok(!legalMovesFrom(n, idx(3, 3, 1)).some((m) => m.to === idx(4, 4, 1)));
+});
+
+test('pawn moves up-forward one or two squares without capturing', () => {
+  const s = empty([[idx(4, 2, 2), 'P', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 0), 'K', 'b']]);
+  const t = legalMovesFrom(s, idx(4, 2, 2));
+  assert.ok(t.some((m) => m.to === idx(4, 3, 3) && !m.capture));
+  assert.ok(t.some((m) => m.to === idx(4, 4, 4) && !m.capture), 'two squares, even after its first move');
+  assert.ok(!t.some((m) => m.to === idx(4, 5, 5)), 'never three');
+  // Black's up-forward points the other way.
+  const b = empty([[idx(4, 5, 5), 'P', 'b'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 0), 'K', 'b']], 'b');
+  assert.ok(legalMovesFrom(b, idx(4, 5, 5)).some((m) => m.to === idx(4, 3, 3)));
+});
+
+test('pawn captures up-forward one or two squares, path must be clear', () => {
+  const s = empty([
+    [idx(4, 2, 2), 'P', 'w'], [idx(4, 4, 4), 'R', 'b'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 0), 'K', 'b'],
+  ]);
+  assert.ok(legalMovesFrom(s, idx(4, 2, 2)).some((m) => m.to === idx(4, 4, 4) && m.capture));
+  s.board[idx(4, 3, 3)] = { t: 'N', c: 'b', m: true };
+  const t = legalMovesFrom(s, idx(4, 2, 2));
+  assert.ok(t.some((m) => m.to === idx(4, 3, 3) && m.capture), 'takes the nearer piece');
+  assert.ok(!t.some((m) => m.to === idx(4, 4, 4)), 'cannot jump over it');
+});
+
+test('two-square up-forward pawn attack gives check', () => {
+  const s = empty([[idx(4, 2, 2), 'P', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(4, 4, 4), 'K', 'b']], 'b');
+  assert.ok(inCheck(s.board, 'b'));
+  s.board[idx(4, 3, 3)] = { t: 'N', c: 'b', m: true };
+  assert.ok(!inCheck(s.board, 'b'), 'blocked line is no attack');
+  // A king may not step onto the far end of the line either.
+  const s2 = empty([[idx(4, 2, 2), 'P', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(4, 5, 4), 'K', 'b']], 'b');
+  assert.ok(!legalMovesFrom(s2, idx(4, 5, 4)).some((m) => m.to === idx(4, 4, 4)));
+});
+
+test('promotes after a two-square up-forward move', () => {
+  const s = empty([[idx(2, 5, 5), 'P', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 0, 7), 'K', 'b']]);
+  const n = applyMove(s, { from: idx(2, 5, 5), to: idx(2, 7, 7), promo: 'Q' });
+  assert.equal(n.board[idx(2, 7, 7)].t, 'Q');
 });

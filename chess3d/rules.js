@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 2;
+export const RULES_VERSION = 3;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -57,6 +57,13 @@ export const pawnForward = (c) => {
 export const pawnCaptures = (c) => {
   const s = pawnSign(c);
   return BISHOP_DIRS.filter((d) => d[1] === s || d[2] === s);
+};
+// Up-forward: one rank toward the enemy and one level toward the enemy at once.
+// It is both forward and diagonal, so a pawn may move OR capture along it,
+// up to two squares, as long as the square in between is empty.
+export const pawnUpForward = (c) => {
+  const s = pawnSign(c);
+  return [0, s, s];
 };
 const promotionEdge = (c) => (c === 'w' ? N - 1 : 0);
 export const isPromotionSquare = (c, i) => {
@@ -128,6 +135,13 @@ export function isAttacked(board, sq, by) {
     const t = step(sq, [-d[0], -d[1], -d[2]]);
     if (t >= 0 && hit(t, 'P')) return true;
   }
+  // ...or two up-forward steps back, with the square in between empty.
+  const uf = pawnUpForward(by);
+  const mid = step(sq, [-uf[0], -uf[1], -uf[2]]);
+  if (mid >= 0 && !board[mid]) {
+    const t = step(sq, [-uf[0], -uf[1], -uf[2]], 2);
+    if (t >= 0 && hit(t, 'P')) return true;
+  }
   return false;
 }
 
@@ -183,6 +197,16 @@ function pseudoMoves(board, from) {
       for (const d of pawnCaptures(p.c)) {
         const t = step(from, d);
         if (t >= 0 && board[t] && board[t].c !== p.c) add(t, { capture: true });
+      }
+      const uf = pawnUpForward(p.c);
+      const t1 = step(from, uf);
+      if (t1 >= 0 && !board[t1]) {
+        add(t1); // capture on t1 is already covered by pawnCaptures
+        const t2 = step(from, uf, 2);
+        if (t2 >= 0) {
+          if (!board[t2]) add(t2);
+          else if (board[t2].c !== p.c) add(t2, { capture: true });
+        }
       }
       for (const m of moves) if (isPromotionSquare(p.c, m.to)) m.promotion = true;
       break;
