@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
+  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameDirs, playOnBoard,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 
@@ -11,10 +12,22 @@ const GLYPH = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
 const glyph = (t) => GLYPH[t] + '︎';
 const COLOR_NAME = { w: 'White', b: 'Black' };
 const HOST_KEY = 'chess3d-host';
+const RULES_KEY = 'chess3d-rules';
+const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing'];
+
+function loadRules() {
+  try {
+    return normalizeRules(JSON.parse(localStorage.getItem(RULES_KEY)));
+  } catch {
+    return normalizeRules();
+  }
+}
 
 // ---------------------------------------------------------------- app state
 const app = {
-  game: initialState(),
+  rules: loadRules(), // what a new game here starts with
+  game: null,
+  preview: null, // while choosing a facing: { board } with the move played
   mode: 'local',
   myColor: 'w', // online only
   hostColor: 'w',
@@ -24,6 +37,8 @@ const app = {
   viewColor: 'w',
   pendingAnim: null,
 };
+app.game = initialState(app.rules);
+const freshGame = () => initialState(app.rules);
 
 const THEME = {
   background: 0x161a22,
@@ -175,8 +190,29 @@ const PIECE_COLORS = {
 const PIECE_SCALE = 0.78;
 const PIECE_MID = 0.47;
 
+// Game (file, rank, level) -> world (x, up, -z).
+const g2w = (d) => new THREE.Vector3(d[0], d[2], -d[1]);
+const ARROW = new THREE.ConeGeometry(0.08, 0.2, 12).rotateX(-Math.PI / 2);
+
+// The model's "up" for a facing: the frame axis square to it that points most
+// upward (then most toward the enemy), so pieces lean the way they look.
+function upFor(o, c) {
+  const s = c === 'w' ? 1 : -1;
+  const perps = frameDirs(o).filter((d) => d[0] * o[0] + d[1] * o[1] + d[2] * o[2] === 0);
+  perps.sort((a, b) => b[2] - a[2] || (b[1] - a[1]) * s || b[0] - a[0]);
+  return perps[0];
+}
+
+function orientPiece(g, o, c) {
+  const y = g2w(upFor(o, c)).normalize();
+  const z = g2w(o).normalize().negate(); // models look down -Z
+  const x = y.clone().cross(z);
+  g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+}
+
 function makePiece(p) {
   const mat = new THREE.MeshStandardMaterial({ ...PIECE_COLORS[p.c], transparent: true });
+  const mats = [mat];
   const g = new THREE.Group();
   for (const part of GEO[p.t]) {
     const [geo, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1] = Array.isArray(part) ? part : [part];
@@ -186,20 +222,31 @@ function makePiece(p) {
     g.add(m);
   }
   g.scale.setScalar(PIECE_SCALE);
-  if (p.c === 'b') g.rotation.y = Math.PI; // knights face the enemy
-  g.userData.mat = mat;
+  if (p.o && app.game.rules.mode === 'relative') {
+    orientPiece(g, p.o, p.c);
+    if (p.t === 'R' || p.t === 'P') {
+      // Rooks and pawns look the same all round, so show their facing.
+      const am = new THREE.MeshStandardMaterial({ color: 0xf0c060, emissive: 0x5a4210, transparent: true });
+      const arrow = new THREE.Mesh(ARROW, am);
+      arrow.position.set(0, 0, -0.42);
+      g.add(arrow);
+      mats.push(am);
+    }
+  } else if (p.c === 'b') g.rotation.y = Math.PI; // knights face the enemy
+  g.userData.mats = mats;
   return g;
 }
 
+const viewBoard = () => app.preview?.board || app.game.board;
 const pieceGroup = new THREE.Group();
 scene.add(pieceGroup);
 const pieceAt = new Map(); // square -> group
 
 function rebuildPieces() {
-  for (const g of pieceGroup.children) g.userData.mat.dispose();
+  for (const g of pieceGroup.children) g.userData.mats.forEach((m) => m.dispose());
   pieceGroup.clear();
   pieceAt.clear();
-  app.game.board.forEach((p, i) => {
+  viewBoard().forEach((p, i) => {
     if (!p) return;
     const g = makePiece(p);
     g.position.copy(worldPos(i));
@@ -277,8 +324,10 @@ function applyFocus() {
   for (const g of pieceGroup.children) {
     const z = coords(g.userData.sq)[2];
     const vis = f < 0 || z === f;
-    g.userData.mat.opacity = vis ? 1 : 0.1;
-    g.userData.mat.depthWrite = vis;
+    for (const m of g.userData.mats) {
+      m.opacity = vis ? 1 : 0.1;
+      m.depthWrite = vis;
+    }
     g.userData.dim = !vis;
   }
   for (const m of markerGroup.children) {
@@ -392,6 +441,7 @@ function deselect() {
 }
 
 function onSquareClick(sq) {
+  if (app.preview) return; // finish choosing a facing first
   if (sq < 0) return deselect();
   const own = app.selected >= 0 && canAct() && app.game.board[app.selected]?.c === app.game.turn;
   const move = own && app.targets.find((m) => m.to === sq);
@@ -402,16 +452,93 @@ function onSquareClick(sq) {
 
 async function tryMove(move) {
   let promo;
+  const game = app.game;
   if (move.promotion) {
     promo = await askPromotion();
     // The game may have moved on while the dialog was open (resign, rematch, resync).
-    if (!promo || !canAct()) return;
+    if (!promo || !canAct() || app.game !== game) return;
   }
-  const next = applyMove(app.game, { from: move.from, to: move.to, promo });
+  let face;
+  if (facingChoices(game, move.from, promo).length) {
+    face = await askFacing(move, promo);
+    if (face === null || !canAct() || app.game !== game) return;
+  }
+  const next = applyMove(game, { from: move.from, to: move.to, promo, face });
   if (!next) return;
-  const ply = app.game.history.length;
+  const ply = game.history.length;
   setGame(next, { from: move.from, to: move.to });
-  if (app.mode === 'online') link.send({ type: 'move', ply, from: move.from, to: move.to, promo });
+  if (app.mode === 'online') link.send({ type: 'move', ply, from: move.from, to: move.to, promo, face });
+}
+
+// Relative mode: after picking a move, choose the piece's new facing.
+// Resolves to the new facing, undefined to keep it, or null to take the move back.
+function askFacing(move, promo) {
+  const game = app.game;
+  const piece = game.board[move.from];
+  const current = piece.o;
+  const choices = facingChoices(game, move.from, promo);
+  const picker = $('facing-picker');
+  const box = $('facing-options');
+  const key = (o) => o.join(',');
+  let active = choices.find((o) => key(o) === key(current)) || choices[0];
+  return new Promise((resolve) => {
+    const show = (o) => {
+      const board = playOnBoard(game.board, { ...move, promo, face: o });
+      app.preview = { board, cancel: () => finish(null) };
+      app.selected = move.to;
+      app.targets = legalMovesFrom({ ...game, board, turn: piece.c, result: null }, move.to);
+      rebuildPieces();
+      refreshHighlights();
+      $('facing-confirm').textContent = `Confirm ${facingLabel(o)}`;
+    };
+    const finish = (result) => {
+      picker.hidden = true;
+      box.innerHTML = '';
+      app.preview = null;
+      app.selected = -1;
+      app.targets = [];
+      $('facing-confirm').onclick = $('facing-cancel').onclick = null;
+      rebuildPieces();
+      refreshHighlights();
+      resolve(result);
+    };
+    const groups = [
+      ['Straight, square to the board', (o) => o.slice(0, 3).filter(Boolean).length === 1 && !o[3]],
+      ['Straight, turned 45° (◇)', (o) => o.slice(0, 3).filter(Boolean).length === 1 && o[3]],
+      ['Diagonal', (o) => o.slice(0, 3).filter(Boolean).length === 2],
+    ];
+    const buttons = [];
+    for (const [title, test] of groups) {
+      const opts = choices.filter(test);
+      if (!opts.length) continue;
+      const h = document.createElement('div');
+      h.className = 'fp-group';
+      h.textContent = title;
+      const grid = document.createElement('div');
+      grid.className = 'fp-grid';
+      for (const o of opts) {
+        const b = document.createElement('button');
+        b.textContent = facingLabel(o);
+        b.classList.toggle('current', key(o) === key(current));
+        b.title = key(o) === key(current) ? 'Current facing' : '';
+        b.onmouseenter = () => show(o);
+        b.onmouseleave = () => show(active);
+        b.onclick = () => {
+          active = o;
+          buttons.forEach(([bb, oo]) => bb.classList.toggle('active', oo === active));
+          show(o);
+        };
+        b.classList.toggle('active', o === active);
+        buttons.push([b, o]);
+        grid.appendChild(b);
+      }
+      box.append(h, grid);
+    }
+    $('facing-confirm').onclick = () => finish(key(active) === key(current) ? undefined : active);
+    $('facing-cancel').onclick = () => finish(null);
+    picker.hidden = false;
+    show(active);
+  });
 }
 
 function askPromotion() {
@@ -430,6 +557,7 @@ function askPromotion() {
 }
 
 function setGame(game, anim = null) {
+  app.preview?.cancel(); // a resync or new game ends any facing choice
   app.game = game;
   app.selected = -1;
   app.targets = [];
@@ -484,6 +612,7 @@ function renderPanel() {
   }
   ol.scrollTop = ol.scrollHeight;
   $('resign-btn').disabled = !!app.game.result || (app.mode === 'online' && !link.connected);
+  renderRules();
 }
 
 // ---------------------------------------------------------------- 2D level map
@@ -534,7 +663,7 @@ function renderLevelMap() {
   const checkK = g.status.check && !g.result?.reason?.startsWith('resign') ? findKing(g.board, g.turn) : -1;
   for (const c of cells) {
     const [x, y, z] = coords(c.sq);
-    const p = g.board[c.sq];
+    const p = viewBoard()[c.sq];
     const t = targets.get(c.sq);
     const cls = ['cell', (x + y + z) % 2 ? 'light' : 'dark'];
     if (p) cls.push(p.c === 'w' ? 'pw' : 'pb');
@@ -553,7 +682,8 @@ function saveHost() {
   try {
     localStorage.setItem(HOST_KEY, JSON.stringify({
       code: link.code, hostColor: app.hostColor, result: app.game.result,
-      moves: app.game.history.map(({ from, to, promo }) => ({ from, to, promo })),
+      moves: app.game.history.map(({ from, to, promo, face }) => ({ from, to, promo, face })),
+      rules: app.game.rules,
     }));
   } catch {}
 }
@@ -567,8 +697,8 @@ function loadHost(code) {
   }
 }
 
-function gameFromSaved(moves, result) {
-  let g = replay(moves || []);
+function gameFromSaved(moves, result, rules) {
+  let g = replay(moves || [], rules);
   if (result && !g.result) g = { ...g, result };
   return g;
 }
@@ -578,7 +708,8 @@ function syncPayload() {
     type: 'sync',
     version: RULES_VERSION,
     guestColor: other(app.hostColor),
-    moves: app.game.history.map(({ from, to, promo }) => ({ from, to, promo })),
+    moves: app.game.history.map(({ from, to, promo, face }) => ({ from, to, promo, face })),
+    rules: app.game.rules,
     result: app.game.result,
   };
 }
@@ -600,7 +731,7 @@ function startHosting(code, saved) {
   link.host(code);
   history.replaceState(null, '', `?host=${code}`);
   showRoom(code);
-  setGame(saved ? gameFromSaved(saved.moves, saved.result) : initialState());
+  setGame(saved ? gameFromSaved(saved.moves, saved.result, saved.rules) : freshGame());
 }
 
 function startJoining(code) {
@@ -610,7 +741,7 @@ function startJoining(code) {
   history.replaceState(null, '', `?join=${code}`);
   showRoom(code);
   $('my-color').textContent = '…';
-  setGame(initialState());
+  setGame(freshGame());
 }
 
 function showRoom(code) {
@@ -654,7 +785,7 @@ function onNetMessage(msg) {
       setMyColor(msg.guestColor);
       {
         const before = g.history.length;
-        const next = gameFromSaved(msg.moves, msg.result);
+        const next = gameFromSaved(msg.moves, msg.result, msg.rules);
         const last = next.history.at(-1);
         setGame(next, next.history.length === before + 1 && last ? { from: last.from, to: last.to } : null);
       }
@@ -690,7 +821,7 @@ const VERSION_WARNING = 'You and your friend are running different versions of t
 function rematch() {
   app.hostColor = other(app.hostColor);
   setMyColor(app.hostColor);
-  setGame(initialState());
+  setGame(freshGame());
   link.send(syncPayload());
 }
 
@@ -710,6 +841,46 @@ function addChat(who, text) {
   log.scrollTop = log.scrollHeight;
 }
 
+// ---------------------------------------------------------------- rules panel
+// Rules can change until the first move; online, only the host picks them.
+function rulesEditable() {
+  return !app.game.history.length && !app.game.result && (app.mode === 'local' || link.role === 'host');
+}
+
+function renderRules() {
+  const r = app.game.rules;
+  const editable = rulesEditable();
+  $('rule-mode').value = r.mode;
+  $('rule-mode').disabled = !editable;
+  for (const k of RULE_TOGGLES) {
+    $(`rule-${k}`).checked = !!r[k];
+    $(`rule-${k}`).disabled = !editable;
+  }
+  document.querySelectorAll('#rules-box [data-for]').forEach((el) => (el.hidden = el.dataset.for !== r.mode));
+  $('rules-note').textContent = editable
+    ? 'You can change these until the first move.'
+    : app.mode === 'online' && link.role === 'guest'
+      ? 'The host chooses the rules.'
+      : 'Locked once the game has started. Start a new game to change them.';
+}
+
+function onRulesChange(e) {
+  if (!rulesEditable()) return renderRules();
+  const mode = $('rule-mode').value;
+  let r;
+  if (e.target.id === 'rule-mode') r = DEFAULT_RULES[mode];
+  else {
+    r = { mode };
+    for (const k of RULE_TOGGLES) r[k] = $(`rule-${k}`).checked;
+  }
+  app.rules = normalizeRules(r);
+  try {
+    localStorage.setItem(RULES_KEY, JSON.stringify(app.rules));
+  } catch {}
+  setGame(freshGame());
+  if (app.mode === 'online' && link.role === 'host') link.send(syncPayload());
+}
+
 // ---------------------------------------------------------------- controls
 function setMode(mode) {
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
@@ -720,7 +891,7 @@ function setMode(mode) {
     $('online-room').hidden = true;
     $('chat-box').hidden = true;
     history.replaceState(null, '', location.pathname);
-    setGame(initialState());
+    setGame(freshGame());
   }
   if (mode === 'local') app.mode = 'local';
   renderPanel();
@@ -755,11 +926,13 @@ function wireUI() {
     resetCamera();
   };
   $('reset-cam-btn').onclick = resetCamera;
+  $('rule-mode').onchange = onRulesChange;
+  for (const k of RULE_TOGGLES) $(`rule-${k}`).onchange = onRulesChange;
 
   $('new-btn').onclick = () => {
     if (app.mode === 'local') {
       if (app.game.history.length && !app.game.result && !confirm('Start a new game?')) return;
-      setGame(initialState());
+      setGame(freshGame());
     } else if (link.role === 'host') {
       if (app.game.history.length && !app.game.result && !confirm('Start a new game? Colours will swap.')) return;
       rematch();
@@ -799,7 +972,7 @@ function wireUI() {
     if (e.key === ']') setFocus(app.focus < 0 ? 0 : Math.min(N - 1, app.focus + 1));
     else if (e.key === '[') setFocus(app.focus < 0 ? N - 1 : Math.max(0, app.focus - 1));
     else if (e.key === '0') setFocus(-1);
-    else if (e.key === 'Escape') deselect();
+    else if (e.key === 'Escape') app.preview ? app.preview.cancel() : deselect();
   });
 }
 
@@ -830,7 +1003,7 @@ buildLevelMap();
 layoutLabels();
 resize();
 resetCamera();
-setGame(initialState());
+setGame(freshGame());
 
 const params = new URLSearchParams(location.search);
 if (params.get('host')) {

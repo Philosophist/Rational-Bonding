@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 import {
   initialState, allLegalMoves, legalMovesFrom, applyMove, idx, SIZE, replay, sqName,
   KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures, inCheck, isAttacked,
+  frameDirs, facingChoices, normalizeRules, allLegalMoves as allMoves,
 } from '../rules.js';
+
+const REL = { mode: 'relative' };
+const relEmpty = (pieces, turn = 'w', rules = REL) => {
+  const s = empty([], turn);
+  for (const [i, t, c, o, m = true] of pieces) s.board[i] = { t, c, m, o };
+  return { ...s, rules: normalizeRules(rules) };
+};
+const DIAG_W = [0, 1, 1, 1];
 
 const empty = (pieces, turn = 'w') => {
   const board = new Array(SIZE).fill(null);
@@ -105,7 +114,7 @@ test('random playouts stay consistent', () => {
 
 test('bishop crosses the cube corner to corner', () => {
   const s = empty([
-    [idx(0, 0, 0), 'B', 'w'], [idx(7, 7, 7), 'R', 'b'], [idx(7, 0, 0), 'K', 'w'], [idx(0, 7, 7), 'K', 'b'],
+    [idx(0, 0, 0), 'B', 'w'], [idx(7, 7, 7), 'R', 'b'], [idx(6, 0, 2), 'K', 'w'], [idx(0, 7, 7), 'K', 'b'],
   ]);
   const targets = legalMovesFrom(s, idx(0, 0, 0)).map((m) => m.to);
   assert.ok(targets.includes(idx(7, 7, 7)), 'a1A to h8H');
@@ -195,17 +204,24 @@ test('castling is blocked by pieces between, attacked squares, or an occupied la
   assert.deepEqual(legalMovesFrom(b, idx(4, 7, 7)).filter((m) => m.castle).map((m) => sqName(m.to)).sort(), ['g7H', 'g8G', 'g8H']);
 });
 
-test('rook steps one square along a planar diagonal, never a space diagonal', () => {
-  const s = empty([[idx(3, 3, 3), 'R', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 0), 'K', 'b'], [idx(4, 4, 3), 'N', 'b']]);
-  const t = legalMovesFrom(s, idx(3, 3, 3));
-  assert.ok(t.some((m) => m.to === idx(4, 4, 3) && m.capture), 'captures one diagonal step');
-  assert.ok(t.some((m) => m.to === idx(3, 4, 4)));
-  assert.ok(t.some((m) => m.to === idx(2, 3, 2)));
-  assert.ok(!t.some((m) => m.to === idx(5, 5, 3)), 'not two diagonal steps');
-  assert.ok(!t.some((m) => m.to === idx(4, 4, 4)), 'not a space diagonal');
-  assert.ok(t.some((m) => m.to === idx(3, 3, 7)), 'still slides straight');
-  assert.ok(isAttacked(s.board, idx(2, 2, 3), 'w'));
+test('classic rook slides along planar diagonals to the edge, never a space diagonal', () => {
+  const s = empty([[idx(3, 3, 3), 'R', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 0), 'K', 'b'], [idx(5, 5, 3), 'N', 'b']]);
+  const t = legalMovesFrom(s, idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(t.includes(idx(4, 4, 3)) && t.includes(idx(5, 5, 3)), 'slides and captures along the diagonal');
+  assert.ok(!t.includes(idx(6, 6, 3)), 'stopped by the piece it captures');
+  assert.ok(t.includes(idx(3, 7, 7)), 'all the way to the edge along a rank/level diagonal');
+  assert.ok(t.includes(idx(0, 3, 0)));
+  assert.ok(!t.includes(idx(4, 4, 4)), 'not a space diagonal');
+  assert.ok(t.includes(idx(3, 3, 7)), 'still slides straight');
+  assert.ok(isAttacked(s.board, idx(0, 0, 3), 'w'));
   assert.ok(!isAttacked(s.board, idx(4, 4, 4), 'w'));
+});
+
+test('classic toggle: rooks without diagonals', () => {
+  const s = { ...empty([[idx(3, 3, 3), 'R', 'w'], [idx(0, 0, 0), 'K', 'w'], [idx(7, 7, 0), 'K', 'b']]), rules: { mode: 'classic', rookDiagonals: false } };
+  const t = legalMovesFrom(s, idx(3, 3, 3));
+  assert.equal(t.length, 21, 'straight lines only');
+  assert.ok(!isAttacked(s.board, idx(4, 4, 3), 'w', s.rules));
 });
 
 test('pawn moves up-forward one square, or two only on its first move', () => {
@@ -246,4 +262,107 @@ test('two-square up-forward pawn attack gives check only from an unmoved pawn', 
   s.board[idx(4, 2, 2)] = null;
   s.board[idx(4, 1, 1)].m = true;
   assert.ok(!inCheck(s.board, 'b'), 'a moved pawn only reaches one square');
+});
+
+// ---------------------------------------------------------------- relative mode
+test('frames: square, and turned 45 degrees about one axis', () => {
+  assert.deepEqual(frameDirs([0, 1, 0, 0]), ROOK_DIRS);
+  const turnedX = frameDirs([0, 1, 1, 1]).map((d) => d.join(',')).sort();
+  assert.deepEqual(turnedX, ['-1,0,0', '0,-1,-1', '0,-1,1', '0,1,-1', '0,1,1', '1,0,0']);
+  assert.deepEqual(frameDirs([1, 0, 0, 1]).map((d) => d.join(',')).sort(), turnedX, 'axis facing, turned about that axis');
+});
+
+test('relative start: armies face each other diagonally, no captures on move one', () => {
+  const s = initialState(REL);
+  assert.deepEqual(s.board[idx(4, 0, 0)].o, [0, 1, 1, 1]);
+  assert.deepEqual(s.board[idx(4, 7, 7)].o, [0, -1, -1, 1]);
+  assert.equal(s.rules.mode, 'relative');
+  assert.equal(allMoves(s).filter((m) => m.capture).length, 0);
+});
+
+test('relative rook moves along its own three axes only', () => {
+  const s = relEmpty([[idx(3, 3, 3), 'R', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 0, 7), 'K', 'b', [0, -1, -1, 1]]]);
+  const t = legalMovesFrom(s, idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(t.includes(idx(7, 3, 3)) && t.includes(idx(0, 3, 3)), 'file axis');
+  assert.ok(t.includes(idx(3, 7, 7)) && t.includes(idx(3, 0, 0)), 'its forward diagonal');
+  assert.ok(t.includes(idx(3, 0, 6)) && t.includes(idx(3, 6, 0)), 'its up diagonal');
+  assert.ok(!t.includes(idx(3, 4, 3)) && !t.includes(idx(3, 3, 4)), 'board rank/level lines are not straight for it');
+  assert.ok(!t.includes(idx(4, 4, 3)), 'nor other diagonals');
+  // Square facing: an ordinary rook.
+  s.board[idx(3, 3, 3)].o = [0, 1, 0, 0];
+  const sq = legalMovesFrom(s, idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(sq.includes(idx(3, 4, 3)) && !sq.includes(idx(3, 4, 4)));
+  // Toggle: turned rooks keep the board's axes too.
+  const g = relEmpty([[idx(3, 3, 3), 'R', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 0, 7), 'K', 'b', [0, -1, -1, 1]]], 'w', { mode: 'relative', gridLines: true });
+  const gt = legalMovesFrom(g, idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(gt.includes(idx(3, 4, 3)) && gt.includes(idx(3, 7, 7)));
+});
+
+test('relative rook gives check along its own diagonal', () => {
+  const s = relEmpty([[idx(0, 0, 0), 'R', 'w', DIAG_W], [idx(7, 0, 7), 'K', 'w', DIAG_W], [idx(0, 5, 5), 'K', 'b', [0, -1, -1, 1]]], 'b');
+  assert.ok(inCheck(s.board, 'b', s.rules));
+  s.board[idx(0, 0, 0)].o = [0, 1, 0, 0];
+  assert.ok(!inCheck(s.board, 'b', s.rules), 'a square-facing rook does not see the diagonal');
+});
+
+test('relative pawn: straight along its facing, captures ahead-and-sideways in its frame', () => {
+  const s = relEmpty([[idx(4, 1, 1), 'P', 'w', DIAG_W, false], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]]);
+  let t = legalMovesFrom(s, idx(4, 1, 1)).map((m) => m.to);
+  assert.deepEqual(t.sort((a, b) => a - b), [idx(4, 2, 2), idx(4, 3, 3)].sort((a, b) => a - b), 'one or two along its diagonal facing');
+  // Captures: forward + each perpendicular frame axis.
+  for (const sq of [idx(5, 2, 2), idx(3, 2, 2), idx(4, 1, 3), idx(4, 3, 1)]) s.board[sq] = { t: 'N', c: 'b', m: true };
+  t = legalMovesFrom(s, idx(4, 1, 1)).filter((m) => m.capture).map((m) => m.to).sort((a, b) => a - b);
+  assert.deepEqual(t, [idx(5, 2, 2), idx(3, 2, 2), idx(4, 1, 3), idx(4, 3, 1)].sort((a, b) => a - b));
+});
+
+test('relative: facing is chosen with the move and changes what the piece can do next', () => {
+  let s = initialState(REL);
+  // a2B pawn moves, then turns to face straight up the ranks.
+  s = applyMove(s, { from: idx(0, 1, 1), to: idx(0, 2, 2), face: [0, 1, 0, 0] });
+  assert.ok(s);
+  assert.deepEqual(s.board[idx(0, 2, 2)].o, [0, 1, 0, 0]);
+  assert.ok(s.history[0].label.endsWith('→8'));
+  s = applyMove(s, { from: idx(0, 6, 6), to: idx(0, 5, 5) });
+  assert.deepEqual(s.board[idx(0, 5, 5)].o, [0, -1, -1, 1], 'no face given: facing unchanged');
+  const t = legalMovesFrom(s, idx(0, 2, 2)).map((m) => m.to);
+  assert.deepEqual(t, [idx(0, 3, 2)], 'moved pawn now steps up the rank, one square');
+  // Illegal facings are rejected.
+  assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [0, -1, 0, 0] }), null, 'pawns may not face backward');
+  assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [1, 1, 1, 0] }), null, 'no space-diagonal facings');
+});
+
+test('relative: facing choices', () => {
+  const s = initialState(REL);
+  assert.equal(facingChoices(s, idx(0, 0, 0)).length, 24, 'rook: 6 axes x 2 frames + 12 diagonals');
+  assert.equal(facingChoices(s, idx(0, 1, 1)).length, 9, 'pawn: only directions toward the enemy');
+  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 0, 'knight: facing does not matter');
+  const any = initialState({ mode: 'relative', pawnsAnyFacing: true });
+  assert.equal(facingChoices(any, idx(0, 1, 1)).length, 24);
+  assert.equal(facingChoices(initialState(), idx(0, 0, 0)).length, 0, 'classic mode has no facings');
+});
+
+test('relative: replay with rules and facings', () => {
+  const moves = [
+    { from: idx(0, 1, 1), to: idx(0, 2, 2), face: [0, 0, 1, 1] },
+    { from: idx(0, 6, 6), to: idx(0, 5, 5) },
+  ];
+  const s = replay(moves, REL);
+  assert.equal(s.history.length, 2);
+  assert.deepEqual(s.board[idx(0, 2, 2)].o, [0, 0, 1, 1]);
+});
+
+test('relative random playouts with random facings stay consistent', () => {
+  let s = initialState(REL);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 80 && !s.result; i++) {
+    const ms = allMoves(s);
+    const m = ms[Math.floor(rnd() * ms.length)];
+    const faces = facingChoices(s, m.from, m.promotion ? 'Q' : undefined);
+    const face = faces.length ? faces[Math.floor(rnd() * faces.length)] : undefined;
+    const n = applyMove(s, { ...m, face });
+    assert.ok(n, `move ${i} applies`);
+    s = n;
+    assert.equal(s.board.filter((p) => p && p.t === 'K').length, 2);
+  }
 });
