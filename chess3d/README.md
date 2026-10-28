@@ -23,13 +23,17 @@ Some strict corporate or mobile networks block peer-to-peer connections; if join
 Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to top).
 
 - **Setup:** White's back rank is on the bottom near edge (rank 1, level A), with its pawns one step diagonally toward the enemy (rank 2, level B). Black mirrors this on the opposite edge (rank 8, level H; pawns on rank 7, level G). The pieces keep their usual order, so the kings face each other along the e-file.
-- **Rook:** any distance along one axis (6 directions).
+- **Rook:** any distance along one axis (6 directions), or a single step along a planar diagonal, where two coordinates change by one but never all three (12 more).
 - **Bishop:** any distance along any diagonal: within a flat plane (including planes that cross levels) or corner to corner through the cube (20 directions). Unlike flat chess, a bishop can change square colour.
 - **Queen:** rook + bishop, so any straight line (26 directions).
-- **King:** one step in any of 26 directions. Castles along its back rank under the normal rules.
+- **King:** one step in any of 26 directions.
+- **Castling** works the same on both sides. The rook moves two squares along the back rank toward the king, and the king jumps to just past it. The king can land in line with the rook, or one diagonal step off that line: one square up a rank or up a level as well, onto an empty square.
+  - King side, White: rook h1A→f1A, king lands on g1A, g2A or g1B.
+  - Queen side, White: rook a1A→c1A, king lands on b1A, b2A or b1B.
+  - Neither piece may have moved, every square between them must be empty, and the king may not be in check, pass through an attacked square on its way to the rook's new square, or land in check.
 - **Knight:** 2 along one axis and 1 along another (24 jumps).
 - **Pawn:** forward means both up the ranks and up the levels toward the enemy. It moves straight 1 step (2 on its first move) along either, and can't capture straight ahead. It captures one diagonal step (any bishop direction) that goes forward on at least one of those axes, e.g. forward a rank while dropping a level. So two pawns meeting head-on across levels can take each other instead of just blocking.
-  - **Up-forward** (forward a rank and up a level at once, toward the enemy edge) is both forward and diagonal. Along it a pawn can move *or* capture, 1 or 2 squares, on any turn, as long as the square in between is empty.
+  - **Up-forward** (forward a rank and up a level at once, toward the enemy edge; down-forward for Black) is both forward and diagonal. Along it a pawn can move *or* capture 1 square, or 2 squares on its first move if the square in between is empty.
   - It promotes on reaching the enemy's back-rank edge.
 - Check, checkmate, stalemate, insufficient material and the 50-move rule all apply.
 - There is deliberately **no en passant**.

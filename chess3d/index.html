@@ -65,9 +65,6 @@
         <label>Focus level
           <select id="level-select"></select>
         </label>
-        <label>Level spacing
-          <input id="spacing" type="range" min="1" max="3" step="0.1" value="1.6" />
-        </label>
         <div class="row">
           <button id="flip-btn">Flip view</button>
           <button id="reset-cam-btn">Reset camera</button>
@@ -93,12 +90,13 @@
       <details id="rules">
         <summary>How pieces move in 3D</summary>
         <ul>
-          <li><b>Rook</b> – straight along any of the 3 axes (6 directions).</li>
+          <li><b>Rook</b> – straight along any of the 3 axes, any distance; or one step along a diagonal that changes two coordinates (never all three).</li>
           <li><b>Bishop</b> – any diagonal: within a plane, including between levels, or corner to corner through the cube (20 directions).</li>
           <li><b>Queen</b> – rook + bishop: any straight line (26 directions).</li>
-          <li><b>King</b> – one step to any of the 26 neighbouring cells. Castles along its back rank.</li>
+          <li><b>King</b> – one step to any of the 26 neighbouring cells.</li>
+          <li><b>Castling</b> – the rook moves two squares toward the king along the back rank, and the king jumps to just past it: in line, or one diagonal step off the line (up a rank or a level), if that square is empty. Neither may have moved, the squares between must be empty, and the king can't be in, pass through, or land in check.</li>
           <li><b>Knight</b> – 2 along one axis then 1 along another (24 jumps).</li>
-          <li><b>Pawn</b> – forward is both “up the ranks” and “up the levels” toward the enemy edge. Moves straight 1 (or 2 on its first move) along either, but can't capture straight ahead. Captures one diagonal step that goes forward on at least one of those, e.g. forward a rank while dropping a level, so pawns meeting head-on can take each other. <b>Up-forward</b> (forward a rank and up a level at once) is both forward and diagonal: the pawn can move <i>or</i> capture 1 or 2 squares that way, any time, if the square in between is empty. Promotes on the enemy back-rank edge. No en passant.</li>
+          <li><b>Pawn</b> – forward is both “up the ranks” and “up the levels” toward the enemy edge. Moves straight 1 (or 2 on its first move) along either, but can't capture straight ahead. Captures one diagonal step that goes forward on at least one of those, e.g. forward a rank while dropping a level, so pawns meeting head-on can take each other. <b>Up-forward</b> (forward a rank and up a level at once) is both forward and diagonal: the pawn can move <i>or</i> capture 1 square that way, or 2 on its first move if the square in between is empty (Black: down-forward). Promotes on the enemy back-rank edge. No en passant.</li>
           <li>White's back rank sits on the near bottom edge (rank 1, level A) with its pawns one step diagonally in front (rank 2, level B). Black mirrors this on the far top edge (rank 8, level H; pawns on rank 7, level G).</li>
         </ul>
       </details>

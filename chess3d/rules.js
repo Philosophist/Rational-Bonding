@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 3;
+export const RULES_VERSION = 4;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -30,10 +30,12 @@ for (let dx = -1; dx <= 1; dx++)
       if (dx || dy || dz) ALL_DIRS.push([dx, dy, dz]);
 
 const nonZero = (d) => d.filter((v) => v !== 0).length;
-// Rook: along one axis. Bishop: any diagonal, whether within a plane (two
-// axes change) or corner to corner through the cube (all three change).
-// Queen: rook + bishop. King: one step any way.
+// Rook: any distance along one axis, plus a single step along a planar
+// diagonal (two axes change by one, never all three). Bishop: any diagonal,
+// whether within a plane (two axes change) or corner to corner through the
+// cube (all three change). Queen: any line. King: one step any way.
 export const ROOK_DIRS = ALL_DIRS.filter((d) => nonZero(d) === 1);
+export const PLANAR_DIAGONALS = ALL_DIRS.filter((d) => nonZero(d) === 2);
 export const BISHOP_DIRS = ALL_DIRS.filter((d) => nonZero(d) >= 2);
 export const QUEEN_DIRS = ALL_DIRS;
 export const KING_DIRS = ALL_DIRS;
@@ -59,8 +61,8 @@ export const pawnCaptures = (c) => {
   return BISHOP_DIRS.filter((d) => d[1] === s || d[2] === s);
 };
 // Up-forward: one rank toward the enemy and one level toward the enemy at once.
-// It is both forward and diagonal, so a pawn may move OR capture along it,
-// up to two squares, as long as the square in between is empty.
+// It is both forward and diagonal, so a pawn may move OR capture along it:
+// one square, or two on its first move if the square in between is empty.
 export const pawnUpForward = (c) => {
   const s = pawnSign(c);
   return [0, s, s];
@@ -135,12 +137,17 @@ export function isAttacked(board, sq, by) {
     const t = step(sq, [-d[0], -d[1], -d[2]]);
     if (t >= 0 && hit(t, 'P')) return true;
   }
-  // ...or two up-forward steps back, with the square in between empty.
+  // ...or an unmoved pawn two up-forward steps back, with the square in between empty.
   const uf = pawnUpForward(by);
   const mid = step(sq, [-uf[0], -uf[1], -uf[2]]);
   if (mid >= 0 && !board[mid]) {
     const t = step(sq, [-uf[0], -uf[1], -uf[2]], 2);
-    if (t >= 0 && hit(t, 'P')) return true;
+    if (t >= 0 && hit(t, 'P') && !board[t].m) return true;
+  }
+  // Rooks reach one planar-diagonal step.
+  for (const d of PLANAR_DIAGONALS) {
+    const t = step(sq, d);
+    if (t >= 0 && hit(t, 'R')) return true;
   }
   return false;
 }
@@ -179,7 +186,7 @@ function pseudoMoves(board, from) {
     }
   };
   switch (p.t) {
-    case 'R': slide(ROOK_DIRS); break;
+    case 'R': slide(ROOK_DIRS); jump(PLANAR_DIAGONALS); break;
     case 'B': slide(BISHOP_DIRS); break;
     case 'Q': slide(QUEEN_DIRS); break;
     case 'N': jump(KNIGHT_JUMPS); break;
@@ -203,7 +210,7 @@ function pseudoMoves(board, from) {
       if (t1 >= 0 && !board[t1]) {
         add(t1); // capture on t1 is already covered by pawnCaptures
         const t2 = step(from, uf, 2);
-        if (t2 >= 0) {
+        if (t2 >= 0 && !p.m) {
           if (!board[t2]) add(t2);
           else if (board[t2].c !== p.c) add(t2, { capture: true });
         }
@@ -215,6 +222,13 @@ function pseudoMoves(board, from) {
   return moves;
 }
 
+// Castling, the same on both sides: the rook moves two squares along the back
+// rank toward the king, and the king jumps to just past it. The king may land
+// in line with the rook, or one diagonal step off that line (one square up a
+// rank or a level as well), as long as the landing square is empty.
+// Neither piece may have moved, every square between them must be empty, and
+// the king may not be in check, pass through an attacked square on the way to
+// the rook's new square, or land in check.
 function castlingMoves(board, from) {
   const k = board[from];
   if (!k || k.t !== 'K' || k.m) return [];
@@ -222,6 +236,7 @@ function castlingMoves(board, from) {
   if (from !== idx(4, hy, hz)) return [];
   const enemy = other(k.c);
   if (isAttacked(board, from, enemy)) return [];
+  const inward = k.c === 'w' ? 1 : -1; // off the back rank, into the board
   const moves = [];
   for (const [rookX, dir] of [[7, 1], [0, -1]]) {
     const rook = board[idx(rookX, hy, hz)];
@@ -229,13 +244,16 @@ function castlingMoves(board, from) {
     let clear = true;
     for (let x = 4 + dir; x !== rookX; x += dir) if (board[idx(x, hy, hz)]) clear = false;
     if (!clear) continue;
-    // King may not pass through or land on an attacked square.
-    if (isAttacked(board, idx(4 + dir, hy, hz), enemy)) continue;
-    moves.push({
-      from,
-      to: idx(4 + 2 * dir, hy, hz),
-      castle: { rookFrom: idx(rookX, hy, hz), rookTo: idx(4 + dir, hy, hz) },
-    });
+    const rookToX = rookX - 2 * dir;
+    let safe = true;
+    for (let x = 4 + dir; x !== rookToX + dir; x += dir) if (isAttacked(board, idx(x, hy, hz), enemy)) safe = false;
+    if (!safe) continue;
+    const kx = rookToX + dir;
+    const castle = { rookFrom: idx(rookX, hy, hz), rookTo: idx(rookToX, hy, hz), side: dir > 0 ? 'O-O' : 'O-O-O' };
+    for (const [ky, kz] of [[hy, hz], [hy + inward, hz], [hy, hz + inward]]) {
+      const to = idx(kx, ky, kz);
+      if (!board[to]) moves.push({ from, to, castle });
+    }
   }
   return moves;
 }
@@ -295,7 +313,11 @@ function computeStatus(state) {
 
 export function moveLabel(board, move) {
   const p = board[move.from];
-  if (move.castle) return move.to % N === 6 ? 'O-O' : 'O-O-O';
+  if (move.castle) {
+    const [, y, z] = coords(move.to);
+    const [hy, hz] = homeEdge(p.c);
+    return y === hy && z === hz ? move.castle.side : `${move.castle.side} K${sqName(move.to)}`;
+  }
   const piece = p.t === 'P' ? '' : p.t;
   const sep = move.capture ? 'x' : '-';
   const promo = move.promotion ? `=${move.promo || 'Q'}` : '';
