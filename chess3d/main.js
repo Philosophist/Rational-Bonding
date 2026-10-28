@@ -21,9 +21,18 @@ const app = {
   selected: -1,
   targets: [], // legal moves of the selected piece
   focus: -1, // -1 = all levels
-  spacing: 1.6,
   viewColor: 'w',
   pendingAnim: null,
+};
+
+const THEME = {
+  background: 0x161a22,
+  grid: 0x7d8db0,
+  frame: 0x9aa8c8,
+  lightCell: 0xdfe5f2,
+  darkCell: 0x6f7d9c,
+  label: '#a9b4cc',
+  accent: '#f0c060',
 };
 
 const link = new Link({ onMessage: onNetMessage, onStatus: (s) => ($('net-status').textContent = s) });
@@ -33,7 +42,7 @@ const canvas = $('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x12141a);
+scene.background = new THREE.Color(THEME.background);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -47,37 +56,60 @@ const fill = new THREE.DirectionalLight(0xaabbff, 0.5);
 fill.position.set(-8, 5, -10);
 scene.add(fill);
 
+// An even cube grid: every cell is 1×1×1, centred on (x, level, -rank).
 const worldPos = (i, lift = 0) => {
   const [x, y, z] = coords(i);
-  return new THREE.Vector3(x - 3.5, z * app.spacing + lift, 3.5 - y);
+  return new THREE.Vector3(x - 3.5, z + lift, 3.5 - y);
 };
-const center = () => new THREE.Vector3(0, ((N - 1) * app.spacing) / 2, 0);
+const center = () => new THREE.Vector3(0, (N - 1) / 2, 0);
 
-// Tiles: one instanced mesh per level so each level can fade independently.
-const tileGeo = new THREE.BoxGeometry(0.94, 0.04, 0.94);
+// Lattice lines along every cell boundary.
+const lattice = (() => {
+  const pts = [];
+  const lo = -N / 2, hi = N / 2, ylo = -0.5, yhi = N - 0.5;
+  for (let a = 0; a <= N; a++)
+    for (let b = 0; b <= N; b++) {
+      const u = lo + a, v = lo + b, w = ylo + b;
+      pts.push(lo, w, u, hi, w, u); // along x
+      pts.push(u, w, lo, u, w, hi); // along z (ranks)
+      pts.push(u, ylo, v, u, yhi, v); // along y (levels)
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: THEME.grid, transparent: true, opacity: 0.22, depthWrite: false }));
+})();
+scene.add(lattice);
+
+// Cells: one instanced mesh per level, used for picking and to tint a focused level.
+const cellGeo = new THREE.BoxGeometry(0.98, 0.98, 0.98);
 const levelMeshes = [];
 for (let z = 0; z < N; z++) {
-  const mat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.35, roughness: 0.8, depthWrite: false });
-  const mesh = new THREE.InstancedMesh(tileGeo, mat, N * N);
+  const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  const mesh = new THREE.InstancedMesh(cellGeo, mat, N * N);
   mesh.userData.level = z;
   const c = new THREE.Color();
+  const m = new THREE.Matrix4();
   for (let y = 0; y < N; y++)
     for (let x = 0; x < N; x++) {
-      c.set((x + y + z) % 2 ? 0xd9c7a3 : 0x8a6a4a);
+      c.set((x + y + z) % 2 ? THEME.lightCell : THEME.darkCell);
       mesh.setColorAt(x + N * y, c);
+      m.makeTranslation(worldPos(idx(x, y, z)));
+      mesh.setMatrixAt(x + N * y, m);
     }
+  mesh.computeBoundingSphere();
   mesh.renderOrder = 1;
   levelMeshes.push(mesh);
   scene.add(mesh);
 }
 
 const frame = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-  new THREE.LineBasicMaterial({ color: 0x4a5068, transparent: true, opacity: 0.7 }),
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(N, N, N)),
+  new THREE.LineBasicMaterial({ color: THEME.frame, transparent: true, opacity: 0.8 }),
 );
+frame.position.copy(center());
 scene.add(frame);
 
-function textSprite(text, color = '#9aa0ad', size = 0.45) {
+function textSprite(text, color = THEME.label, size = 0.45) {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d');
@@ -97,7 +129,7 @@ const labels = new THREE.Group();
 scene.add(labels);
 const levelLabels = [];
 for (let z = 0; z < N; z++) {
-  const s = textSprite(LEVELS[z], '#e0b44c', 0.55);
+  const s = textSprite(LEVELS[z], THEME.accent, 0.55);
   levelLabels.push(s);
   labels.add(s);
 }
@@ -105,24 +137,11 @@ const fileLabels = [...FILES].map((f) => textSprite(f));
 const rankLabels = [...'12345678'].map((r) => textSprite(r));
 labels.add(...fileLabels, ...rankLabels);
 
-function layoutStatic() {
-  const m = new THREE.Matrix4();
+function layoutLabels() {
   const v = app.viewColor === 'w' ? 1 : -1; // keep labels on the viewer's side
-  for (let z = 0; z < N; z++) {
-    for (let y = 0; y < N; y++)
-      for (let x = 0; x < N; x++) {
-        m.makeTranslation(worldPos(idx(x, y, z), -0.02));
-        levelMeshes[z].setMatrixAt(x + N * y, m);
-      }
-    levelMeshes[z].instanceMatrix.needsUpdate = true;
-    levelMeshes[z].computeBoundingSphere();
-    levelLabels[z].position.set(-4.6 * v, z * app.spacing + 0.1, 4.2 * v);
-  }
-  const h = (N - 1) * app.spacing;
-  frame.scale.set(N, h + 1, N);
-  frame.position.set(0, h / 2 + 0.2, 0);
-  fileLabels.forEach((s, x) => s.position.set(x - 3.5, -0.35, 4.4 * v));
-  rankLabels.forEach((s, y) => s.position.set(4.4 * v, -0.35, 3.5 - y));
+  levelLabels.forEach((s, z) => s.position.set(-4.6 * v, z, 4.6 * v));
+  fileLabels.forEach((s, x) => s.position.set(x - 3.5, -0.9, 4.5 * v));
+  rankLabels.forEach((s, y) => s.position.set(4.5 * v, -0.9, 3.5 - y));
 }
 
 // ---------------------------------------------------------------- pieces
@@ -149,10 +168,12 @@ for (let k = 0; k < 4; k++) {
 }
 
 const PIECE_COLORS = {
-  w: { color: 0xf3ecdc, roughness: 0.45, metalness: 0.05 },
-  b: { color: 0x2b2b33, roughness: 0.3, metalness: 0.25 },
+  w: { color: 0xf6ecd4, emissive: 0x2a2418, roughness: 0.4, metalness: 0.05 },
+  b: { color: 0x1d3f94, emissive: 0x081a44, roughness: 0.3, metalness: 0.35 },
 };
-const PIECE_SCALE = 0.85;
+// Models are ~0.94 tall; shrink them to fit a 1×1×1 cell and centre them in it.
+const PIECE_SCALE = 0.78;
+const PIECE_MID = 0.47;
 
 function makePiece(p) {
   const mat = new THREE.MeshStandardMaterial({ ...PIECE_COLORS[p.c], transparent: true });
@@ -160,7 +181,7 @@ function makePiece(p) {
   for (const part of GEO[p.t]) {
     const [geo, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1] = Array.isArray(part) ? part : [part];
     const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
+    m.position.set(x, y - PIECE_MID, z);
     m.scale.set(sx, sy, sz);
     g.add(m);
   }
@@ -199,24 +220,26 @@ const markerGroup = new THREE.Group();
 scene.add(markerGroup);
 const MAT = {
   move: new THREE.MeshBasicMaterial({ color: 0x4fd18b, transparent: true, opacity: 0.85 }),
-  capture: new THREE.MeshBasicMaterial({ color: 0xef5d5d, transparent: true, opacity: 0.35, depthWrite: false }),
-  preview: new THREE.MeshBasicMaterial({ color: 0x6fa8ff, transparent: true, opacity: 0.7 }),
-  selected: new THREE.MeshBasicMaterial({ color: 0xe0b44c, transparent: true, opacity: 0.9 }),
-  last: new THREE.MeshBasicMaterial({ color: 0xe0b44c, transparent: true, opacity: 0.35, depthWrite: false }),
+  capture: new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.35, depthWrite: false }),
+  preview: new THREE.MeshBasicMaterial({ color: 0x7fb4ff, transparent: true, opacity: 0.7 }),
+  last: new THREE.MeshBasicMaterial({ color: 0xf0c060, transparent: true, opacity: 0.14, depthWrite: false }),
   check: new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.45, depthWrite: false }),
-  hover: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, depthWrite: false }),
 };
-const DOT = new THREE.SphereGeometry(0.14, 16, 12);
-const BUBBLE = new THREE.SphereGeometry(0.5, 24, 16);
-const RING = new THREE.TorusGeometry(0.42, 0.04, 8, 40).rotateX(Math.PI / 2);
-const FLAT = new THREE.BoxGeometry(0.96, 0.05, 0.96);
-const hoverTile = new THREE.Mesh(FLAT, MAT.hover);
+const LINE = {
+  selected: new THREE.LineBasicMaterial({ color: 0xf0c060, transparent: true, opacity: 1 }),
+  hover: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }),
+};
+const DOT = new THREE.SphereGeometry(0.13, 16, 12);
+const BUBBLE = new THREE.SphereGeometry(0.46, 24, 16);
+const CELL = new THREE.BoxGeometry(0.96, 0.96, 0.96);
+const CELL_EDGES = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.98, 0.98, 0.98));
+const hoverTile = new THREE.LineSegments(CELL_EDGES, LINE.hover);
 hoverTile.visible = false;
 scene.add(hoverTile);
 
-function addMarker(geo, mat, sq, lift, clickable) {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.copy(worldPos(sq, lift));
+function addMarker(geo, mat, sq, clickable) {
+  const m = mat.isLineBasicMaterial ? new THREE.LineSegments(geo, mat) : new THREE.Mesh(geo, mat);
+  m.position.copy(worldPos(sq));
   m.userData.sq = sq;
   m.userData.clickable = clickable;
   markerGroup.add(m);
@@ -227,19 +250,19 @@ function rebuildMarkers() {
   markerGroup.clear();
   const h = app.game.history.at(-1);
   if (h) {
-    addMarker(FLAT, MAT.last, h.from, -0.01, false);
-    addMarker(FLAT, MAT.last, h.to, -0.01, false);
+    addMarker(CELL, MAT.last, h.from, false);
+    addMarker(CELL, MAT.last, h.to, false);
   }
   if (app.game.status?.check && !app.game.result?.reason?.startsWith('resign')) {
     const k = findKing(app.game.board, app.game.turn);
-    if (k >= 0) addMarker(BUBBLE, MAT.check, k, 0.35, false);
+    if (k >= 0) addMarker(BUBBLE, MAT.check, k, false);
   }
   if (app.selected >= 0) {
-    addMarker(RING, MAT.selected, app.selected, 0.03, false);
+    addMarker(CELL_EDGES, LINE.selected, app.selected, false);
     const own = canAct() && app.game.board[app.selected]?.c === app.game.turn;
     for (const m of app.targets) {
-      if (m.capture) addMarker(BUBBLE, own ? MAT.capture : MAT.preview, m.to, 0.35, own);
-      else addMarker(DOT, own ? MAT.move : MAT.preview, m.to, 0.2, own);
+      if (m.capture) addMarker(BUBBLE, own ? MAT.capture : MAT.preview, m.to, own);
+      else addMarker(DOT, own ? MAT.move : MAT.preview, m.to, own);
     }
   }
   applyFocus();
@@ -248,7 +271,8 @@ function rebuildMarkers() {
 // ---------------------------------------------------------------- focus / visibility
 function applyFocus() {
   const f = app.focus;
-  levelMeshes.forEach((m, z) => (m.material.opacity = f < 0 ? 0.35 : z === f ? 0.7 : 0.04));
+  levelMeshes.forEach((m, z) => (m.material.opacity = z === f ? 0.1 : 0));
+  lattice.material.opacity = f < 0 ? 0.22 : 0.08;
   levelLabels.forEach((s, z) => (s.material.opacity = f < 0 || z === f ? 1 : 0.25));
   for (const g of pieceGroup.children) {
     const z = coords(g.userData.sq)[2];
@@ -272,10 +296,10 @@ function setFocus(f) {
 
 // ---------------------------------------------------------------- camera
 function resetCamera() {
-  layoutStatic();
+  layoutLabels();
   const c = center();
   const s = app.viewColor === 'w' ? 1 : -1;
-  camera.position.set(9 * s, c.y + 7, 15 * s);
+  camera.position.set(9.5 * s, c.y + 5, 15.5 * s);
   controls.target.copy(c);
   controls.update();
 }
@@ -339,7 +363,7 @@ function updateHover() {
     return;
   }
   hoverTile.visible = true;
-  hoverTile.position.copy(worldPos(sq, -0.005));
+  hoverTile.position.copy(worldPos(sq));
   const p = app.game.board[sq];
   $('hover-label').textContent = sqName(sq) + (p ? ` · ${COLOR_NAME[p.c]} ${PIECE_NAMES[p.t]}` : '');
   canvas.style.cursor = p || app.targets.some((m) => m.to === sq) ? 'pointer' : '';
@@ -725,13 +749,6 @@ function wireUI() {
   sel.add(new Option('All levels', '-1'));
   for (let z = 0; z < N; z++) sel.add(new Option(`Level ${LEVELS[z]}`, String(z)));
   sel.onchange = () => setFocus(Number(sel.value));
-  $('spacing').oninput = (e) => {
-    app.spacing = Number(e.target.value);
-    layoutStatic();
-    rebuildPieces();
-    rebuildMarkers();
-    controls.target.copy(center());
-  };
   $('flip-btn').onclick = () => {
     app.viewColor = other(app.viewColor);
     orientLevelMap();
@@ -800,7 +817,7 @@ function animate(now) {
   }
   const pulse = 0.6 + 0.3 * Math.sin(now / 250);
   MAT.move.opacity = pulse;
-  MAT.selected.opacity = pulse + 0.1;
+  LINE.selected.opacity = pulse + 0.4;
   updateHover();
   controls.update();
   renderer.render(scene, camera);
@@ -810,7 +827,7 @@ function animate(now) {
 // ---------------------------------------------------------------- boot
 wireUI();
 buildLevelMap();
-layoutStatic();
+layoutLabels();
 resize();
 resetCamera();
 setGame(initialState());
