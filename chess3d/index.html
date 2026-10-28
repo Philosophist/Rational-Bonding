@@ -75,6 +75,8 @@
         <label class="check" data-for="classic"><input type="checkbox" id="rule-rookDiagonals" /> Rooks also slide along flat diagonals</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-gridLines" /> Turned rooks keep the board's straight lines too</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-pawnsAnyFacing" /> Pawns may face any direction</label>
+        <label class="check" data-for="relative"><input type="checkbox" id="rule-bishopFacing" /> Bishops move along their own diagonals</label>
+        <label class="check" data-for="relative"><input type="checkbox" id="rule-knightFacing" /> Knights leap along their own axes</label>
         <div id="rules-note"></div>
       </section>
 
@@ -126,7 +128,9 @@
         <ul>
           <li><b>Rook</b> – any distance along its own three axes.</li>
           <li><b>Pawn</b> – straight ahead along its facing, 1 square (2 on its first move); captures one step ahead-and-sideways in its own frame. By default it may only face toward the enemy.</li>
-          <li>After moving a rook or pawn you choose its new facing. Other pieces move as in Classic.</li>
+          <li><b>Bishop</b> (toggle, on) – along the diagonals of its own frame. Square to the board it is the classic bishop. Turned 45°, as at the start, the board's rank and level axes become diagonals for it (two squares at a time) and its corner-to-corner lines run like (1, 2, 0).</li>
+          <li><b>Knight</b> (toggle, off) – 2 along one of its own axes and 1 along another, so a diagonal axis gives leaps like (2, 1, 1) or (0, 1, 3).</li>
+          <li>After moving a piece whose moves depend on its facing, you choose its new facing. Queens and kings move as in Classic.</li>
           <li>A piece can face along an axis or a flat diagonal, not corner to corner, because only those have square axes on the grid. Facing along an axis, it can be square to the board or turned 45° (◇).</li>
         </ul>
       </details>

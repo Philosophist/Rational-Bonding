@@ -52,8 +52,10 @@ Every piece faces a direction, and space is relative to it. Its own three straig
 - A piece facing a flat diagonal, such as the starting facing, has as its straight lines the file and the two diagonals of its rank/level plane. Those diagonals are straight lines for it.
 - **Rook:** any distance along its own three axes.
 - **Pawn:** straight ahead along its facing, 1 square (2 on its first move). It captures one step ahead-and-sideways in its own frame. By default it may only face toward the enemy. It promotes on the enemy's back-rank edge as usual.
-- After you move a rook or pawn, you choose its new facing. The picker previews where it could go next. Other pieces move as in Classic and keep their facing.
-- Toggles: **Turned rooks keep the board's straight lines too**, and **Pawns may face any direction**.
+- **Bishop** (toggle **Bishops move along their own diagonals**, on by default): it moves along every diagonal of its own frame, flat or corner to corner. Square to the board it is the classic bishop. Turned 45°, as every piece is at the start, the board's rank and level axes become diagonals for it, two squares at a time with nothing in between to block, and its corner-to-corner lines run like (1, 2, 0). A bishop has 20 directions in every frame and a rook has 6, so no facing makes one into the other.
+- **Knight** (toggle **Knights leap along their own axes**, off by default): 2 along one of its own axes and 1 along another. With a diagonal axis that gives leaps like (2, 1, 1), and with both legs diagonal, (0, 1, 3).
+- After you move a piece whose moves depend on its facing, you choose its new facing. The picker previews where it could go next. Queens and kings move as in Classic and keep their facing.
+- Other toggles: **Turned rooks keep the board's straight lines too**, and **Pawns may face any direction**.
 - Move notation adds the new facing, e.g. `e2B-e3C →8`: files a/h, ranks 1/8, levels A/H.
 
 ## Development

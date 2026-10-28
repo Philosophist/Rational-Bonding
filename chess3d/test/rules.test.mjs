@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   initialState, allLegalMoves, legalMovesFrom, applyMove, idx, SIZE, replay, sqName,
   KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures, inCheck, isAttacked,
-  frameDirs, facingChoices, normalizeRules, allLegalMoves as allMoves,
+  frameDirs, facingChoices, normalizeRules, allLegalMoves as allMoves, frameBishopDirs, frameKnightJumps,
 } from '../rules.js';
 
 const REL = { mode: 'relative' };
@@ -335,7 +335,9 @@ test('relative: facing choices', () => {
   const s = initialState(REL);
   assert.equal(facingChoices(s, idx(0, 0, 0)).length, 24, 'rook: 6 axes x 2 frames + 12 diagonals');
   assert.equal(facingChoices(s, idx(0, 1, 1)).length, 9, 'pawn: only directions toward the enemy');
-  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 0, 'knight: facing does not matter');
+  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 0, 'knight: facing off by default');
+  assert.equal(facingChoices(s, idx(2, 0, 0)).length, 24, 'bishop: facing on by default');
+  assert.equal(facingChoices(s, idx(3, 0, 0)).length, 0, 'queen: never');
   const any = initialState({ mode: 'relative', pawnsAnyFacing: true });
   assert.equal(facingChoices(any, idx(0, 1, 1)).length, 24);
   assert.equal(facingChoices(initialState(), idx(0, 0, 0)).length, 0, 'classic mode has no facings');
@@ -365,4 +367,44 @@ test('relative random playouts with random facings stay consistent', () => {
     s = n;
     assert.equal(s.board.filter((p) => p && p.t === 'K').length, 2);
   }
+});
+
+const key = (ds) => ds.map((d) => d.join(',')).sort();
+
+test('relative bishop: square frame is the classic bishop, turned frame sees board axes as diagonals', () => {
+  assert.deepEqual(key(frameBishopDirs([0, 1, 0, 0])), key(BISHOP_DIRS));
+  const turned = frameBishopDirs([0, 1, 1, 1]);
+  assert.equal(turned.length, 20);
+  const k = key(turned);
+  for (const d of ['0,0,2', '0,2,0', '0,0,-2', '1,1,1', '1,-1,1', '1,0,2', '1,2,0', '-1,-2,0']) assert.ok(k.includes(d), d);
+  assert.ok(!k.includes('0,1,1'), 'its forward axis is not a diagonal for it');
+});
+
+test('relative bishop moves: turned bishop slides along the level axis two squares at a time', () => {
+  const s = relEmpty([[idx(3, 3, 1), 'B', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]], [idx(3, 3, 5), 'P', 'b', [0, -1, -1, 1]]]);
+  const t = legalMovesFrom(s, idx(3, 3, 1)).map((m) => m.to);
+  assert.ok(t.includes(idx(3, 3, 3)) && t.includes(idx(3, 3, 5)), 'up the level axis by twos, capturing at the end');
+  assert.ok(!t.includes(idx(3, 3, 2)) && !t.includes(idx(3, 3, 7)));
+  assert.ok(t.includes(idx(4, 4, 2)), 'board space diagonal');
+  assert.ok(t.includes(idx(4, 5, 1)), '(1, 2, 0) line');
+  assert.ok(!t.includes(idx(4, 4, 1)), 'flat board diagonals are not diagonals for it');
+  // Turning off the toggle gives the classic bishop back.
+  const c = relEmpty([[idx(3, 3, 1), 'B', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]], 'w', { mode: 'relative', bishopFacing: false });
+  assert.ok(legalMovesFrom(c, idx(3, 3, 1)).some((m) => m.to === idx(4, 4, 1)));
+});
+
+test('relative knight (toggle): leaps along its own axes, diagonal legs included', () => {
+  assert.deepEqual(key(frameKnightJumps([0, 1, 0, 0])), key(KNIGHT_JUMPS));
+  const k = key(frameKnightJumps([0, 1, 1, 1]));
+  assert.equal(k.length, 24);
+  for (const d of ['2,1,1', '2,-1,1', '1,2,2', '0,1,3', '0,3,1', '0,-3,-1']) assert.ok(k.includes(d), d);
+  const s = relEmpty([[idx(3, 3, 3), 'N', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]], 'w', { mode: 'relative', knightFacing: true });
+  const t = legalMovesFrom(s, idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(t.includes(idx(5, 4, 4)) && t.includes(idx(3, 4, 6)));
+  assert.ok(!t.includes(idx(5, 4, 3)), 'board knight leap is not one for it');
+});
+
+test('relative start with every facing toggle on: still no captures on move one', () => {
+  const s = initialState({ mode: 'relative', bishopFacing: true, knightFacing: true });
+  assert.equal(allMoves(s).filter((m) => m.capture).length, 0);
 });

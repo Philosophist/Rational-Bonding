@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 5;
+export const RULES_VERSION = 6;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -82,9 +82,11 @@ export const isPromotionSquare = (c, i) => {
 // relative: every piece has a facing that defines its own three straight axes.
 //   gridLines      - rooks turned 45° keep the board's axes as well.
 //   pawnsAnyFacing - pawns may face any way, not only toward the enemy.
+//   bishopFacing   - bishops move along the diagonals of their own frame.
+//   knightFacing   - knights leap 2-and-1 along their own frame's axes.
 export const DEFAULT_RULES = {
   classic: { mode: 'classic', rookDiagonals: true },
-  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: false },
+  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: false, bishopFacing: true, knightFacing: false },
 };
 
 export function normalizeRules(r) {
@@ -124,6 +126,47 @@ export function frameDirs(o) {
   return ALL_DIRS.filter((d) => (nonZero(d) === 1 && d[a] !== 0) || (nonZero(d) === 2 && d[a] === 0));
 }
 
+// One representative of each of the frame's three axes.
+const frameBasis = (o) => {
+  const out = [];
+  for (const d of frameDirs(o)) if (!out.some((e) => same(e, d) || same(e, d.map((v) => -v)))) out.push(d);
+  return out;
+};
+const add3 = (...vs) => vs.reduce((a, v) => [a[0] + v[0], a[1] + v[1], a[2] + v[2]], [0, 0, 0]);
+const signs = [1, -1];
+
+// Bishop in its own frame: every flat diagonal (two of its axes) and every
+// corner-to-corner diagonal (all three). Square to the board this is the
+// classic bishop; turned 45° the board's own axes become diagonals for it
+// (in steps of two) and its 3D diagonals run like (1, 2, 0).
+const bishopCache = new Map();
+export function frameBishopDirs(o) {
+  const key = frameAxis(o);
+  if (!bishopCache.has(key)) {
+    const [a, b, c] = frameBasis(o);
+    const out = [];
+    for (const [u, v] of [[a, b], [a, c], [b, c]])
+      for (const su of signs) for (const sv of signs) out.push(add3(u.map((x) => x * su), v.map((x) => x * sv)));
+    for (const sa of signs) for (const sb of signs) for (const sc of signs)
+      out.push(add3(a.map((x) => x * sa), b.map((x) => x * sb), c.map((x) => x * sc)));
+    bishopCache.set(key, out);
+  }
+  return bishopCache.get(key);
+}
+
+// Knight in its own frame: two along one of its axes, one along another.
+const knightCache = new Map();
+export function frameKnightJumps(o) {
+  const key = frameAxis(o);
+  if (!knightCache.has(key)) {
+    const dirs = frameDirs(o);
+    const out = [];
+    for (const u of dirs) for (const v of dirs) if (dot(u, v) === 0) out.push(add3(u, u, v));
+    knightCache.set(key, out);
+  }
+  return knightCache.get(key);
+}
+
 export function facingAllowed(piece, o, rules) {
   if (piece.t !== 'P' || rules.pawnsAnyFacing) return true;
   const s = pawnSign(piece.c);
@@ -131,7 +174,9 @@ export function facingAllowed(piece, o, rules) {
 }
 
 // Which pieces' moves depend on their facing (and so get to choose it).
-export const usesFacing = (piece, rules) => rules.mode === 'relative' && (piece.t === 'R' || piece.t === 'P');
+export const usesFacing = (piece, rules) =>
+  rules.mode === 'relative' &&
+  (piece.t === 'R' || piece.t === 'P' || (piece.t === 'B' && rules.bishopFacing) || (piece.t === 'N' && rules.knightFacing));
 
 export function facingLabel(o) {
   const parts = [o[0] > 0 ? 'h' : o[0] < 0 ? 'a' : '', o[1] > 0 ? '8' : o[1] < 0 ? '1' : '', o[2] > 0 ? 'H' : o[2] < 0 ? 'A' : ''];
@@ -234,9 +279,9 @@ function pieceMoves(board, from, rules, attack = false) {
         if (rules.rookDiagonals) slide(PLANAR_DIAGONALS);
       }
       break;
-    case 'B': slide(BISHOP_DIRS); break;
+    case 'B': slide(relative && rules.bishopFacing ? frameBishopDirs(p.o) : BISHOP_DIRS); break;
     case 'Q': slide(QUEEN_DIRS); break;
-    case 'N': jump(KNIGHT_JUMPS); break;
+    case 'N': jump(relative && rules.knightFacing ? frameKnightJumps(p.o) : KNIGHT_JUMPS); break;
     case 'K': jump(KING_DIRS); break;
     case 'P': {
       if (relative) {
