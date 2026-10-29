@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
-  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameDirs, playOnBoard,
+  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameDirs, playOnBoard, usesFacing,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 
@@ -13,7 +13,7 @@ const glyph = (t) => GLYPH[t] + '︎';
 const COLOR_NAME = { w: 'White', b: 'Black' };
 const HOST_KEY = 'chess3d-host';
 const RULES_KEY = 'chess3d-rules';
-const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing'];
+const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing'];
 
 function loadRules() {
   try {
@@ -224,8 +224,8 @@ function makePiece(p) {
   g.scale.setScalar(PIECE_SCALE);
   if (p.o && app.game.rules.mode === 'relative') {
     orientPiece(g, p.o, p.c);
-    if (p.t === 'R' || p.t === 'P') {
-      // Rooks and pawns look the same all round, so show their facing.
+    if (usesFacing(p, app.game.rules)) {
+      // Show the facing of pieces whose moves depend on it.
       const am = new THREE.MeshStandardMaterial({ color: 0xf0c060, emissive: 0x5a4210, transparent: true });
       const arrow = new THREE.Mesh(ARROW, am);
       arrow.position.set(0, 0, -0.42);
