@@ -4,6 +4,40 @@ A 3D chess game played in an 8×8×8 cube, in the browser, against a friend onli
 
 **Play:** open `chess3d/index.html` from the site (e.g. `https://rationalbonding.com/chess3d/` once this is on the published branch). It's static HTML/JS, so it works on GitHub Pages with no server.
 
+## Accounts (optional)
+Once accounts are turned on (see **[SETUP.md](SETUP.md)**), players can sign in to get:
+- **a profile** with a username, and the ability to **follow** other players and **challenge** them
+- **saved games**: online games against other players, plus same-screen games, with a move-by-move **replay**
+- **personal stats**: win rate, results by time control, mode and colour, how games were won and lost, streaks, game length, and most-played opponents
+- **Daily games** (days per move), so you can play a move and come back tomorrow
+
+**Ways to sign in:**
+- **passkeys** (the open WebAuthn standard: fingerprint, face or PIN, no password)
+- an emailed sign-in link or code
+- email and password
+- GitLab, Keycloak, Google, Apple, Microsoft, GitHub, Discord and the other Supabase providers
+- phone codes
+- Ethereum or Solana wallets
+
+Only the methods you switch on in Supabase are shown.
+
+Guests can still play everything except Daily games. They have no profile, and their games aren't saved.
+
+Account games are stored in Supabase. The server checks that each move comes from the player whose turn it is, and keeps the clocks itself, so nobody can fake their time.
+
+## Time controls
+These match chess.com's options, chosen in the **Game rules** panel or when sending a challenge:
+- **Bullet:** 30 sec, 1 min, 1 | 1, 2 | 1
+- **Blitz:** 3 min, 3 | 2, 5 min, 5 | 5
+- **Rapid:** 10 min, 10 | 5, 15 | 10, 20 min, 30 min, 60 min
+- **Daily** (account games only): 1, 2, 3, 5, 7 or 14 days per move
+- **Custom:** any number of minutes plus an increment, or no clock
+
+The rules follow chess.com:
+- Clocks start once each side has made its first move. Until then either player can **abort**, and the game doesn't count.
+- The increment is added after each move.
+- Running out of time loses the game. It's a draw instead if the opponent couldn't possibly checkmate, for example with only a king, or a king and one bishop or knight.
+
 ## Playing online
 1. Click **Online → Create game**. You get a 6-letter room code and an invite link.
 2. Send the link to your friend (or have them type the code and click **Join**).
@@ -60,7 +94,11 @@ Every piece faces a direction, and space is relative to it. Its own three straig
 
 ## Development
 ```
-npm test        # rules engine tests (Node 18+)
+npm test        # rules, clock and stats tests (Node 18+)
 npm run serve   # local static server on :8080
 ```
-`rules.js` is the rules engine (no DOM), `main.js` is the three.js client, and `net.js` handles online play.
+- `rules.js` is the rules engine, with no DOM code. `clock.js` handles time controls and `stats.js` computes stats; both are pure modules.
+- `main.js` is the three.js client. `net.js` handles guest link play.
+- `account.js` and `accountui.js` handle accounts.
+- The database is in `supabase/schema.sql`.
+- `npm run test:db` runs the database security tests against a Supabase instance (see SETUP.md).

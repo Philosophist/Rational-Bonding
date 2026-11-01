@@ -4,6 +4,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "serve": "npx --yes http-server -c-1 -p 8080 ."
+    "serve": "npx --yes http-server -c-1 -p 8080 .",
+    "test:db": "node --test test/integration/*.test.mjs"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.118.0"
   }
 }

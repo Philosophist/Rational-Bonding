@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 6;
+export const RULES_VERSION = 7;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -501,6 +501,22 @@ export function applyMove(state, input) {
   if (next.status.check) next.history[next.history.length - 1].label += next.status.over ? '#' : '+';
   if (next.status.over) next.result = { winner: next.status.result, reason: next.status.reason };
   return next;
+}
+
+// Could `color` still possibly checkmate with what it has left? (A lone king,
+// or king and one bishop or knight, cannot.)
+export function canMate(board, color) {
+  const rest = board.filter((p) => p && p.c === color && p.t !== 'K');
+  return !(rest.length === 0 || (rest.length === 1 && 'BN'.includes(rest[0].t)));
+}
+
+// `color` ran out of time. As on chess.com it is a draw if the opponent cannot
+// possibly checkmate, otherwise a loss.
+export function timeout(state, color) {
+  const winner = other(color);
+  return canMate(state.board, winner)
+    ? { ...state, result: { winner, reason: 'timeout' } }
+    : { ...state, result: { winner: 'draw', reason: 'timeout vs insufficient material' } };
 }
 
 export function resign(state, color) {

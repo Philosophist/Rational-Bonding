@@ -22,8 +22,24 @@
       <canvas id="view"></canvas>
       <div id="hud">
         <div id="turn-banner"></div>
+        <div id="clocks" hidden>
+          <div class="clock" id="clock-b"><span class="who">Black</span> <span class="t"></span></div>
+          <div class="clock" id="clock-w"><span class="who">White</span> <span class="t"></span></div>
+        </div>
         <div id="hover-label"></div>
       </div>
+      <div id="review-bar" hidden>
+        <div id="review-title"></div>
+        <div class="row">
+          <button id="rv-first" title="Start">⏮</button>
+          <button id="rv-prev" title="Back (←)">◀</button>
+          <span id="rv-pos"></span>
+          <button id="rv-next" title="Forward (→)">▶</button>
+          <button id="rv-last" title="End">⏭</button>
+          <button id="rv-close">Close</button>
+        </div>
+      </div>
+      <div id="toast" hidden></div>
       <div id="facing-picker" hidden>
         <div class="fp-title">Which way should it face?</div>
         <div class="fp-hint">Pick one to preview where it could go next (blue), then confirm. <span class="legend">a/h files · 1/8 ranks · A/H levels · ◇ turned 45°</span></div>
@@ -38,6 +54,11 @@
 
     <aside id="panel">
       <h1>Cube Chess <span>8×8×8</span></h1>
+
+      <section id="account-box" hidden>
+        <div id="account-status" class="muted"></div>
+        <div id="account-body"></div>
+      </section>
 
       <section id="mode">
         <div class="tabs">
@@ -61,6 +82,7 @@
             <button id="leave-btn" class="link">Leave room</button>
           </div>
           <div id="net-status"></div>
+          <p class="muted">Link games aren't saved. To save a game and count it in your stats, sign in and challenge someone from your profile.</p>
         </div>
       </section>
 
@@ -77,10 +99,24 @@
         <label class="check" data-for="relative"><input type="checkbox" id="rule-pawnsAnyFacing" /> Pawns may face any direction</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-bishopFacing" /> Bishops move along their own diagonals</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-knightFacing" /> Knights leap along their own axes</label>
+        <label>Time control
+          <select id="tc-select"></select>
+        </label>
+        <div id="tc-custom" class="row" hidden>
+          <label>Minutes <input id="tc-min" type="number" min="0.5" max="180" step="0.5" value="10" /></label>
+          <label>Increment (s) <input id="tc-inc" type="number" min="0" max="180" step="1" value="0" /></label>
+        </div>
         <div id="rules-note"></div>
       </section>
 
       <section id="status-box">
+        <div id="acct-game" hidden>
+          <div id="acct-game-info"></div>
+          <div class="row">
+            <button id="abort-btn" hidden>Abort</button>
+            <button id="leave-acct-btn">Back to same screen</button>
+          </div>
+        </div>
         <div id="status"></div>
         <div class="captured"><span id="cap-w"></span></div>
         <div class="captured"><span id="cap-b"></span></div>
@@ -141,6 +177,44 @@
     <button id="levels-toggle">Level map ▾</button>
     <div id="levels"></div>
   </div>
+
+  <dialog id="auth-dialog" class="wide-dialog">
+    <div class="dlg-head"><h2>Sign in or create an account</h2><button data-close class="link">Close</button></div>
+    <p class="muted">An account gives you a profile, saved games, stats, and friends to follow and challenge. One account works with any of these; signing in the first time creates it.</p>
+    <div id="auth-body"></div>
+  </dialog>
+
+  <dialog id="username-dialog">
+    <form id="username-form" method="dialog">
+      <h2>Choose a username</h2>
+      <p class="muted">3–20 letters, numbers or _. Friends find you by it.</p>
+      <input id="username-input" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" required autocomplete="nickname" />
+      <div id="username-msg" class="auth-msg err"></div>
+      <div class="row"><button class="primary">Save</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="profile-dialog" class="wide-dialog">
+    <div class="dlg-head"><span></span><button data-close class="link">Close</button></div>
+    <div id="profile-body"></div>
+  </dialog>
+
+  <dialog id="challenge-dialog">
+    <form id="challenge-form" method="dialog">
+      <h2>Challenge <span id="challenge-who"></span></h2>
+      <label>You play
+        <select id="challenge-color">
+          <option value="random">Random</option>
+          <option value="white">White</option>
+          <option value="black">Black</option>
+        </select>
+      </label>
+      <label>Time control <select id="challenge-tc"></select></label>
+      <p id="challenge-rules" class="muted"></p>
+      <div id="challenge-msg" class="auth-msg err"></div>
+      <div class="row"><button class="primary">Send challenge</button><button type="button" data-close>Cancel</button></div>
+    </form>
+  </dialog>
 
   <dialog id="promo-dialog">
     <p>Promote pawn to:</p>
