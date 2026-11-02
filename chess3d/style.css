@@ -157,3 +157,5 @@ dialog input { width: 100%; }
 .game-list { display: flex; flex-direction: column; }
 .game-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #333a4d; }
 .game-row span { display: flex; gap: 4px; flex: none; }
+
+.fp-current { font-weight: 600; color: var(--accent); }

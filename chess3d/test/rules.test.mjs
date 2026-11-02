@@ -305,14 +305,33 @@ test('relative rook gives check along its own diagonal', () => {
   assert.ok(!inCheck(s.board, 'b', s.rules), 'a square-facing rook does not see the diagonal');
 });
 
-test('relative pawn: straight along its facing, captures ahead-and-sideways in its frame', () => {
+test('relative pawn: forward along its facing and its own up and down', () => {
   const s = relEmpty([[idx(4, 1, 1), 'P', 'w', DIAG_W, false], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]]);
-  let t = legalMovesFrom(s, idx(4, 1, 1)).map((m) => m.to);
-  assert.deepEqual(t.sort((a, b) => a - b), [idx(4, 2, 2), idx(4, 3, 3)].sort((a, b) => a - b), 'one or two along its diagonal facing');
-  // Captures: forward + each perpendicular frame axis.
-  for (const sq of [idx(5, 2, 2), idx(3, 2, 2), idx(4, 1, 3), idx(4, 3, 1)]) s.board[sq] = { t: 'N', c: 'b', m: true };
-  t = legalMovesFrom(s, idx(4, 1, 1)).filter((m) => m.capture).map((m) => m.to).sort((a, b) => a - b);
-  assert.deepEqual(t, [idx(5, 2, 2), idx(3, 2, 2), idx(4, 1, 3), idx(4, 3, 1)].sort((a, b) => a - b));
+  const names = (list) => list.map((m) => sqName(m.to)).sort();
+  // Facing the diagonal: two along it on the first move. Its up (a rank back,
+  // a level up) and down (a rank on, a level down) reach the edge after one.
+  assert.deepEqual(names(legalMovesFrom(s, idx(4, 1, 1))), ['e1C', 'e3A', 'e3C', 'e4D']);
+  // In open space all three forwards allow two on the first move.
+  const open = relEmpty([[idx(4, 3, 3), 'P', 'w', DIAG_W, false], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]]);
+  assert.deepEqual(names(legalMovesFrom(open, idx(4, 3, 3))), ['e2F', 'e3E', 'e5C', 'e5E', 'e6B', 'e6F']);
+  // A blocked first square blocks the second.
+  open.board[idx(4, 2, 4)] = { t: 'N', c: 'b', m: true };
+  assert.ok(!legalMovesFrom(open, idx(4, 3, 3)).some((m) => m.to === idx(4, 1, 5)));
+});
+
+test('relative pawn captures: one forward and one sideways (or up/down), never backwards', () => {
+  const s = relEmpty([[idx(4, 3, 3), 'P', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]]);
+  const caps = [
+    idx(5, 4, 4), idx(3, 4, 4), // facing + left/right
+    idx(4, 3, 5), idx(4, 5, 3), // facing + up / down
+    idx(5, 2, 4), idx(3, 2, 4), // up + left/right
+    idx(5, 4, 2), idx(3, 4, 2), // down + left/right
+  ];
+  for (const c of caps) s.board[c] = { t: 'N', c: 'b', m: true };
+  s.board[idx(4, 2, 2)] = { t: 'N', c: 'b', m: true }; // straight behind
+  s.board[idx(5, 3, 3)] = { t: 'N', c: 'b', m: true }; // straight sideways
+  const got = legalMovesFrom(s, idx(4, 3, 3)).filter((m) => m.capture).map((m) => m.to).sort((a, b) => a - b);
+  assert.deepEqual(got, [...caps].sort((a, b) => a - b));
 });
 
 test('relative: facing is chosen with the move and changes what the piece can do next', () => {
@@ -324,8 +343,8 @@ test('relative: facing is chosen with the move and changes what the piece can do
   assert.ok(s.history[0].label.endsWith('→8'));
   s = applyMove(s, { from: idx(0, 6, 6), to: idx(0, 5, 5) });
   assert.deepEqual(s.board[idx(0, 5, 5)].o, [0, -1, -1, 1], 'no face given: facing unchanged');
-  const t = legalMovesFrom(s, idx(0, 2, 2)).map((m) => m.to);
-  assert.deepEqual(t, [idx(0, 3, 2)], 'moved pawn now steps up the rank, one square');
+  const t = legalMovesFrom(s, idx(0, 2, 2)).map((m) => sqName(m.to)).sort();
+  assert.deepEqual(t, ['a3B', 'a3D', 'a4C'], 'facing up the rank: forward, its up (a level up) and down, one square each');
   // Illegal facings are rejected.
   assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [0, -1, 0, 0] }), null, 'pawns may not face backward');
   assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [1, 1, 1, 0] }), null, 'no space-diagonal facings');
@@ -335,7 +354,8 @@ test('relative: facing choices', () => {
   const s = initialState(REL);
   assert.equal(facingChoices(s, idx(0, 0, 0)).length, 24, 'rook: 6 axes x 2 frames + 12 diagonals');
   assert.equal(facingChoices(s, idx(0, 1, 1)).length, 9, 'pawn: only directions toward the enemy');
-  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 0, 'knight: facing off by default');
+  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 24, 'knight: facing on by default');
+  assert.equal(facingChoices(initialState({ mode: 'relative', knightFacing: false }), idx(1, 0, 0)).length, 0, 'knight toggle off');
   assert.equal(facingChoices(s, idx(2, 0, 0)).length, 24, 'bishop: facing on by default');
   assert.equal(facingChoices(s, idx(3, 0, 0)).length, 0, 'queen: never');
   const any = initialState({ mode: 'relative', pawnsAnyFacing: true });

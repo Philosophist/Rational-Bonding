@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
-  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameDirs, playOnBoard, usesFacing, timeout, canMate,
+  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, playOnBoard, usesFacing, timeout, canMate,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 import { newClock, punch, timeLeft, flagged, formatTime, tcKey, parseTcKey, tcLabel } from './clock.js';
@@ -218,12 +218,8 @@ const ARROW = new THREE.ConeGeometry(0.08, 0.2, 12).rotateX(-Math.PI / 2);
 
 // The model's "up" for a facing: the frame axis square to it that points most
 // upward (then most toward the enemy), so pieces lean the way they look.
-function upFor(o, c) {
-  const s = c === 'w' ? 1 : -1;
-  const perps = frameDirs(o).filter((d) => d[0] * o[0] + d[1] * o[1] + d[2] * o[2] === 0);
-  perps.sort((a, b) => b[2] - a[2] || (b[1] - a[1]) * s || b[0] - a[0]);
-  return perps[0];
-}
+// The same "up" the rules use (see frameUp), so pieces lean the way they look.
+const upFor = frameUp;
 
 function orientPiece(g, o, c) {
   const y = g2w(upFor(o, c)).normalize();
@@ -260,8 +256,34 @@ function makePiece(p) {
 }
 
 const viewBoard = () => app.preview?.board || app.game.board;
+// Labelled blocks for choosing a facing (Relative mode).
+const facingGroup = new THREE.Group();
+const FACE_BLOCK = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+
+function labelSprite(text, color, bg) {
+  const c = document.createElement('canvas');
+  c.width = 160;
+  c.height = 56;
+  const g = c.getContext('2d');
+  g.fillStyle = bg;
+  g.beginPath();
+  g.roundRect(4, 4, 152, 48, 12);
+  g.fill();
+  g.fillStyle = color;
+  g.font = 'bold 30px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 80, 30);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
+  sp.scale.set(1.15, 0.4, 1);
+  sp.renderOrder = 6;
+  return sp;
+}
 const pieceGroup = new THREE.Group();
 scene.add(pieceGroup);
+scene.add(facingGroup);
 const pieceAt = new Map(); // square -> group
 
 function rebuildPieces() {
@@ -413,8 +435,21 @@ canvas.addEventListener('pointerup', (e) => {
   if (!down) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
   down = null;
-  if (moved < 6) onSquareClick(pick(e));
+  if (moved >= 6) return;
+  if (app.preview) {
+    const block = pickFacing(e);
+    if (block) app.preview.choose(block);
+    return;
+  }
+  onSquareClick(pick(e));
 });
+
+function pickFacing(ev) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return raycaster.intersectObjects(app.preview.blocks, false)[0]?.object || null;
+}
 let hoverEv = null;
 canvas.addEventListener('pointermove', (e) => (hoverEv = e));
 canvas.addEventListener('pointerleave', () => {
@@ -654,22 +689,69 @@ function askFacing(move, promo) {
   const current = piece.o;
   const choices = facingChoices(game, move.from, promo);
   const picker = $('facing-picker');
-  const box = $('facing-options');
   const key = (o) => o.join(',');
+  const dirKey = (o) => o.slice(0, 3).join(',');
   let active = choices.find((o) => key(o) === key(current)) || choices[0];
+  // One labelled block per direction around the piece's new square.
+  const byDir = new Map();
+  for (const o of choices) {
+    if (!byDir.has(dirKey(o))) byDir.set(dirKey(o), []);
+    byDir.get(dirKey(o)).push(o);
+  }
+  const origin = worldPos(move.to);
+  const blocks = [];
+  for (const [dk, opts] of byDir) {
+    const mesh = new THREE.Mesh(FACE_BLOCK, new THREE.MeshBasicMaterial({ color: 0x6fd3ff, transparent: true, opacity: 0.25, depthTest: false, depthWrite: false }));
+    mesh.position.copy(origin).add(g2w(opts[0]));
+    mesh.renderOrder = 5;
+    mesh.userData.opts = opts;
+    facingGroup.add(mesh);
+    blocks.push(mesh);
+  }
   return new Promise((resolve) => {
+    const paint = () => {
+      for (const b of blocks) {
+        const isActive = dirKey(b.userData.opts[0]) === dirKey(active);
+        const o = isActive ? active : b.userData.opts.find((x) => key(x) === key(current)) || b.userData.opts[0];
+        b.material.color.set(isActive ? 0xf0c060 : 0x6fd3ff);
+        b.material.opacity = isActive ? 0.6 : 0.25;
+        if (b.userData.label) {
+          b.remove(b.userData.label);
+          b.userData.label.material.map.dispose();
+          b.userData.label.material.dispose();
+        }
+        const text = facingLabel(o).slice(1) + (key(o) === key(current) ? ' (now)' : '');
+        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#f0c060' : 'rgba(20,22,30,0.85)');
+        b.add(label);
+        b.userData.label = label;
+      }
+    };
     const show = (o) => {
+      active = o;
       const board = playOnBoard(game.board, { ...move, promo, face: o });
-      app.preview = { board, cancel: () => finish(null) };
+      app.preview = { board, cancel: () => finish(null), choose, confirm: () => finish(key(active) === key(current) ? undefined : active), blocks };
       app.selected = move.to;
       app.targets = legalMovesFrom({ ...game, board, turn: piece.c, result: null }, move.to);
       rebuildPieces();
       refreshHighlights();
+      paint();
       $('facing-confirm').textContent = `Confirm ${facingLabel(o)}`;
+      $('facing-current').textContent = `Facing ${facingLabel(o)}${o[3] && o.slice(0, 3).filter(Boolean).length === 1 ? ' (turned 45°)' : ''}`;
     };
+    // Clicking a block faces that way; clicking a straight one again turns it 45°.
+    function choose(block) {
+      const opts = block.userData.opts;
+      if (dirKey(opts[0]) === dirKey(active) && opts.length > 1) show(opts[(opts.findIndex((o) => key(o) === key(active)) + 1) % opts.length]);
+      else show(opts.find((o) => key(o) === key(current)) || opts[0]);
+    }
     const finish = (result) => {
       picker.hidden = true;
-      box.innerHTML = '';
+      for (const b of blocks) {
+        b.userData.label?.material.map.dispose();
+        b.userData.label?.material.dispose();
+        b.material.dispose();
+      }
+      facingGroup.clear();
       app.preview = null;
       app.selected = -1;
       app.targets = [];
@@ -678,39 +760,7 @@ function askFacing(move, promo) {
       refreshHighlights();
       resolve(result);
     };
-    const groups = [
-      ['Straight, square to the board', (o) => o.slice(0, 3).filter(Boolean).length === 1 && !o[3]],
-      ['Straight, turned 45° (◇)', (o) => o.slice(0, 3).filter(Boolean).length === 1 && o[3]],
-      ['Diagonal', (o) => o.slice(0, 3).filter(Boolean).length === 2],
-    ];
-    const buttons = [];
-    for (const [title, test] of groups) {
-      const opts = choices.filter(test);
-      if (!opts.length) continue;
-      const h = document.createElement('div');
-      h.className = 'fp-group';
-      h.textContent = title;
-      const grid = document.createElement('div');
-      grid.className = 'fp-grid';
-      for (const o of opts) {
-        const b = document.createElement('button');
-        b.textContent = facingLabel(o);
-        b.classList.toggle('current', key(o) === key(current));
-        b.title = key(o) === key(current) ? 'Current facing' : '';
-        b.onmouseenter = () => show(o);
-        b.onmouseleave = () => show(active);
-        b.onclick = () => {
-          active = o;
-          buttons.forEach(([bb, oo]) => bb.classList.toggle('active', oo === active));
-          show(o);
-        };
-        b.classList.toggle('active', o === active);
-        buttons.push([b, o]);
-        grid.appendChild(b);
-      }
-      box.append(h, grid);
-    }
-    $('facing-confirm').onclick = () => finish(key(active) === key(current) ? undefined : active);
+    $('facing-confirm').onclick = () => app.preview.confirm();
     $('facing-cancel').onclick = () => finish(null);
     picker.hidden = false;
     show(active);
@@ -1227,6 +1277,7 @@ function wireUI() {
     else if (e.key === '[') setFocus(app.focus < 0 ? N - 1 : Math.max(0, app.focus - 1));
     else if (e.key === '0') setFocus(-1);
     else if (e.key === 'Escape') app.preview ? app.preview.cancel() : deselect();
+    else if (e.key === 'Enter' && app.preview) app.preview.confirm();
     else if (app.mode === 'review' && e.key === 'ArrowLeft') showReviewPly(app.review.ply - 1);
     else if (app.mode === 'review' && e.key === 'ArrowRight') showReviewPly(app.review.ply + 1);
   });
