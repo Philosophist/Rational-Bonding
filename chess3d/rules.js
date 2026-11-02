@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 6;
+export const RULES_VERSION = 8;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -86,7 +86,7 @@ export const isPromotionSquare = (c, i) => {
 //   knightFacing   - knights leap 2-and-1 along their own frame's axes.
 export const DEFAULT_RULES = {
   classic: { mode: 'classic', rookDiagonals: true },
-  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: false, bishopFacing: true, knightFacing: false },
+  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: false, bishopFacing: true, knightFacing: true },
 };
 
 export function normalizeRules(r) {
@@ -165,6 +165,21 @@ export function frameKnightJumps(o) {
     knightCache.set(key, out);
   }
   return knightCache.get(key);
+}
+
+// A facing's own up and sideways axes. "Up" is the frame axis square to the
+// facing that points most up the levels (then most toward the enemy); "side"
+// is the remaining one, its left and right.
+export function frameUp(o, c) {
+  const s = c === 'w' ? 1 : -1;
+  const perps = frameDirs(o).filter((d) => dot(d, o) === 0);
+  perps.sort((a, b) => b[2] - a[2] || (b[1] - a[1]) * s || b[0] - a[0]);
+  return perps[0];
+}
+export function pawnFrame(o, c) {
+  const up = frameUp(o, c);
+  const side = frameDirs(o).find((d) => dot(d, o) === 0 && dot(d, up) === 0);
+  return { up, side };
 }
 
 export function facingAllowed(piece, o, rules) {
@@ -285,18 +300,29 @@ function pieceMoves(board, from, rules, attack = false) {
     case 'K': jump(KING_DIRS); break;
     case 'P': {
       if (relative) {
-        // Straight ahead along its facing (two on its first move); captures one
-        // step ahead-and-sideways in its own frame.
+        // As in Classic, a pawn has more than one forward: straight ahead along
+        // its facing, and its own up and down. It moves one square along any of
+        // them (two on its first move, path clear) and captures one diagonal
+        // step that goes forward on one of them and sideways (or, for its
+        // facing, up or down) on another, never back against its facing.
         const f = p.o;
+        const { up, side } = pawnFrame(f, p.c);
+        const down = up.map((v) => -v);
         if (!attack) {
-          const t = step(from, f);
-          if (t >= 0 && !board[t]) {
+          for (const d of [f, up, down]) {
+            const t = step(from, d);
+            if (t < 0 || board[t]) continue;
             add(t);
-            const t2 = step(from, f, 2);
+            const t2 = step(from, d, 2);
             if (!p.m && t2 >= 0 && !board[t2]) add(t2);
           }
         }
-        for (const side of frameDirs(f)) if (dot(side, f) === 0) strike(step(from, [f[0] + side[0], f[1] + side[1], f[2] + side[2]]));
+        const sides = [side, side.map((v) => -v)];
+        for (const d of [...sides, up, down]) strike(step(from, add3(f, d)));
+        for (const d of sides) {
+          strike(step(from, add3(up, d)));
+          strike(step(from, add3(down, d)));
+        }
         for (const m of moves) if (isPromotionSquare(p.c, m.to)) m.promotion = true;
         break;
       }
@@ -501,6 +527,22 @@ export function applyMove(state, input) {
   if (next.status.check) next.history[next.history.length - 1].label += next.status.over ? '#' : '+';
   if (next.status.over) next.result = { winner: next.status.result, reason: next.status.reason };
   return next;
+}
+
+// Could `color` still possibly checkmate with what it has left? (A lone king,
+// or king and one bishop or knight, cannot.)
+export function canMate(board, color) {
+  const rest = board.filter((p) => p && p.c === color && p.t !== 'K');
+  return !(rest.length === 0 || (rest.length === 1 && 'BN'.includes(rest[0].t)));
+}
+
+// `color` ran out of time. As on chess.com it is a draw if the opponent cannot
+// possibly checkmate, otherwise a loss.
+export function timeout(state, color) {
+  const winner = other(color);
+  return canMate(state.board, winner)
+    ? { ...state, result: { winner, reason: 'timeout' } }
+    : { ...state, result: { winner: 'draw', reason: 'timeout vs insufficient material' } };
 }
 
 export function resign(state, color) {

@@ -3,9 +3,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
-  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameDirs, playOnBoard, usesFacing,
+  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, playOnBoard, usesFacing, timeout, canMate,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
+import { newClock, punch, timeLeft, flagged, formatTime, tcKey, parseTcKey, tcLabel } from './clock.js';
+import * as acct from './account.js';
+import * as accountUI from './accountui.js';
 
 const $ = (id) => document.getElementById(id);
 const GLYPH = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
@@ -14,6 +17,15 @@ const COLOR_NAME = { w: 'White', b: 'Black' };
 const HOST_KEY = 'chess3d-host';
 const RULES_KEY = 'chess3d-rules';
 const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing'];
+const TC_KEY = 'chess3d-tc';
+
+function loadTc() {
+  try {
+    return parseTcKey(localStorage.getItem(TC_KEY) || 'none');
+  } catch {
+    return parseTcKey('none');
+  }
+}
 
 function loadRules() {
   try {
@@ -26,7 +38,11 @@ function loadRules() {
 // ---------------------------------------------------------------- app state
 const app = {
   rules: loadRules(), // what a new game here starts with
+  tc: loadTc(), // the time control a new game here starts with
   game: null,
+  clock: null,
+  acct: null, // account game: { row, lastClaim }
+  review: null, // replaying a saved game: { row, ply, title }
   preview: null, // while choosing a facing: { board } with the move played
   mode: 'local',
   myColor: 'w', // online only
@@ -38,7 +54,13 @@ const app = {
   pendingAnim: null,
 };
 app.game = initialState(app.rules);
+app.clock = newClock(app.tc, Date.now());
 const freshGame = () => initialState(app.rules);
+// A new game with the chosen rules and a fresh clock.
+function startFresh() {
+  app.clock = newClock(app.tc, Date.now());
+  setGame(freshGame());
+}
 
 const THEME = {
   background: 0x161a22,
@@ -196,12 +218,8 @@ const ARROW = new THREE.ConeGeometry(0.08, 0.2, 12).rotateX(-Math.PI / 2);
 
 // The model's "up" for a facing: the frame axis square to it that points most
 // upward (then most toward the enemy), so pieces lean the way they look.
-function upFor(o, c) {
-  const s = c === 'w' ? 1 : -1;
-  const perps = frameDirs(o).filter((d) => d[0] * o[0] + d[1] * o[1] + d[2] * o[2] === 0);
-  perps.sort((a, b) => b[2] - a[2] || (b[1] - a[1]) * s || b[0] - a[0]);
-  return perps[0];
-}
+// The same "up" the rules use (see frameUp), so pieces lean the way they look.
+const upFor = frameUp;
 
 function orientPiece(g, o, c) {
   const y = g2w(upFor(o, c)).normalize();
@@ -238,8 +256,34 @@ function makePiece(p) {
 }
 
 const viewBoard = () => app.preview?.board || app.game.board;
+// Labelled blocks for choosing a facing (Relative mode).
+const facingGroup = new THREE.Group();
+const FACE_BLOCK = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+
+function labelSprite(text, color, bg) {
+  const c = document.createElement('canvas');
+  c.width = 160;
+  c.height = 56;
+  const g = c.getContext('2d');
+  g.fillStyle = bg;
+  g.beginPath();
+  g.roundRect(4, 4, 152, 48, 12);
+  g.fill();
+  g.fillStyle = color;
+  g.font = 'bold 30px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 80, 30);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
+  sp.scale.set(1.15, 0.4, 1);
+  sp.renderOrder = 6;
+  return sp;
+}
 const pieceGroup = new THREE.Group();
 scene.add(pieceGroup);
+scene.add(facingGroup);
 const pieceAt = new Map(); // square -> group
 
 function rebuildPieces() {
@@ -391,8 +435,21 @@ canvas.addEventListener('pointerup', (e) => {
   if (!down) return;
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
   down = null;
-  if (moved < 6) onSquareClick(pick(e));
+  if (moved >= 6) return;
+  if (app.preview) {
+    const block = pickFacing(e);
+    if (block) app.preview.choose(block);
+    return;
+  }
+  onSquareClick(pick(e));
 });
+
+function pickFacing(ev) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return raycaster.intersectObjects(app.preview.blocks, false)[0]?.object || null;
+}
 let hoverEv = null;
 canvas.addEventListener('pointermove', (e) => (hoverEv = e));
 canvas.addEventListener('pointerleave', () => {
@@ -421,8 +478,9 @@ const PIECE_NAMES = { K: 'King', Q: 'Queen', R: 'Rook', B: 'Bishop', N: 'Knight'
 
 // ---------------------------------------------------------------- game flow
 function canAct() {
-  if (app.game.result) return false;
+  if (app.game.result || app.mode === 'review') return false;
   if (app.mode === 'local') return true;
+  if (app.mode === 'account') return app.acct?.row.status === 'active' && app.game.turn === app.myColor;
   return link.connected && app.game.turn === app.myColor;
 }
 
@@ -466,8 +524,161 @@ async function tryMove(move) {
   const next = applyMove(game, { from: move.from, to: move.to, promo, face });
   if (!next) return;
   const ply = game.history.length;
+  const punched = punch(app.clock, ply, Date.now());
+  if (punched.flagged && app.mode !== 'account') return onFlag(punched.flagged); // the server judges account games
+  if (punched.clock) app.clock = punched.clock;
   setGame(next, { from: move.from, to: move.to });
-  if (app.mode === 'online') link.send({ type: 'move', ply, from: move.from, to: move.to, promo, face });
+  if (app.mode === 'online') link.send({ type: 'move', ply, from: move.from, to: move.to, promo, face, ms: app.clock.ms[game.turn] });
+  if (app.mode === 'account') sendAccountMove(next, { from: move.from, to: move.to, promo, face }, ply);
+}
+
+// ---------------------------------------------------------------- clocks
+function onFlag(color) {
+  if (app.game.result) return;
+  if (app.mode === 'account') {
+    const now = Date.now();
+    if (now - (app.acct.lastClaim || 0) < 3000) return;
+    app.acct.lastClaim = now;
+    acct.claimTimeout(app.acct.row.id, canMate(app.game.board, other(color))).then(applyAccountRow, (e) => notify(e.message));
+    return;
+  }
+  setGame(timeout(app.game, color));
+  if (app.mode === 'online') link.send({ type: 'timeout', color });
+}
+
+function renderClocks() {
+  const c = app.clock;
+  const show = !!c && c.tc.type !== 'none' && app.mode !== 'review';
+  $('clocks').hidden = !show;
+  if (!show) return;
+  const ply = app.game.history.length;
+  const now = Date.now();
+  for (const col of 'wb') {
+    const box = $(`clock-${col}`);
+    const t = timeLeft(c, col, ply, now);
+    box.querySelector('.t').textContent = formatTime(t, c.tc);
+    box.querySelector('.who').textContent = playerName(col);
+    box.classList.toggle('running', !app.game.result && app.game.turn === col && (c.tc.type === 'daily' || ply >= 2));
+    box.classList.toggle('low', c.tc.type === 'live' && t !== null && t < 20000);
+  }
+  // Your own clock at the bottom.
+  $('clocks').style.flexDirection = app.viewColor === 'w' ? 'column' : 'column-reverse';
+}
+
+function tick() {
+  renderClocks();
+  if (!app.game.result && app.clock && app.mode !== 'review') {
+    const f = flagged(app.clock, app.game.history.length, Date.now());
+    if (f) onFlag(f);
+  }
+}
+
+const playerName = (col) => {
+  if (app.mode === 'account' && app.acct) return '@' + accountUI.nameOf(col === 'w' ? app.acct.row.white : app.acct.row.black);
+  return COLOR_NAME[col];
+};
+
+function notify(text) {
+  const t = $('toast');
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(notify.timer);
+  notify.timer = setTimeout(() => (t.hidden = true), 4000);
+}
+
+// ---------------------------------------------------------------- account games
+const RESULT_COLOR = { white: 'w', black: 'b', draw: 'draw' };
+
+function openAccountGame(row) {
+  if (app.mode === 'online') link.close();
+  app.mode = 'account';
+  app.review = null;
+  app.acct = { row, lastClaim: 0 };
+  document.querySelectorAll('#mode .tabs button').forEach((b) => b.classList.remove('active'));
+  $('online-box').hidden = true;
+  $('review-bar').hidden = true;
+  setMyColor(row.white === accountUI.me() ? 'w' : 'b');
+  acct.syncServerClock();
+  applyAccountRow(row);
+}
+
+// Show the game exactly as the server has it.
+function applyAccountRow(row) {
+  if (!app.acct || row.id !== app.acct.row.id) return;
+  const before = app.game.history.length;
+  app.acct.row = row;
+  let g = replay(row.moves, row.rules);
+  if (g.history.length < row.moves.length) notify('This game has a move your version of the game does not accept. Try refreshing the page.');
+  if (row.status === 'finished') g = { ...g, result: { winner: RESULT_COLOR[row.result], reason: row.reason } };
+  if (row.status === 'aborted') g = { ...g, result: { winner: 'draw', reason: 'aborted' } };
+  if (row.status === 'declined') g = { ...g, result: { winner: 'draw', reason: 'declined' } };
+  app.clock = { ...newClock(row.time_control, 0), ms: { w: row.white_ms, b: row.black_ms }, started: acct.toLocalTime(row.turn_started_at) };
+  const last = g.history.at(-1);
+  const anim = g.history.length === before + 1 && last ? { from: last.from, to: last.to } : null;
+  setGame(g, anim);
+}
+
+async function sendAccountMove(next, move, ply) {
+  const id = app.acct.row.id;
+  let claim = null, reason = null;
+  if (next.result) {
+    claim = next.result.winner === 'draw' ? 'draw' : next.result.winner === 'w' ? 'white' : 'black';
+    reason = next.result.reason;
+  }
+  try {
+    applyAccountRow(await acct.makeMove(id, ply, move, claim, reason));
+  } catch (e) {
+    notify(e.message);
+    acct.getGame(id).then(applyAccountRow, () => {});
+  }
+}
+
+function onAccountGameUpdate(row) {
+  if (app.acct && row.id === app.acct.row.id) return applyAccountRow(row);
+  // A challenge I sent was accepted: open it unless I'm busy in another game.
+  if (row.status === 'active' && row.created_by === accountUI.me() && row.moves.length === 0) {
+    const busy = (app.mode === 'account' && !app.game.result) || (app.mode !== 'account' && app.game.history.length && !app.game.result);
+    if (!busy) openAccountGame(row);
+    else notify(`@${accountUI.nameOf(row.white === accountUI.me() ? row.black : row.white)} accepted your challenge. Open it from your account panel.`);
+  }
+}
+
+// ---------------------------------------------------------------- replays
+function reviewGame(row, title) {
+  if (app.mode === 'online') link.close();
+  app.mode = 'review';
+  app.acct = null;
+  app.review = { row, ply: row.moves.length, title };
+  document.querySelectorAll('#mode .tabs button').forEach((b) => b.classList.remove('active'));
+  $('online-box').hidden = true;
+  $('review-bar').hidden = false;
+  $('review-title').textContent = title;
+  showReviewPly(row.moves.length);
+}
+
+function showReviewPly(ply) {
+  const { row } = app.review;
+  app.review.ply = Math.max(0, Math.min(row.moves.length, ply));
+  let g = replay(row.moves.slice(0, app.review.ply), row.rules);
+  if (app.review.ply === row.moves.length && row.status === 'finished')
+    g = { ...g, result: { winner: RESULT_COLOR[row.result], reason: row.reason } };
+  setGame(g);
+  $('rv-pos').textContent = `${app.review.ply} / ${row.moves.length}`;
+}
+
+// Same-screen games are saved to a signed-in player's history when they end.
+const savedGames = new WeakSet();
+function maybeSaveLocal(game) {
+  if (app.mode !== 'local' || !game.result || !game.history.length || savedGames.has(game) || !accountUI.signedIn()) return;
+  savedGames.add(game);
+  acct.saveLocalGame({
+    status: 'finished',
+    rules: game.rules,
+    time_control: app.clock.tc,
+    moves: game.history.map(({ from, to, promo, face }) => ({ from, to, promo, face })),
+    result: game.result.winner === 'draw' ? 'draw' : game.result.winner === 'w' ? 'white' : 'black',
+    reason: game.result.reason,
+  }).then(() => notify('Game saved to your profile.'), (e) => notify(`Couldn't save the game: ${e.message}`));
 }
 
 // Relative mode: after picking a move, choose the piece's new facing.
@@ -478,22 +689,69 @@ function askFacing(move, promo) {
   const current = piece.o;
   const choices = facingChoices(game, move.from, promo);
   const picker = $('facing-picker');
-  const box = $('facing-options');
   const key = (o) => o.join(',');
+  const dirKey = (o) => o.slice(0, 3).join(',');
   let active = choices.find((o) => key(o) === key(current)) || choices[0];
+  // One labelled block per direction around the piece's new square.
+  const byDir = new Map();
+  for (const o of choices) {
+    if (!byDir.has(dirKey(o))) byDir.set(dirKey(o), []);
+    byDir.get(dirKey(o)).push(o);
+  }
+  const origin = worldPos(move.to);
+  const blocks = [];
+  for (const [dk, opts] of byDir) {
+    const mesh = new THREE.Mesh(FACE_BLOCK, new THREE.MeshBasicMaterial({ color: 0x6fd3ff, transparent: true, opacity: 0.25, depthTest: false, depthWrite: false }));
+    mesh.position.copy(origin).add(g2w(opts[0]));
+    mesh.renderOrder = 5;
+    mesh.userData.opts = opts;
+    facingGroup.add(mesh);
+    blocks.push(mesh);
+  }
   return new Promise((resolve) => {
+    const paint = () => {
+      for (const b of blocks) {
+        const isActive = dirKey(b.userData.opts[0]) === dirKey(active);
+        const o = isActive ? active : b.userData.opts.find((x) => key(x) === key(current)) || b.userData.opts[0];
+        b.material.color.set(isActive ? 0xf0c060 : 0x6fd3ff);
+        b.material.opacity = isActive ? 0.6 : 0.25;
+        if (b.userData.label) {
+          b.remove(b.userData.label);
+          b.userData.label.material.map.dispose();
+          b.userData.label.material.dispose();
+        }
+        const text = facingLabel(o).slice(1) + (key(o) === key(current) ? ' (now)' : '');
+        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#f0c060' : 'rgba(20,22,30,0.85)');
+        b.add(label);
+        b.userData.label = label;
+      }
+    };
     const show = (o) => {
+      active = o;
       const board = playOnBoard(game.board, { ...move, promo, face: o });
-      app.preview = { board, cancel: () => finish(null) };
+      app.preview = { board, cancel: () => finish(null), choose, confirm: () => finish(key(active) === key(current) ? undefined : active), blocks };
       app.selected = move.to;
       app.targets = legalMovesFrom({ ...game, board, turn: piece.c, result: null }, move.to);
       rebuildPieces();
       refreshHighlights();
+      paint();
       $('facing-confirm').textContent = `Confirm ${facingLabel(o)}`;
+      $('facing-current').textContent = `Facing ${facingLabel(o)}${o[3] && o.slice(0, 3).filter(Boolean).length === 1 ? ' (turned 45°)' : ''}`;
     };
+    // Clicking a block faces that way; clicking a straight one again turns it 45°.
+    function choose(block) {
+      const opts = block.userData.opts;
+      if (dirKey(opts[0]) === dirKey(active) && opts.length > 1) show(opts[(opts.findIndex((o) => key(o) === key(active)) + 1) % opts.length]);
+      else show(opts.find((o) => key(o) === key(current)) || opts[0]);
+    }
     const finish = (result) => {
       picker.hidden = true;
-      box.innerHTML = '';
+      for (const b of blocks) {
+        b.userData.label?.material.map.dispose();
+        b.userData.label?.material.dispose();
+        b.material.dispose();
+      }
+      facingGroup.clear();
       app.preview = null;
       app.selected = -1;
       app.targets = [];
@@ -502,39 +760,7 @@ function askFacing(move, promo) {
       refreshHighlights();
       resolve(result);
     };
-    const groups = [
-      ['Straight, square to the board', (o) => o.slice(0, 3).filter(Boolean).length === 1 && !o[3]],
-      ['Straight, turned 45° (◇)', (o) => o.slice(0, 3).filter(Boolean).length === 1 && o[3]],
-      ['Diagonal', (o) => o.slice(0, 3).filter(Boolean).length === 2],
-    ];
-    const buttons = [];
-    for (const [title, test] of groups) {
-      const opts = choices.filter(test);
-      if (!opts.length) continue;
-      const h = document.createElement('div');
-      h.className = 'fp-group';
-      h.textContent = title;
-      const grid = document.createElement('div');
-      grid.className = 'fp-grid';
-      for (const o of opts) {
-        const b = document.createElement('button');
-        b.textContent = facingLabel(o);
-        b.classList.toggle('current', key(o) === key(current));
-        b.title = key(o) === key(current) ? 'Current facing' : '';
-        b.onmouseenter = () => show(o);
-        b.onmouseleave = () => show(active);
-        b.onclick = () => {
-          active = o;
-          buttons.forEach(([bb, oo]) => bb.classList.toggle('active', oo === active));
-          show(o);
-        };
-        b.classList.toggle('active', o === active);
-        buttons.push([b, o]);
-        grid.appendChild(b);
-      }
-      box.append(h, grid);
-    }
-    $('facing-confirm').onclick = () => finish(key(active) === key(current) ? undefined : active);
+    $('facing-confirm').onclick = () => app.preview.confirm();
     $('facing-cancel').onclick = () => finish(null);
     picker.hidden = false;
     show(active);
@@ -566,6 +792,7 @@ function setGame(game, anim = null) {
   refreshHighlights();
   renderPanel();
   saveHost();
+  maybeSaveLocal(game);
 }
 
 function refreshHighlights() {
@@ -578,11 +805,14 @@ function statusText() {
   const g = app.game;
   if (g.result) {
     const { winner, reason } = g.result;
-    return winner === 'draw' ? `Draw — ${reason}` : `${COLOR_NAME[winner]} wins — ${reason}`;
+    if (reason === 'aborted' || reason === 'declined') return `Game ${reason}`;
+    return winner === 'draw' ? `Draw — ${reason}` : `${playerName(winner)} wins — ${reason}`;
   }
-  const who = COLOR_NAME[g.turn];
+  const who = playerName(g.turn);
   let s;
-  if (app.mode === 'online') {
+  if (app.mode === 'review') return `Replay: move ${app.review.ply} of ${app.review.row.moves.length}`;
+  if (app.mode === 'account') s = g.turn === app.myColor ? `Your move (${COLOR_NAME[g.turn]})` : `Waiting for ${who}…`;
+  else if (app.mode === 'online') {
     if (!link.connected) s = `${who} to move (opponent offline)`;
     else s = g.turn === app.myColor ? `Your move (${who})` : `Waiting for ${who}…`;
   } else s = `${who} to move`;
@@ -611,8 +841,18 @@ function renderPanel() {
     ol.appendChild(li);
   }
   ol.scrollTop = ol.scrollHeight;
-  $('resign-btn').disabled = !!app.game.result || (app.mode === 'online' && !link.connected);
+  $('resign-btn').disabled = !!app.game.result || app.mode === 'review' || (app.mode === 'online' && !link.connected);
+  $('new-btn').textContent = app.mode === 'account' ? 'Rematch' : 'New game';
+  $('new-btn').disabled = app.mode === 'review';
+  const a = app.mode === 'account' && app.acct;
+  $('acct-game').hidden = !a;
+  if (a) {
+    const r = app.acct.row;
+    $('acct-game-info').textContent = `@${accountUI.nameOf(r.white)} (White) vs @${accountUI.nameOf(r.black)} (Black) · ${tcLabel(app.clock.tc)} · ${r.rules.mode === 'relative' ? 'Relative' : 'Classic'}`;
+    $('abort-btn').hidden = !(r.status === 'active' && r.moves.length < 2);
+  }
   renderRules();
+  renderClocks();
 }
 
 // ---------------------------------------------------------------- 2D level map
@@ -681,7 +921,7 @@ function saveHost() {
   if (app.mode !== 'online' || link.role !== 'host') return;
   try {
     localStorage.setItem(HOST_KEY, JSON.stringify({
-      code: link.code, hostColor: app.hostColor, result: app.game.result,
+      code: link.code, hostColor: app.hostColor, result: app.game.result, clock: app.clock,
       moves: app.game.history.map(({ from, to, promo, face }) => ({ from, to, promo, face })),
       rules: app.game.rules,
     }));
@@ -711,6 +951,7 @@ function syncPayload() {
     moves: app.game.history.map(({ from, to, promo, face }) => ({ from, to, promo, face })),
     rules: app.game.rules,
     result: app.game.result,
+    clock: { tc: app.clock.tc, ms: app.clock.ms, elapsed: Date.now() - app.clock.started },
   };
 }
 
@@ -731,7 +972,10 @@ function startHosting(code, saved) {
   link.host(code);
   history.replaceState(null, '', `?host=${code}`);
   showRoom(code);
-  setGame(saved ? gameFromSaved(saved.moves, saved.result, saved.rules) : freshGame());
+  if (saved) {
+    app.clock = saved.clock?.tc ? saved.clock : newClock(app.tc, Date.now());
+    setGame(gameFromSaved(saved.moves, saved.result, saved.rules));
+  } else startFresh();
 }
 
 function startJoining(code) {
@@ -741,7 +985,7 @@ function startJoining(code) {
   history.replaceState(null, '', `?join=${code}`);
   showRoom(code);
   $('my-color').textContent = '…';
-  setGame(freshGame());
+  startFresh();
 }
 
 function showRoom(code) {
@@ -786,17 +1030,25 @@ function onNetMessage(msg) {
       {
         const before = g.history.length;
         const next = gameFromSaved(msg.moves, msg.result, msg.rules);
+        if (msg.clock) app.clock = { ...newClock(msg.clock.tc, 0), ms: msg.clock.ms, started: Date.now() - (msg.clock.elapsed || 0) };
         const last = next.history.at(-1);
         setGame(next, next.history.length === before + 1 && last ? { from: last.from, to: last.to } : null);
       }
       break;
     case 'move': {
       const next = msg.ply === g.history.length && applyMove(g, msg);
-      if (next && g.turn !== app.myColor) setGame(next, { from: msg.from, to: msg.to });
+      if (next && g.turn !== app.myColor) {
+        if (typeof msg.ms === 'number' && app.clock.tc.type === 'live') app.clock.ms = { ...app.clock.ms, [g.turn]: msg.ms };
+        app.clock.started = Date.now();
+        setGame(next, { from: msg.from, to: msg.to });
+      }
       else if (link.role === 'host') link.send(syncPayload());
       else link.send({ type: 'sync-request' });
       break;
     }
+    case 'timeout':
+      if (!g.result && ['w', 'b'].includes(msg.color)) setGame(timeout(g, msg.color));
+      break;
     case 'version-mismatch':
       addChat('system', VERSION_WARNING);
       break;
@@ -821,7 +1073,7 @@ const VERSION_WARNING = 'You and your friend are running different versions of t
 function rematch() {
   app.hostColor = other(app.hostColor);
   setMyColor(app.hostColor);
-  setGame(freshGame());
+  startFresh();
   link.send(syncPayload());
 }
 
@@ -844,6 +1096,7 @@ function addChat(who, text) {
 // ---------------------------------------------------------------- rules panel
 // Rules can change until the first move; online, only the host picks them.
 function rulesEditable() {
+  if (app.mode === 'account' || app.mode === 'review') return false;
   return !app.game.history.length && !app.game.result && (app.mode === 'local' || link.role === 'host');
 }
 
@@ -857,11 +1110,19 @@ function renderRules() {
     $(`rule-${k}`).disabled = !editable;
   }
   document.querySelectorAll('#rules-box [data-for]').forEach((el) => (el.hidden = el.dataset.for !== r.mode));
+  const sel = $('tc-select');
+  const key = tcKey(app.clock.tc);
+  if (![...sel.options].some((o) => o.value === key)) sel.add(new Option(tcLabel(app.clock.tc), key), sel.options[sel.options.length - 1]);
+  if (document.activeElement !== sel && sel.value !== 'custom') sel.value = key;
+  sel.disabled = !editable;
+  $('tc-custom').hidden = sel.value !== 'custom' || !editable;
   $('rules-note').textContent = editable
     ? 'You can change these until the first move.'
-    : app.mode === 'online' && link.role === 'guest'
-      ? 'The host chooses the rules.'
-      : 'Locked once the game has started. Start a new game to change them.';
+    : app.mode === 'account'
+      ? 'Set when the challenge was made.'
+      : app.mode === 'online' && link.role === 'guest'
+        ? 'The host chooses the rules.'
+        : 'Locked once the game has started. Start a new game to change them.';
 }
 
 function onRulesChange(e) {
@@ -877,28 +1138,52 @@ function onRulesChange(e) {
   try {
     localStorage.setItem(RULES_KEY, JSON.stringify(app.rules));
   } catch {}
-  setGame(freshGame());
+  startFresh();
+  if (app.mode === 'online' && link.role === 'host') link.send(syncPayload());
+}
+
+function onTcChange() {
+  if (!rulesEditable()) return renderRules();
+  const sel = $('tc-select');
+  if (sel.value === 'custom') {
+    $('tc-custom').hidden = false;
+    const base = Math.round(Number($('tc-min').value) * 60), inc = Math.round(Number($('tc-inc').value));
+    app.tc = parseTcKey(`live:${base}:${inc}`);
+    if (app.tc.type === 'none') return notify('Custom time: 15 seconds to 180 minutes, increment up to 180 seconds.');
+  } else app.tc = parseTcKey(sel.value);
+  try {
+    localStorage.setItem(TC_KEY, tcKey(app.tc));
+  } catch {}
+  startFresh();
   if (app.mode === 'online' && link.role === 'host') link.send(syncPayload());
 }
 
 // ---------------------------------------------------------------- controls
 function setMode(mode) {
-  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  document.querySelectorAll('#mode .tabs button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   $('online-box').hidden = mode !== 'online';
-  if (mode === 'local' && app.mode === 'online') {
+  const leaving = app.mode;
+  if (leaving === 'account' || leaving === 'review') {
+    app.acct = null;
+    app.review = null;
+    $('review-bar').hidden = true;
+    app.mode = 'local';
+    startFresh();
+  }
+  if (mode === 'local' && leaving === 'online') {
     link.close();
     $('online-setup').hidden = false;
     $('online-room').hidden = true;
     $('chat-box').hidden = true;
     history.replaceState(null, '', location.pathname);
-    setGame(freshGame());
+    startFresh();
   }
   if (mode === 'local') app.mode = 'local';
   renderPanel();
 }
 
 function wireUI() {
-  document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+  document.querySelectorAll('#mode .tabs button').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
   $('host-btn').onclick = () => startHosting(randomCode(), null);
   $('join-btn').onclick = () => {
     const code = $('join-code').value.trim().toUpperCase();
@@ -928,11 +1213,29 @@ function wireUI() {
   $('reset-cam-btn').onclick = resetCamera;
   $('rule-mode').onchange = onRulesChange;
   for (const k of RULE_TOGGLES) $(`rule-${k}`).onchange = onRulesChange;
+  accountUI.fillTcSelect($('tc-select'), false);
+  $('tc-select').add(new Option('Custom…', 'custom'));
+  $('tc-select').onchange = onTcChange;
+  $('tc-min').onchange = $('tc-inc').onchange = onTcChange;
+
+  $('abort-btn').onclick = () => {
+    if (app.acct && confirm('Abort this game? It won’t count for anyone.')) acct.abortGame(app.acct.row.id).then(applyAccountRow, (e) => notify(e.message));
+  };
+  $('leave-acct-btn').onclick = () => setMode('local');
+  $('rv-first').onclick = () => showReviewPly(0);
+  $('rv-prev').onclick = () => showReviewPly(app.review.ply - 1);
+  $('rv-next').onclick = () => showReviewPly(app.review.ply + 1);
+  $('rv-last').onclick = () => showReviewPly(Infinity);
+  $('rv-close').onclick = () => setMode('local');
 
   $('new-btn').onclick = () => {
-    if (app.mode === 'local') {
+    if (app.mode === 'account') {
+      const r = app.acct.row;
+      const mine = app.myColor === 'w';
+      accountUI.openChallenge(mine ? r.black : r.white, { color: mine ? 'black' : 'white', rules: r.rules, timeControl: r.time_control });
+    } else if (app.mode === 'local') {
       if (app.game.history.length && !app.game.result && !confirm('Start a new game?')) return;
-      setGame(freshGame());
+      startFresh();
     } else if (link.role === 'host') {
       if (app.game.history.length && !app.game.result && !confirm('Start a new game? Colours will swap.')) return;
       rematch();
@@ -945,6 +1248,7 @@ function wireUI() {
   };
   $('resign-btn').onclick = () => {
     if (app.game.result || !confirm('Resign this game?')) return;
+    if (app.mode === 'account') return acct.resign(app.acct.row.id).then(applyAccountRow, (e) => notify(e.message));
     const color = app.mode === 'online' ? app.myColor : app.game.turn;
     setGame(resign(app.game, color));
     if (app.mode === 'online') link.send({ type: 'resign', color });
@@ -973,6 +1277,9 @@ function wireUI() {
     else if (e.key === '[') setFocus(app.focus < 0 ? N - 1 : Math.max(0, app.focus - 1));
     else if (e.key === '0') setFocus(-1);
     else if (e.key === 'Escape') app.preview ? app.preview.cancel() : deselect();
+    else if (e.key === 'Enter' && app.preview) app.preview.confirm();
+    else if (app.mode === 'review' && e.key === 'ArrowLeft') showReviewPly(app.review.ply - 1);
+    else if (app.mode === 'review' && e.key === 'ArrowRight') showReviewPly(app.review.ply + 1);
   });
 }
 
@@ -1003,7 +1310,17 @@ buildLevelMap();
 layoutLabels();
 resize();
 resetCamera();
-setGame(freshGame());
+startFresh();
+setInterval(tick, 100);
+accountUI.setup({
+  accountChanged: () => renderPanel(),
+  gameUpdated: onAccountGameUpdate,
+  openGame: openAccountGame,
+  reviewGame,
+  notify,
+  currentRules: () => app.rules,
+  currentTimeControl: () => app.tc,
+});
 
 const params = new URLSearchParams(location.search);
 if (params.get('host')) {
@@ -1019,4 +1336,4 @@ if (params.get('host')) {
 
 requestAnimationFrame(animate);
 // Debug/test hook.
-window.__chess3d = { app, link, onSquareClick, idx, setFocus, camera, worldPos };
+window.__chess3d = { app, link, onSquareClick, idx, setFocus, camera, worldPos, acct };
