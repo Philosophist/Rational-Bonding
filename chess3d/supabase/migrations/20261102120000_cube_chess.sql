@@ -1,7 +1,10 @@
 -- Cube Chess: accounts, follows, saved games and server-kept clocks.
 --
--- Paste this whole file into the Supabase dashboard's SQL Editor and run it
--- once (it is safe to run again). See ../SETUP.md.
+-- This is a Supabase migration: with the GitHub integration set up (see
+-- ../../SETUP.md) it is applied automatically when it reaches the master
+-- branch. It can also be pasted into the dashboard's SQL Editor and run by
+-- hand; it is safe to run more than once. Later database changes go in new,
+-- later-dated files in this folder; never edit a migration that has run.
 --
 -- Security model
 --   * Row level security is on for every table.

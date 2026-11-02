@@ -1,6 +1,6 @@
 // Time controls and chess clocks, modelled on chess.com's options. Pure
 // functions, no DOM: shared by the client, the tests, and (in spirit) the
-// database functions in supabase/schema.sql, which keep the same rules.
+// database functions in supabase/migrations/, which keep the same rules.
 //
 // A time control is one of
 //   { type: 'none' }

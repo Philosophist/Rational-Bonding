@@ -100,5 +100,5 @@ npm run serve   # local static server on :8080
 - `rules.js` is the rules engine, with no DOM code. `clock.js` handles time controls and `stats.js` computes stats; both are pure modules.
 - `main.js` is the three.js client. `net.js` handles guest link play.
 - `account.js` and `accountui.js` handle accounts.
-- The database is in `supabase/schema.sql`.
+- The database is defined by the migrations in `supabase/migrations/`. Supabase's GitHub integration applies them when they reach master.
 - `npm run test:db` runs the database security tests against a Supabase instance (see SETUP.md).

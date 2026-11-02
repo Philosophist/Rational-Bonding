@@ -1,4 +1,4 @@
-// Integration tests for supabase/schema.sql against a running Supabase stack.
+// Integration tests for the database in supabase/migrations/ against a running Supabase stack.
 // Skipped unless SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_KEY are set
 // (e.g. from `supabase start`). Run: npm run test:db
 import { test, before, after } from 'node:test';
@@ -165,7 +165,7 @@ test('realtime: the opponent hears about moves', { skip }, async () => {
   let g = ok(await alice.c.rpc('challenge', { opponent: bob.id, my_color: 'white', rules: {}, time_control: { type: 'none' } }));
   ok(await bob.c.rpc('answer_challenge', { game_id: g.id, accept: true }));
   const heard = new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('no realtime event')), 15000);
+    const t = setTimeout(() => reject(new Error('no realtime event')), 30000);
     const ch = bob.c.channel(`g-${g.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${g.id}` }, (p) => {
         if (p.new.moves?.length === 1) {
@@ -175,8 +175,9 @@ test('realtime: the opponent hears about moves', { skip }, async () => {
         }
       })
       .subscribe(async (status) => {
-        // Give a freshly started realtime server a moment before sending the move.
-        if (status === 'SUBSCRIBED') setTimeout(async () => ok(await alice.c.rpc('make_move', { game_id: g.id, ply: 0, move: { from: 76, to: 148 } })), 1000);
+        // A freshly started realtime server needs a few seconds after the first
+        // subscription before it streams changes, so wait before moving.
+        if (status === 'SUBSCRIBED') setTimeout(async () => ok(await alice.c.rpc('make_move', { game_id: g.id, ply: 0, move: { from: 76, to: 148 } })), 4000);
       });
   });
   const row = await heard;

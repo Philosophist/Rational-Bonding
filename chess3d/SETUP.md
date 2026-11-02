@@ -8,11 +8,20 @@ Throughout, the game's address is assumed to be `https://philosophist.github.io/
 1. Sign up at [supabase.com](https://supabase.com) (free) and click **New project**. Pick a region near your players and save the database password somewhere safe. You won't need it for the game.
 2. Free projects pause after about a week with no activity. Opening the dashboard wakes them up.
 
-## 2. Create the tables and rules
-1. In the dashboard, open **SQL Editor → New query**.
-2. Paste the whole of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. It's safe to run again later, for example after an update.
+## 2. Create the tables and rules (automatically, from GitHub)
+The database's structure and security rules live in this repository, in [`supabase/migrations/`](supabase/migrations). Each file is one step of changes, called a migration. Supabase's GitHub integration applies them for you, so there's nothing to paste.
 
-This creates player profiles, follows and saved games, with row-level security on every table. Players can't edit games directly. Every move, resignation and timeout goes through database functions that check it's really that player's turn and keep the clocks on the server.
+1. In the dashboard, open **Project Settings → Integrations → GitHub** and connect **Philosophist/Rational-Bonding**.
+2. **Supabase directory** (the folder that contains `supabase/`): `chess3d`
+3. **Production branch:** `master`. Turn on the option to **deploy changes to production** when that branch changes.
+4. When the pull request that adds the game's accounts is merged, Supabase runs the migration. Check that **Table Editor** lists `profiles`, `follows` and `games`.
+5. If the tables don't appear, the integration didn't pick it up. Paste the migration file into **SQL Editor → New query** and click **Run**. It's safe to run more than once.
+
+Supabase may change the exact labels on that settings page over time. What matters is the directory (`chess3d`) and the branch (`master`).
+
+The migration creates player profiles, follows and saved games, with row-level security on every table. Players can't edit games directly. Every move, resignation and timeout goes through database functions that check it's really that player's turn and keep the clocks on the server.
+
+**Who can change the database:** only what reaches `master`. Because you decide which pull requests are merged, every change to the database's rules passes through you first.
 
 ## 3. Tell Supabase where the game lives
 Go to **Authentication → URL Configuration**:
@@ -78,7 +87,6 @@ Commit and push, or tell Claude the two values and it will do it. GitHub Pages u
 ## Testing locally (optional, for developers)
 With Docker and the [Supabase CLI](https://supabase.com/docs/guides/cli):
 ```
-supabase init && supabase start
-psql "$(supabase status -o env | grep DB_URL | cut -d= -f2- | tr -d '"')" -f supabase/schema.sql
+cd chess3d && supabase init && supabase start   # applies supabase/migrations/ automatically
 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<publishable key> SUPABASE_SERVICE_KEY=<secret key> npm run test:db
 ```
