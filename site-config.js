@@ -4,7 +4,7 @@ export const SITE = {
   // Coffee donations. Only ever put PUBLIC receiving details here.
   // Monero: your primary address (starts with 4) or, better for privacy, a
   // subaddress (starts with 8). Never a private key or seed.
-  monero: '',
+  monero: '44GKFByQ9cmWPEjX5hLhwzGc1NqRHt23CEFAkTyafCFYGrNCwki9sFsTjCMnpAWWGWRUcQDsjtqPPZAMowpZ9R3843AHUtR',
   // Cash: a Cash App $cashtag (e.g. '$RationalBonding'). Optional.
   cashApp: '$youngidealist',
 };
