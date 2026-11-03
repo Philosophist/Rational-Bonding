@@ -37,9 +37,3 @@ if (CASHTAG.test(SITE.cashApp || '')) {
   $('cash-link').textContent = `Cash App ${SITE.cashApp}`;
 }
 $('support-soon').hidden = any;
-
-if (/^https:\/\//.test(SITE.blog || '')) {
-  $('blog-link').href = SITE.blog;
-  $('blog-link').hidden = false;
-  $('blog-soon').hidden = true;
-}

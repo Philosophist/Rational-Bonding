@@ -7,6 +7,4 @@ export const SITE = {
   monero: '',
   // Cash: a Cash App $cashtag (e.g. '$RationalBonding'). Optional.
   cashApp: '',
-  // Where the blog lives, e.g. 'https://blog.rationalbonding.com'. Optional.
-  blog: '',
 };
