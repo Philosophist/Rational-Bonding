@@ -7,4 +7,7 @@ export const SITE = {
   monero: '44GKFByQ9cmWPEjX5hLhwzGc1NqRHt23CEFAkTyafCFYGrNCwki9sFsTjCMnpAWWGWRUcQDsjtqPPZAMowpZ9R3843AHUtR',
   // Cash: a Cash App $cashtag (e.g. '$RationalBonding'). Optional.
   cashApp: '$youngidealist',
+  // Contact address shown on the privacy page. Leave empty to point people to
+  // GitHub issues instead. Only set an address that really receives mail.
+  contactEmail: '',
 };

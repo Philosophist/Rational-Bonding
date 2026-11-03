@@ -38,17 +38,33 @@ developer:
 - **Netlify is retired.** Steve wants nothing hosted there. The blog was moved
   into this repo (`blog/`).
 - **CDN scripts:** pin exact versions in `<script>`/import-map URLs.
+- **One account for everything.** Every Rational Bonding game and page uses the
+  same Supabase project through `accounts/config.js`, so one sign-up and one
+  username work everywhere. Pages on rationalbonding.com share the signed-in
+  session automatically (same origin, same Supabase project, default storage
+  key). For a new game: import from `/accounts/config.js`, reuse the
+  `profiles` table for usernames, and give the game its own tables
+  (e.g. `alchem_scores`) through a new migration. Don't create a second
+  Supabase project or a second profiles table. A game hosted elsewhere (such
+  as itch.io) can use the same account but needs its own sign-in there, plus
+  its URL in Supabase's Redirect URLs.
+- **Privacy page:** `privacy/` describes what the site collects. Update it in the
+  same PR whenever a change collects new data, adds a service, or changes
+  what's public.
 
 ## Site layout
 | Path | What |
 |---|---|
-| `index.html`, `site.css`, `site.js` | Homepage: brand hero, project cards, "Buy me a coffee" |
-| `site-config.js` | Public donation details: Monero address, Cash App `$youngidealist`. Empty values are hidden. |
+| `index.html`, `site.css`, `site.js` | Homepage: the hub that points to every project (add a card for each new one), plus "Buy me a coffee" |
+| `site-config.js` | Public donation details (Monero address, Cash App `$youngidealist`) and the privacy contact email. Empty values are hidden. |
+| `accounts/config.js` | The shared Rational Bonding account settings (Supabase URL, publishable key, wallet chains) used by every game |
+| `privacy/` | Privacy policy, linked from every footer and the sign-in dialog |
 | `blog/more-ways/` | "More ways (ref links) to hook me up": referral links (Wise), each explained and disclosed as a referral, with `rel="sponsored"` |
 | `blog/` | *The Philosophist's Blog*: plain HTML, no build step. See "Adding a blog post" below. |
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
-| `alchemfighter/` | Old A-Frame Alchem Fighter prototype (moved from the root) |
+| `alchemfighter/` | Alchem Fighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
+| `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |
 | `images/`, `favicon.png` | Site images, including `rational-bonding-logo.png` |
 
@@ -75,7 +91,7 @@ jsDelivr, and supabase-js 2.118.0 loaded only when accounts are configured.
 | `main.js` | three.js client: cube grid, pieces, picking, panels, the facing picker, clocks, game modes |
 | `net.js` | Guest online play over WebRTC (PeerJS). The host is authoritative; guests reclaim their seat after a reload. |
 | `account.js`, `accountui.js` | Supabase accounts, profiles, follows, challenges, saved games, replays, stats UI |
-| `config.js` | `SUPABASE_URL`, `SUPABASE_KEY` (the publishable key, now filled in for the live project) and `WALLET_SIGN_IN`. Empty would mean guest-only. |
+| `config.js` | Re-exports `SUPABASE_URL`, `SUPABASE_KEY` and `WALLET_SIGN_IN` from `/accounts/config.js`. Empty values there would mean guest-only. |
 | `supabase/migrations/` | Database schema, row-level security and game functions |
 | `SETUP.md` | Steve's step-by-step Supabase setup guide |
 
@@ -119,7 +135,7 @@ en passant, by design.
 - Timeout against insufficient material is a draw.
 
 ### Accounts (Supabase)
-- Project "Space Chess", ref `lleyoffvdmmtgrvreiyx`, URL
+- Project "Space Chess" (to be renamed "Rational Bonding" in the dashboard; it serves every project), ref `lleyoffvdmmtgrvreiyx`, URL
   `https://lleyoffvdmmtgrvreiyx.supabase.co`.
 - **GitHub integration:** working directory `chess3d`, production branch
   `master`, deploy to production on. Merged migrations apply automatically.
@@ -164,8 +180,13 @@ npm run test:db # needs a Supabase stack: SUPABASE_URL, SUPABASE_ANON_KEY, SUPAB
 - **DNS:** managed at **Cloudflare** (name servers `ryleigh`/`lex.ns.cloudflare.com`).
   - Records are four `A` records on `@` (185.199.108–111.153) and a `CNAME`
     from `www` to `philosophist.github.io`, all **DNS only** (grey cloud).
-  - Recommended extras: `TXT @ "v=spf1 -all"`, `TXT _dmarc "v=DMARC1; p=reject;"`,
-    and the GitHub domain-verification TXT.
+  - Email: sign-in emails are sent by **Brevo** (SMTP `smtp-relay.brevo.com:587`,
+    sender `no-reply@rationalbonding.com`, "Rational Bonding"). Its domain
+    records (`brevo-code` TXT, DKIM, `_dmarc`) are in Cloudflare, DNS only. The
+    domain *sends* mail, so never add `v=spf1 -all`. Steps are in
+    `chess3d/SETUP.md` under "Sending sign-in emails with Brevo". The SMTP key
+    lives only in Supabase.
+  - Also recommended: the GitHub domain-verification TXT.
 - **GitHub Pages:** custom domain `rationalbonding.com` ("DNS check successful").
   Tick Enforce HTTPS once the certificate is issued.
 - **Donations:**
