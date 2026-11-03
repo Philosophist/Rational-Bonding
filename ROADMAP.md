@@ -109,4 +109,6 @@ in [CLAUDE.md](CLAUDE.md).
   are publicly visible, unlike Monero.
 - **Blog:** more posts; categories as their own pages.
 - **Alchem Fighter:** handled by the other session (prototype in `prototype/`).
-  The old page references a `jquery.js` file that doesn't exist.
+  When it's ready, publish it under `alchemfighter/` and add a Play button to
+  the project page. The early VR scene (`alchemfighter/vr/`) references a
+  `jquery.js` file that doesn't exist.

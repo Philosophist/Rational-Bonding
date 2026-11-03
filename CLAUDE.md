@@ -55,7 +55,7 @@ developer:
 ## Site layout
 | Path | What |
 |---|---|
-| `index.html`, `site.css`, `site.js` | Homepage: brand hero, project cards, "Buy me a coffee" |
+| `index.html`, `site.css`, `site.js` | Homepage: the hub that points to every project (add a card for each new one), plus "Buy me a coffee" |
 | `site-config.js` | Public donation details (Monero address, Cash App `$youngidealist`) and the privacy contact email. Empty values are hidden. |
 | `accounts/config.js` | The shared Rational Bonding account settings (Supabase URL, publishable key, wallet chains) used by every game |
 | `privacy/` | Privacy policy, linked from every footer and the sign-in dialog |
@@ -63,7 +63,8 @@ developer:
 | `blog/` | *The Philosophist's Blog*: plain HTML, no build step. See "Adding a blog post" below. |
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
-| `alchemfighter/` | Old A-Frame Alchem Fighter prototype (moved from the root) |
+| `alchemfighter/` | Alchem Fighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
+| `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |
 | `images/`, `favicon.png` | Site images, including `rational-bonding-logo.png` |
 
