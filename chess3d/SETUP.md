@@ -25,8 +25,8 @@ The migration creates player profiles, follows and saved games, with row-level s
 
 ## 3. Tell Supabase where the game lives
 Go to **Authentication → URL Configuration**:
-- **Site URL:** `https://rationalbonding.com/chess3d/`
-- **Redirect URLs:** add `https://rationalbonding.com/chess3d/**`. If you test on your own computer, also add `http://localhost:8080/**`.
+- **Site URL:** `https://rationalbonding.com/`
+- **Redirect URLs:** add `https://rationalbonding.com/**`. That one entry covers every game and page on the site, since they all share one Rational Bonding account. If you test on your own computer, also add `http://localhost:8080/**`.
 
 ## 4. Switch on sign-in methods
 All of these are under **Authentication → Sign In / Providers**, except passkeys. The game shows a button only for the methods you switch on.
@@ -66,10 +66,10 @@ Each provider needs an app registered with it. You get a **Client ID** and **Sec
 Phone sign-in needs an SMS provider such as Twilio, MessageBird or Vonage. Turn on **Phone** and enter that provider's details.
 
 ### Crypto wallets (optional)
-Turn on **Web3 → Ethereum** and/or **Solana** in the dashboard. Supabase doesn't tell the game these are on, so also set `WALLET_SIGN_IN = ['ethereum', 'solana']` in `config.js`. The buttons appear only for visitors who have a wallet installed.
+Turn on **Web3 → Ethereum** and/or **Solana** in the dashboard. Supabase doesn't tell the game these are on, so also set `WALLET_SIGN_IN = ['ethereum', 'solana']` in [`accounts/config.js`](../accounts/config.js). The buttons appear only for visitors who have a wallet installed.
 
 ## 5. Connect the game
-In **Project Settings → API Keys**, copy the **Project URL** and the **publishable key**. On older projects, the "anon" key works too. Put them in [`config.js`](config.js):
+In **Project Settings → API Keys**, copy the **Project URL** and the **publishable key**. On older projects, the "anon" key works too. Put them in [`accounts/config.js`](../accounts/config.js), the shared Rational Bonding account settings that every game uses:
 
 ```js
 export const SUPABASE_URL = 'https://<your-project-ref>.supabase.co';

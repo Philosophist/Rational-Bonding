@@ -27,7 +27,7 @@ in [CLAUDE.md](CLAUDE.md).
     GitHub integration.
 - **rationalbonding.com on GitHub Pages:** the domain was moved off Netlify, and
   Cloudflare DNS points at GitHub.
-- **PR #12 (open):**
+- **PR #12 (merged 2026-11-03):**
   - a homepage for the Rational Bonding brand, with project cards
   - "Buy me a coffee", with Monero (QR code, copy button, wallet link) and
     Cash App
@@ -37,7 +37,7 @@ in [CLAUDE.md](CLAUDE.md).
   - `CLAUDE.md` and this roadmap
 
 ## Waiting on Steve
-1. **Merge PR #12:** the homepage, blog and donations go live.
+1. **Merge the privacy and shared-account PR.**
 2. **Enforce HTTPS** in the repository's Settings → Pages, once GitHub issues
    the certificate.
 3. **Verify the domain on GitHub:** at github.com/settings/pages, click "Add a
@@ -45,8 +45,11 @@ in [CLAUDE.md](CLAUDE.md).
 4. **Email anti-spoofing in Cloudflare:** add `TXT @ v=spf1 -all` and
    `TXT _dmarc v=DMARC1; p=reject;`.
 5. **Supabase:**
-   - URL configuration: Site URL `https://rationalbonding.com/chess3d/`,
-     redirect `https://rationalbonding.com/**`.
+   - URL configuration: Site URL `https://rationalbonding.com/`, redirect
+     `https://rationalbonding.com/**` (one entry covers every game).
+   - Rename the project from "Space Chess" to "Rational Bonding" (Project
+     Settings → General). Cosmetic: the URL and keys don't change.
+   - Email templates: say "Rational Bonding" rather than "Cube Chess".
    - Connect an email sender such as Resend, since Supabase's built-in email
      only reaches the project team.
    - Turn on whichever social logins he wants.
@@ -54,7 +57,14 @@ in [CLAUDE.md](CLAUDE.md).
      `chess3d/config.js`).
    - Google sign-in needs its own Google Cloud OAuth client (Client ID and
      secret). Until that's set up, leave Google switched off, or its button
-     will fail.
+     will fail. On the consent screen use app name "Rational Bonding", home
+     page `https://rationalbonding.com/` and privacy policy
+     `https://rationalbonding.com/privacy/`.
+   - Once an email sender is chosen, it can be named on the privacy page.
+   - Privacy contact: an address such as `privacy@rationalbonding.com`
+     (Cloudflare Email Routing can forward it for free), then set
+     `contactEmail` in `site-config.js`. Until then the page points to
+     GitHub issues.
 6. **Passkeys:** not in the dashboard yet (the beta is rolling out). Turn them
    on when "Passkeys" appears under Authentication: Relying Party ID
    `rationalbonding.com`, origin `https://rationalbonding.com`. The game hides
@@ -78,13 +88,17 @@ in [CLAUDE.md](CLAUDE.md).
 - Launch page for the **illustrated *Tale of the Beer Tycoon*** (almost done:
   two pages left), linked from the blog post and the homepage.
 
+- **Self-service account deletion** (promised on the privacy page within 30
+  days, handled by hand until then): a `delete_my_account()` function in a new
+  migration, plus a button in the profile panel.
+
 ## Ideas
 - **Server-side move validation:** a Supabase Edge Function that runs `rules.js`.
 - **Ratings** (Elo or Glicko) per time control, plus leaderboards.
 - **Game features:** draw offers, takebacks in casual games, and
   first-move-timeout auto-aborts.
-- **Security and accounts:** account deletion and data export; CAPTCHA on
-  sign-up (hCaptcha or Turnstile).
+- **Security and accounts:** data export; CAPTCHA on sign-up (hCaptcha or
+  Turnstile).
 - **Rules experiments:**
   - a combined rook-bishop "turning" piece (names: Pivot, Vane, Gyre, Prism,
     Compass)
