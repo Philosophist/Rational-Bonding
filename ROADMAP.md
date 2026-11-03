@@ -42,16 +42,17 @@ in [CLAUDE.md](CLAUDE.md).
    the certificate.
 3. **Verify the domain on GitHub:** at github.com/settings/pages, click "Add a
    domain", then put the TXT record it shows into Cloudflare.
-4. **Email anti-spoofing in Cloudflare:** add `TXT @ v=spf1 -all` and
-   `TXT _dmarc v=DMARC1; p=reject;`.
+4. **Brevo for sign-in emails** (chosen 2026-11-03): follow "Sending sign-in
+   emails with Brevo" in `chess3d/SETUP.md`. That covers the account, the
+   domain records in Cloudflare, the sender, the SMTP key into Supabase,
+   switching tracking off, and a test. Skip the old `v=spf1 -all` advice,
+   because the domain now sends email.
 5. **Supabase:**
    - URL configuration: Site URL `https://rationalbonding.com/`, redirect
      `https://rationalbonding.com/**` (one entry covers every game).
    - Rename the project from "Space Chess" to "Rational Bonding" (Project
      Settings → General). Cosmetic: the URL and keys don't change.
    - Email templates: say "Rational Bonding" rather than "Cube Chess".
-   - Connect an email sender such as Resend, since Supabase's built-in email
-     only reaches the project team.
    - Turn on whichever social logins he wants.
    - URL configuration and publishable key: done (the key is in
      `chess3d/config.js`).
@@ -60,7 +61,6 @@ in [CLAUDE.md](CLAUDE.md).
      will fail. On the consent screen use app name "Rational Bonding", home
      page `https://rationalbonding.com/` and privacy policy
      `https://rationalbonding.com/privacy/`.
-   - Once an email sender is chosen, it can be named on the privacy page.
    - Privacy contact: an address such as `privacy@rationalbonding.com`
      (Cloudflare Email Routing can forward it for free), then set
      `contactEmail` in `site-config.js`. Until then the page points to

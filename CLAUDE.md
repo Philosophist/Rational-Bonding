@@ -180,8 +180,13 @@ npm run test:db # needs a Supabase stack: SUPABASE_URL, SUPABASE_ANON_KEY, SUPAB
 - **DNS:** managed at **Cloudflare** (name servers `ryleigh`/`lex.ns.cloudflare.com`).
   - Records are four `A` records on `@` (185.199.108–111.153) and a `CNAME`
     from `www` to `philosophist.github.io`, all **DNS only** (grey cloud).
-  - Recommended extras: `TXT @ "v=spf1 -all"`, `TXT _dmarc "v=DMARC1; p=reject;"`,
-    and the GitHub domain-verification TXT.
+  - Email: sign-in emails are sent by **Brevo** (SMTP `smtp-relay.brevo.com:587`,
+    sender `no-reply@rationalbonding.com`, "Rational Bonding"). Its domain
+    records (`brevo-code` TXT, DKIM, `_dmarc`) are in Cloudflare, DNS only. The
+    domain *sends* mail, so never add `v=spf1 -all`. Steps are in
+    `chess3d/SETUP.md` under "Sending sign-in emails with Brevo". The SMTP key
+    lives only in Supabase.
+  - Also recommended: the GitHub domain-verification TXT.
 - **GitHub Pages:** custom domain `rationalbonding.com` ("DNS check successful").
   Tick Enforce HTTPS once the certificate is issued.
 - **Donations:**

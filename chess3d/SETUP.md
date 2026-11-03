@@ -32,7 +32,7 @@ Go to **Authentication → URL Configuration**:
 All of these are under **Authentication → Sign In / Providers**, except passkeys. The game shows a button only for the methods you switch on.
 
 ### Email: on by default
-- **Set up your own email sender (required for real players).** Supabase's built-in email only reaches your own team's addresses and is heavily rate-limited. Under **Authentication → Emails → SMTP Settings**, connect a free sender such as Resend, Brevo or Mailjet.
+- **Set up your own email sender (required for real players).** Supabase's built-in email only reaches your own team's addresses and is heavily rate-limited. Rational Bonding uses **Brevo**: follow [Sending sign-in emails with Brevo](#sending-sign-in-emails-with-brevo) below.
 - **Sign-in codes:** to let players type a code instead of clicking the link, which helps when the email is opened on another device, edit **Authentication → Emails → Templates → Magic Link** and add `Your code: {{ .Token }}`.
 - **Leave "Confirm email" on.**
 - **Leaked password protection:** under **Authentication → Attack Protection**, turn on the check against known leaked passwords. It's available on paid plans.
@@ -90,3 +90,55 @@ With Docker and the [Supabase CLI](https://supabase.com/docs/guides/cli):
 cd chess3d && supabase init && supabase start   # applies supabase/migrations/ automatically
 SUPABASE_URL=http://127.0.0.1:54321 SUPABASE_ANON_KEY=<publishable key> SUPABASE_SERVICE_KEY=<secret key> npm run test:db
 ```
+
+## Sending sign-in emails with Brevo
+Brevo sends every Rational Bonding sign-in email: links, codes, confirmations and password resets, for all games, since they share one account system. The free plan sends up to 300 emails a day. Brevo is based in France, so the data stays under EU privacy law.
+
+### 1. Make the Brevo account
+1. Sign up at [brevo.com](https://www.brevo.com) with the free plan. Use your own name and "Rational Bonding" as the company.
+2. Confirm your email address, and finish any profile questions Brevo asks. Brevo can take a day to activate sending on a new account.
+
+### 2. Prove you own rationalbonding.com
+1. In Brevo, open **Senders, Domains & Dedicated IPs → Domains** (under your account name, top right) and click **Add a domain**. Enter `rationalbonding.com`.
+2. Choose to set up the records yourself (not "Authenticate automatically"). Brevo then lists some DNS records: a `brevo-code` TXT record, two DKIM records, and a DMARC record.
+3. In **Cloudflare → rationalbonding.com → DNS → Records**, add each one exactly as Brevo shows it: same type, name and value.
+   - Set every record to **DNS only** (grey cloud). An orange cloud breaks them.
+   - Cloudflare adds `.rationalbonding.com` to names by itself, so if Brevo shows `brevo1._domainkey.rationalbonding.com`, typing `brevo1._domainkey` is enough.
+   - **DMARC:** if you already have a `_dmarc` record, edit it rather than adding a second one. `v=DMARC1; p=quarantine; rua=mailto:...` (whatever Brevo suggests) is fine. Once emails are arriving well for a few weeks, you can tighten it to `p=reject`.
+   - **SPF:** don't add `v=spf1 -all`. That's only for a domain that sends no email at all. If you already added it, delete it, or change it to whatever SPF value Brevo shows, if it shows one.
+4. Back in Brevo, click **Authenticate this email domain**. It can take from a few minutes to a few hours to turn green.
+
+### 3. Add the sender
+In Brevo, open **Senders, Domains & Dedicated IPs → Senders** and add:
+- **From name:** `Rational Bonding`
+- **From email:** `no-reply@rationalbonding.com`
+
+This address doesn't need a real inbox. Brevo trusts it because the domain is authenticated.
+
+### 4. Get the SMTP key
+In Brevo, open **SMTP & API → SMTP**:
+- Note the **SMTP server** (`smtp-relay.brevo.com`), **port** (`587`) and **login** (it looks like `xxxxxx@smtp-brevo.com`).
+- Click **Generate a new SMTP key**, name it `Supabase`, and copy it. It's shown only once.
+- The key is a password. Paste it only into Supabase. Never put it in the repository or send it in chat.
+
+### 5. Connect Supabase
+In Supabase, open **Authentication → Emails → SMTP Settings** and turn on **Enable custom SMTP**:
+
+| Field | Value |
+|---|---|
+| Sender email | `no-reply@rationalbonding.com` |
+| Sender name | `Rational Bonding` |
+| Host | `smtp-relay.brevo.com` |
+| Port | `587` |
+| Username | your Brevo SMTP login (`...@smtp-brevo.com`) |
+| Password | the SMTP key from step 4 |
+| Minimum interval between emails | leave the default |
+
+Save. Then, under **Authentication → Rate Limits**, raise **emails sent per hour** to about `100`. Supabase keeps it low until custom SMTP is on.
+
+### 6. Privacy and tracking
+Brevo may add open tracking (a tiny image) and click tracking (rewritten links) to emails. Our privacy page promises no tracking, and rewritten sign-in links can break. In Brevo, look under **Transactional → Settings** (or the SMTP settings) for open and click tracking, and switch both off.
+
+### 7. Test
+Open https://rationalbonding.com/chess3d/, choose **Sign in or create an account**, and ask for an email link with an address that isn't on your Supabase team. The email should arrive from "Rational Bonding" within a minute. If it doesn't, check its status in Brevo under **Transactional → Logs**. Also look in the spam folder: a new domain can land there for its first few days.
+
