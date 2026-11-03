@@ -6,5 +6,5 @@ export const SITE = {
   // subaddress (starts with 8). Never a private key or seed.
   monero: '',
   // Cash: a Cash App $cashtag (e.g. '$RationalBonding'). Optional.
-  cashApp: '',
+  cashApp: '$youngidealist',
 };
