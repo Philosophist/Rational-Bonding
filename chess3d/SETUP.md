@@ -2,7 +2,7 @@
 
 Until this is done the game runs in guest-only mode, exactly as before. It takes about 15 minutes, plus a few minutes for each social login you add.
 
-Throughout, the game's address is assumed to be `https://philosophist.github.io/Rational-Bonding/chess3d/`. Use your own if it differs.
+Throughout, the game's address is assumed to be `https://rationalbonding.com/chess3d/`. Use your own if it differs.
 
 ## 1. Create the project
 1. Sign up at [supabase.com](https://supabase.com) (free) and click **New project**. Pick a region near your players and save the database password somewhere safe. You won't need it for the game.
@@ -25,8 +25,8 @@ The migration creates player profiles, follows and saved games, with row-level s
 
 ## 3. Tell Supabase where the game lives
 Go to **Authentication → URL Configuration**:
-- **Site URL:** `https://philosophist.github.io/Rational-Bonding/chess3d/`
-- **Redirect URLs:** add `https://philosophist.github.io/Rational-Bonding/chess3d/**`. If you test on your own computer, also add `http://localhost:8080/**`.
+- **Site URL:** `https://rationalbonding.com/chess3d/`
+- **Redirect URLs:** add `https://rationalbonding.com/chess3d/**`. If you test on your own computer, also add `http://localhost:8080/**`.
 
 ## 4. Switch on sign-in methods
 All of these are under **Authentication → Sign In / Providers**, except passkeys. The game shows a button only for the methods you switch on.
@@ -40,13 +40,13 @@ All of these are under **Authentication → Sign In / Providers**, except passke
 ### Passkeys: the open-standard, one-tap option (recommended)
 Passkeys use the open **WebAuthn/FIDO2** standard. There's no password, and they can't be phished. They're as quick as "Sign in with Google" without involving a third party. Supabase added them as a beta in 2026.
 1. Go to **Authentication → Passkeys** and turn them on.
-2. **Relying Party ID:** `philosophist.github.io`
-3. **Origins:** `https://philosophist.github.io`
+2. **Relying Party ID:** `rationalbonding.com`
+3. **Origins:** `https://rationalbonding.com`
 4. **Display name:** `Cube Chess`
 
 Players create an account any other way first. The game then offers to add a passkey, which they can also do later under **Profile → Security**. After that, "Sign in with a passkey" is one tap.
 
-A passkey is tied to the domain. If you later move the game to another domain, such as rationalbonding.com, players will need to add a new passkey there.
+A passkey is tied to the domain. If the game ever moves to another domain, players will need to add a new passkey there.
 
 ### Social logins
 Each provider needs an app registered with it. You get a **Client ID** and **Secret** to paste into Supabase. Every provider asks for a callback URL, which is always:
