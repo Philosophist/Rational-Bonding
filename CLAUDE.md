@@ -44,6 +44,7 @@ developer:
 |---|---|
 | `index.html`, `site.css`, `site.js` | Homepage: brand hero, project cards, "Buy me a coffee" |
 | `site-config.js` | Public donation details: Monero address, Cash App `$youngidealist`. Empty values are hidden. |
+| `blog/more-ways/` | "More ways (ref links) to hook me up": referral links (Wise), each explained and disclosed as a referral, with `rel="sponsored"` |
 | `blog/` | *The Philosophist's Blog*: plain HTML, no build step. See "Adding a blog post" below. |
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
@@ -74,7 +75,7 @@ jsDelivr, and supabase-js 2.118.0 loaded only when accounts are configured.
 | `main.js` | three.js client: cube grid, pieces, picking, panels, the facing picker, clocks, game modes |
 | `net.js` | Guest online play over WebRTC (PeerJS). The host is authoritative; guests reclaim their seat after a reload. |
 | `account.js`, `accountui.js` | Supabase accounts, profiles, follows, challenges, saved games, replays, stats UI |
-| `config.js` | `SUPABASE_URL`, `SUPABASE_KEY` (publishable) and `WALLET_SIGN_IN`. Empty means guest-only. |
+| `config.js` | `SUPABASE_URL`, `SUPABASE_KEY` (the publishable key, now filled in for the live project) and `WALLET_SIGN_IN`. Empty would mean guest-only. |
 | `supabase/migrations/` | Database schema, row-level security and game functions |
 | `SETUP.md` | Steve's step-by-step Supabase setup guide |
 

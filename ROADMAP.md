@@ -50,8 +50,11 @@ in [CLAUDE.md](CLAUDE.md).
    - Connect an email sender such as Resend, since Supabase's built-in email
      only reaches the project team.
    - Turn on whichever social logins he wants.
-   - Send Claude the **publishable key**, which turns accounts on in
-     `chess3d/config.js`.
+   - URL configuration and publishable key: done (the key is in
+     `chess3d/config.js`).
+   - Google sign-in needs its own Google Cloud OAuth client (Client ID and
+     secret). Until that's set up, leave Google switched off, or its button
+     will fail.
 6. **Passkeys:** not in the dashboard yet (the beta is rolling out). Turn them
    on when "Passkeys" appears under Authentication: Relying Party ID
    `rationalbonding.com`, origin `https://rationalbonding.com`. The game hides
@@ -66,8 +69,10 @@ in [CLAUDE.md](CLAUDE.md).
     to the session's Allowed domains.
 
 ## Next for Claude, once unblocked
-- Fill in `chess3d/config.js` with the Supabase URL and key, and test signing in
-  on the live site.
+- Test signing in on the live site. The sandbox can't reach supabase.co, so this
+  needs Steve's report, or `*.supabase.co` and `rationalbonding.com` added to
+  the session's Allowed domains.
+- Add more referral links to `blog/more-ways/` as Steve sends them.
 - After the domain is confirmed working, check the passkey and Supabase
   settings against `SETUP.md`.
 - Launch page for the **illustrated *Tale of the Beer Tycoon*** (almost done:
