@@ -1,0 +1,21 @@
+.blog { max-width: 760px; }
+.blog-hero { padding: clamp(32px, 7vw, 72px) 0 8px; }
+.blog h1 { font-size: clamp(32px, 6vw, 48px); }
+.blog h2 { font-size: 22px; margin-top: 28px; }
+.post { padding: clamp(24px, 5vw, 48px) 0; }
+.post p, .post li { color: var(--text); font-size: 18px; }
+.post .lead { color: var(--muted); }
+.byline { color: var(--muted); font-size: 14px !important; }
+.eyebrow a { color: var(--yellow); text-decoration: none; }
+.feature { width: 100%; border-radius: 16px; margin: 12px 0 24px; display: block; }
+.poem { margin: 16px 0 32px; padding: 8px 0 8px 20px; border-left: 3px solid var(--magenta); }
+.stanza { margin: 0 0 22px; line-height: 1.7; font-family: Georgia, "Times New Roman", serif; font-size: 19px !important; }
+.the-end { font-style: italic; color: var(--muted) !important; }
+.back { margin-top: 32px; }
+.post-card { text-decoration: none; color: inherit; }
+.post-card:hover { border-color: var(--cyan); }
+.post-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; }
+.cats { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cats li { background: var(--panel); border: 1px solid #222b42; border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; }
+.small { font-size: 14px !important; }
+.ref { background: var(--panel); border: 1px solid #222b42; border-radius: 16px; padding: 4px 20px 16px; margin: 24px 0; }

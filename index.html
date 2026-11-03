@@ -1,94 +1,104 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-
-  <!--  Meta  -->
-  <meta charset="UTF-8" />
-  <title>Alchem Figher!</title>
-
-  <!--  Styles  -->
-  <link rel="stylesheet" href="styles/index.processed.css">
-
-  <!-- Scripts -->
-  <script src="https://aframe.io/releases/0.9.0/aframe.min.js"></script>
-  <script src="//cdn.rawgit.com/donmccurdy/aframe-physics-system/v3.3.0/dist/aframe-physics-system.min.js"></script>
-  <script src="jquery.js" type="text/javascript"></script>
-  <script src="https://unpkg.com/aframe-extras@6.0.x/dist/aframe-extras.min.js"></script>
-  <script src="scripts/menu.js" defer></script>
-  <script src="scripts/index.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rational Bonding</title>
+  <meta name="description" content="Rational Bonding makes edutainment: games and stories that make ideas click. Play Cube Chess, a chess game inside an 8×8×8 cube." />
+  <link rel="icon" href="favicon.png" />
+  <meta property="og:title" content="Rational Bonding" />
+  <meta property="og:description" content="Games and stories that make ideas click." />
+  <meta property="og:image" content="images/rational-bonding-logo.png" />
+  <link rel="stylesheet" href="site.css" />
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script type="module" src="site.js"></script>
 </head>
 <body>
+  <header class="top">
+    <a class="brand" href="./">
+      <img src="images/rational-bonding-logo.png" alt="" width="44" height="39" />
+      <span>Rational Bonding</span>
+    </a>
+    <nav>
+      <a href="#projects">Projects</a>
+      <a href="blog/">Blog</a>
+      <a href="#support">Buy me a coffee</a>
+    </nav>
+  </header>
 
-<a-scene physics="gravity: 0; friction: 0; restitution: 1" 
-         cursor="rayOrigin: mouse">
-  <a-mixin id="proton" 
-    dynamic-body 
-    geometry="primitive: sphere; radius: 0.05"
-    material="color: #EF2D5E">     
-  </a-mixin>
-  <a-mixin id="s-orbit"  
-    geometry="primitive: sphere; radius: 0.53"
-    material="color: #02e8f4; opacity: .2">
-  </a-mixin> 
-  <a-mixin id="s-electron"
-    material="color: #02e8f4"  
-    rotation="0 90 0" 
-    geometry="primitive: torus; radiusTubular: 0.004" 
-    animation__pos="property: position; 
-                    from: .53 0 0; 
-                    to: -.53 0 0; 
-                    dur: 250; 
-                    dir: alternate; 
-                    loop: 1; 
-                    startEvents: animate-pos; 
-                    easing: linear"
-    animation__rad="property: geometry.radius; 
-                    from: .01; 
-                    to: .54; 
-                    dur: 125; 
-                    dir: alternate; 
-                    loop: 1; 
-                    startEvents: animate-rad; 
-                    easing: easeOutQuad">
-  </a-mixin>
-  <a-entity camera="active: true" look-controls wasd-controls position="0 1.6 0">
-    <a-entity cursor="fuse: true; maxDistance: 30; timeout: 500"
-            position="0 0 -5"
-            geometry="primitive: ring; radiusInner: 0.03; radiusOuter: 0.04"
-            material="color: white; shader: flat">
-    </a-entity>
-    <a-entity id="mouseMenu" 
-              class="clickable"
-              position="10 6 -8" 
-              geometry="primitive: plane; height: 1; 
-              width: 3"
-              text="width: 10; value: Original; align: center; opacity: 0"
-              material="color: white; opacity: .6; visible: false">
-    </a-entity>
-  </a-entity>
-  <a-sky id="sky" src="images/PIA15482.jpg" geometry="phiStart: 340"></a-sky>
-  <a-text position="0 4.5 -5" 
-          text="value: Rational Bonding Presents; 
-                align: center; 
-                height: 4; 
-                width: 8;
-                color: #EF2D5E">
-    <a-text 
-            position="0 -1 0"
-            text="value: Alchem Fighter; 
-                  align: center;
-                  height: 30; 
-                  width: 30; 
-                  color: #02e8f4">
-    </a-text>
-  </a-text>
-  <a-entity id="Hyd_1" mixin="proton" dynamic-body position="0 1.58 -4">
-    <a-entity id="Hyd_1_s" mixin="s-orbit"></a-entity>
-    <a-entity id="Hyd_1s" mixin="s-electron">
-        <a-entity s-orbital></a-entity>
-    </a-entity>
-  </a-entity>
-</a-scene>
+  <main>
+    <section class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">Edutainment</p>
+        <h1>Games and stories that make ideas <em>click</em>.</h1>
+        <p class="lead">Rational Bonding builds playful things you learn from without noticing: strategy in three dimensions, physics you can fly through, and tales with a point.</p>
+        <div class="cta">
+          <a class="btn primary" href="chess/">Play Cube Chess</a>
+          <a class="btn" href="#projects">See all projects</a>
+        </div>
+      </div>
+      <img class="hero-logo" src="images/rational-bonding-logo.png" alt="Rational Bonding logo: an atom with glowing orbits" width="256" height="225" />
+    </section>
 
+    <section id="projects">
+      <h2>Projects</h2>
+      <div class="cards">
+        <article class="card">
+          <div class="card-tag live">Play now</div>
+          <h3>Cube Chess <span>8×8×8</span></h3>
+          <p>Chess inside a cube. Classic mode stretches every piece into three dimensions; Relative mode lets each piece face its own way and see space from its own point of view. Play on one screen or invite a friend online.</p>
+          <a class="btn primary" href="chess/">Play</a>
+        </article>
+        <article class="card">
+          <div class="card-tag dev">In development</div>
+          <h3>Alchem Fighter</h3>
+          <p>A space shooter at the scale of atoms: photons, orbitals and the physics of light and matter, turned into a game. A new version is being built; the original prototype is still here to try.</p>
+          <a class="btn" href="alchemfighter/">Try the prototype</a>
+        </article>
+        <article class="card" id="blog-card">
+          <div class="card-tag">Writing</div>
+          <h3>The Philosophist's Blog</h3>
+          <p>Stories and essays on engineering, creativity and ideas, starting with <em>The Tale of the Beer Tycoon</em>, a warning for those who would sooner bulldoze a hill than not be king of it.</p>
+          <a class="btn" href="blog/">Read the blog</a>
+        </article>
+      </div>
+    </section>
+
+    <section id="support">
+      <h2>Buy me a coffee ☕</h2>
+      <p class="lead">Every project here is free. If one made you think or smile, a coffee keeps the next one coming.</p>
+      <div class="cards">
+        <article class="card" id="monero-card" hidden>
+          <h3>Monero (XMR)</h3>
+          <p class="muted">Private by design. Scan with your wallet, or copy the address.</p>
+          <div class="qr" id="monero-qr" role="img" aria-label="QR code for the Monero donation address"></div>
+          <code class="addr" id="monero-addr"></code>
+          <div class="row">
+            <button class="btn" id="monero-copy">Copy address</button>
+            <a class="btn" id="monero-open">Open in wallet</a>
+          </div>
+        </article>
+        <article class="card" id="cash-card" hidden>
+          <h3>Cash</h3>
+          <p class="muted">Send any amount with Cash App.</p>
+          <a class="btn primary" id="cash-link" target="_blank" rel="noopener noreferrer"></a>
+        </article>
+        <article class="card">
+          <h3>More ways</h3>
+          <p class="muted">Referral links for services I use. Signing up through them costs you nothing extra.</p>
+          <a class="btn" href="blog/more-ways/">More ways (ref links) to hook me up</a>
+        </article>
+        <article class="card" id="support-soon">
+          <h3>Coming soon</h3>
+          <p class="muted">Donation details are on their way. Thank you for thinking of it!</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>© <span id="year"></span> Rational Bonding</span>
+    <span class="muted">Made with curiosity.</span>
+  </footer>
 </body>
 </html>
