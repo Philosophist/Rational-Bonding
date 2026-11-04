@@ -850,8 +850,8 @@ function setGame(game, anim = null) {
 // Bright white lines for the board a piece stands on in Relative mode: the
 // plane of its facing and its left/right, through its square. Facing a flat
 // diagonal, that board is tilted through the cube.
-// Drawn with fat lines (plain WebGL lines are always 1 px, too thin to notice).
-const pieceBoardMat = new LineMaterial({ color: THEME.bright, linewidth: 2.5, transparent: true, opacity: 0.95, depthWrite: false });
+// Thin 1 px lines, the same thickness as the original board lines.
+const pieceBoardMat = new LineMaterial({ color: THEME.bright, linewidth: 1, transparent: true, opacity: 0.95, depthWrite: false });
 const pieceBoard = new LineSegments2(new LineSegmentsGeometry(), pieceBoardMat);
 pieceBoard.renderOrder = 2;
 pieceBoard.visible = false;
