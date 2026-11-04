@@ -220,8 +220,8 @@ const PIECE_COLORS = {
   w: { color: 0x00e8f0, emissive: 0x006a70, roughness: 0.35, metalness: 0.1 },
   b: { color: 0x1e6bff, emissive: 0x0b2c8a, roughness: 0.3, metalness: 0.3 },
 };
-// Models are ~0.94 tall; shrink them to fit a 1×1×1 cell and centre them in it.
-const PIECE_SCALE = 0.78;
+// Models are ~0.94 tall; scaled to ~0.88 they still fit a 1×1×1 cell, centred in it.
+const PIECE_SCALE = 0.936; // 20% bigger than the original 0.78
 const PIECE_MID = 0.47;
 
 // Game (file, rank, level) -> world (x, up, -z).
