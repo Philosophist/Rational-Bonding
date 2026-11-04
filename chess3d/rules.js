@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 8;
+export const RULES_VERSION = 9;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -86,7 +86,7 @@ export const isPromotionSquare = (c, i) => {
 //   knightFacing   - knights leap 2-and-1 along their own frame's axes.
 export const DEFAULT_RULES = {
   classic: { mode: 'classic', rookDiagonals: true },
-  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: false, bishopFacing: true, knightFacing: true },
+  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: true, bishopFacing: true, knightFacing: true },
 };
 
 export function normalizeRules(r) {

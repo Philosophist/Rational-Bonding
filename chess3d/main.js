@@ -70,7 +70,7 @@ const THEME = {
   lightCell: 0xdfe5f2,
   darkCell: 0x6f7d9c,
   label: '#a9b4cc',
-  accent: '#f0c060',
+  accent: '#2fe3e6',
 };
 
 const link = new Link({ onMessage: onNetMessage, onStatus: (s) => ($('net-status').textContent = s) });
@@ -85,6 +85,10 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.12;
+controls.zoomToCursor = true; // the wheel (or a trackpad pinch) zooms toward the pointer
+controls.zoomSpeed = 1.4;
+controls.minDistance = 2;
+controls.maxDistance = 60;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -245,7 +249,7 @@ function makePiece(p) {
     orientPiece(g, p.o, p.c);
     if (usesFacing(p, app.game.rules)) {
       // Show the facing of pieces whose moves depend on it.
-      const am = new THREE.MeshStandardMaterial({ color: 0xf0c060, emissive: 0x5a4210, transparent: true });
+      const am = new THREE.MeshStandardMaterial({ color: 0x2fe3e6, emissive: 0x0d4a4b, transparent: true });
       const arrow = new THREE.Mesh(ARROW, am);
       arrow.position.set(0, 0, -0.42);
       g.add(arrow);
@@ -314,11 +318,11 @@ const MAT = {
   move: new THREE.MeshBasicMaterial({ color: 0x4fd18b, transparent: true, opacity: 0.85 }),
   capture: new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.35, depthWrite: false }),
   preview: new THREE.MeshBasicMaterial({ color: 0x7fb4ff, transparent: true, opacity: 0.7 }),
-  last: new THREE.MeshBasicMaterial({ color: 0xf0c060, transparent: true, opacity: 0.14, depthWrite: false }),
+  last: new THREE.MeshBasicMaterial({ color: 0x2fe3e6, transparent: true, opacity: 0.14, depthWrite: false }),
   check: new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.45, depthWrite: false }),
 };
 const LINE = {
-  selected: new THREE.LineBasicMaterial({ color: 0xf0c060, transparent: true, opacity: 1 }),
+  selected: new THREE.LineBasicMaterial({ color: 0x2fe3e6, transparent: true, opacity: 1 }),
   hover: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }),
 };
 const DOT = new THREE.SphereGeometry(0.13, 16, 12);
@@ -396,6 +400,46 @@ function resetCamera() {
   camera.position.set(9.5 * s, c.y + 5, 15.5 * s);
   controls.target.copy(c);
   controls.update();
+}
+
+// Keyboard and button camera moves. Held keys move smoothly, a little each frame.
+const camKeys = new Set();
+const CAM_KEYS = {
+  ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right',
+  ArrowUp: 'up', w: 'up', ArrowDown: 'down', s: 'down',
+  q: 'orbitLeft', e: 'orbitRight',
+  '+': 'in', '=': 'in', '-': 'out', _: 'out', PageUp: 'in', PageDown: 'out',
+};
+function zoomBy(f) {
+  const off = camera.position.clone().sub(controls.target);
+  const len = THREE.MathUtils.clamp(off.length() * f, controls.minDistance, controls.maxDistance);
+  camera.position.copy(controls.target).add(off.setLength(len));
+}
+function panBy(dx, dy) {
+  const dist = camera.position.distanceTo(controls.target);
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+  const move = right.multiplyScalar(dx * dist).add(up.multiplyScalar(dy * dist));
+  camera.position.add(move);
+  controls.target.add(move);
+}
+function orbitBy(angle) {
+  const off = camera.position.clone().sub(controls.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+  camera.position.copy(controls.target).add(off);
+}
+function stepCamera(dt) {
+  if (!camKeys.size) return;
+  const k = Math.min(dt, 0.05); // seconds, capped so a slow frame doesn't jump
+  for (const a of camKeys) {
+    if (a === 'left') panBy(-0.6 * k, 0);
+    else if (a === 'right') panBy(0.6 * k, 0);
+    else if (a === 'up') panBy(0, 0.6 * k);
+    else if (a === 'down') panBy(0, -0.6 * k);
+    else if (a === 'orbitLeft') orbitBy(1.6 * k);
+    else if (a === 'orbitRight') orbitBy(-1.6 * k);
+    else if (a === 'in') zoomBy(Math.pow(0.25, k));
+    else if (a === 'out') zoomBy(Math.pow(4, k));
+  }
 }
 
 function resize() {
@@ -702,7 +746,7 @@ function askFacing(move, promo) {
   const origin = worldPos(move.to);
   const blocks = [];
   for (const [dk, opts] of byDir) {
-    const mesh = new THREE.Mesh(FACE_BLOCK, new THREE.MeshBasicMaterial({ color: 0x6fd3ff, transparent: true, opacity: 0.25, depthTest: false, depthWrite: false }));
+    const mesh = new THREE.Mesh(FACE_BLOCK, new THREE.MeshBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.25, depthTest: false, depthWrite: false }));
     mesh.position.copy(origin).add(g2w(opts[0]));
     mesh.renderOrder = 5;
     mesh.userData.opts = opts;
@@ -714,7 +758,7 @@ function askFacing(move, promo) {
       for (const b of blocks) {
         const isActive = dirKey(b.userData.opts[0]) === dirKey(active);
         const o = isActive ? active : b.userData.opts.find((x) => key(x) === key(current)) || b.userData.opts[0];
-        b.material.color.set(isActive ? 0xf0c060 : 0x6fd3ff);
+        b.material.color.set(isActive ? 0x2fe3e6 : 0x3b6dff);
         b.material.opacity = isActive ? 0.6 : 0.25;
         if (b.userData.label) {
           b.remove(b.userData.label);
@@ -722,7 +766,7 @@ function askFacing(move, promo) {
           b.userData.label.material.dispose();
         }
         const text = facingLabel(o).slice(1) + (key(o) === key(current) ? ' (now)' : '');
-        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#f0c060' : 'rgba(20,22,30,0.85)');
+        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#2fe3e6' : 'rgba(20,22,30,0.85)');
         b.add(label);
         b.userData.label = label;
       }
@@ -1272,8 +1316,19 @@ function wireUI() {
   };
   new ResizeObserver(syncDock).observe(dock);
 
+  $('zoom-in').onclick = () => zoomBy(0.8);
+  $('zoom-out').onclick = () => zoomBy(1.25);
+  window.addEventListener('keyup', (e) => camKeys.delete(CAM_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key]));
+  window.addEventListener('blur', () => camKeys.clear());
   window.addEventListener('keydown', (e) => {
     if (e.target.matches('input, select, textarea')) return;
+    const camAct = !e.ctrlKey && !e.metaKey && !e.altKey && CAM_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+    const reviewStep = app.mode === 'review' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
+    if (camAct && !reviewStep) {
+      camKeys.add(camAct);
+      e.preventDefault(); // keep arrows and Page keys from scrolling the page
+      return;
+    }
     if (e.key === ']') setFocus(app.focus < 0 ? 0 : Math.min(N - 1, app.focus + 1));
     else if (e.key === '[') setFocus(app.focus < 0 ? N - 1 : Math.max(0, app.focus - 1));
     else if (e.key === '0') setFocus(-1);
@@ -1286,7 +1341,10 @@ function wireUI() {
 
 // ---------------------------------------------------------------- loop
 const ANIM_MS = 380;
+let lastFrame = 0;
 function animate(now) {
+  stepCamera(lastFrame ? (now - lastFrame) / 1000 : 0);
+  lastFrame = now;
   for (const g of pieceGroup.children) {
     const a = g.userData.anim;
     if (!a) continue;
