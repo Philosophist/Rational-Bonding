@@ -98,6 +98,8 @@ export const signInWithProvider = async (provider) =>
   check(await sb.auth.signInWithOAuth({ provider, options: { redirectTo: redirect() } }));
 export const sendEmailCode = async (email) =>
   check(await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect(), shouldCreateUser: true } }));
+export const resendSignupEmail = async (email) =>
+  check(await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirect() } }));
 export const verifyEmailCode = async (email, token) => check(await sb.auth.verifyOtp({ email, token, type: 'email' }));
 export const sendPhoneCode = async (phone) => check(await sb.auth.signInWithOtp({ phone }));
 export const verifyPhoneCode = async (phone, token) => check(await sb.auth.verifyOtp({ phone, token, type: 'sms' }));

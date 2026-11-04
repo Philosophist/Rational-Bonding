@@ -171,8 +171,11 @@ npm run test:db # needs a Supabase stack: SUPABASE_URL, SUPABASE_ANON_KEY, SUPAB
   `--use-gl=swiftshader --enable-unsafe-swiftshader`. WebAuthn can be tested
   with a CDP virtual authenticator. Guest online play needs a local PeerServer
   on 127.0.0.1, because the public PeerJS cloud is blocked in the sandbox.
-- **Sandbox network:** it blocks supabase.com, rationalbonding.com, DNS lookups
-  and the GitHub Pages API. Say so, and don't guess results.
+- **Sandbox network:** since 2026-11-04, sessions can reach rationalbonding.com
+  and the Supabase project API (`*.supabase.co`). jsDelivr, unpkg, aframe.io
+  and supabase.com (the dashboard) are still blocked, so serve CDN libraries
+  locally in browser tests. Never send real sign-in emails from tests: stub
+  the auth endpoints with Playwright routes.
 
 ## Hosting and accounts (where things live)
 - **Domain:** bought through Google Workspace, registered at **eNom** (Registrar

@@ -33,7 +33,11 @@ All of these are under **Authentication → Sign In / Providers**, except passke
 
 ### Email: on by default
 - **Set up your own email sender (required for real players).** Supabase's built-in email only reaches your own team's addresses and is heavily rate-limited. Rational Bonding uses **Brevo**: follow [Sending sign-in emails with Brevo](#sending-sign-in-emails-with-brevo) below.
-- **Sign-in codes:** to let players type a code instead of clicking the link, which helps when the email is opened on another device, edit **Authentication → Emails → Templates → Magic Link** and add `Your code: {{ .Token }}`.
+- **Sign-in codes (needed):** the game offers a box for the code from the email, which helps when the email is opened on another device. Add the code to **both** of these templates in [Authentication → Emails → Templates](https://supabase.com/dashboard/project/lleyoffvdmmtgrvreiyx/auth/templates):
+  - **Confirm signup**: a brand-new player's first email
+  - **Magic Link**: a returning player's sign-in email
+
+  In each, add this line just above the link: `<p>Your code: <strong>{{ .Token }}</strong></p>`. Without it, new players are asked for a code their email doesn't have.
 - **Leave "Confirm email" on.**
 - **Leaked password protection:** under **Authentication → Attack Protection**, turn on the check against known leaked passwords. It's available on paid plans.
 
