@@ -5,7 +5,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
-  initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
+  initialState, legalMovesFrom, applyMove, replay, resign, findKing, pawnAttacks, RULES_VERSION,
   DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, pawnFrame, playOnBoard, usesFacing, timeout, canMate,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
@@ -333,6 +333,16 @@ const LINE = {
   hover: new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.6, depthWrite: false }),
 };
 const DOT = new THREE.SphereGeometry(0.13, 16, 12);
+// Small red-pink dot on empty squares a selected pawn attacks.
+const ATTACK_DOT = new THREE.SphereGeometry(0.08, 12, 10);
+const ATTACK_MAT = new THREE.MeshBasicMaterial({ color: 0xff3366, transparent: true, opacity: 0.9 });
+// Empty squares the selected pawn could capture on if an enemy moved there.
+function pawnThreats() {
+  if (app.selected < 0) return [];
+  const board = viewBoard();
+  const taken = new Set(app.targets.map((m) => m.to));
+  return pawnAttacks(board, app.selected, app.game.rules).filter((sq) => !board[sq] && !taken.has(sq));
+}
 const BUBBLE = new THREE.SphereGeometry(0.46, 24, 16);
 const CELL = new THREE.BoxGeometry(0.96, 0.96, 0.96);
 const CELL_EDGES = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.98, 0.98, 0.98));
@@ -367,6 +377,7 @@ function rebuildMarkers() {
       if (m.capture) addMarker(BUBBLE, own ? MAT.capture : MAT.preview, m.to, own);
       else addMarker(DOT, own ? MAT.move : MAT.preview, m.to, own);
     }
+    for (const sq of pawnThreats()) addMarker(ATTACK_DOT, ATTACK_MAT, sq, false);
   }
   applyFocus();
 }
@@ -388,7 +399,7 @@ function applyFocus() {
   }
   for (const m of markerGroup.children) {
     const z = coords(m.userData.sq)[2];
-    m.visible = f < 0 || z === f || m.userData.clickable || m.material === MAT.preview;
+    m.visible = f < 0 || z === f || m.userData.clickable || m.material === MAT.preview || m.material === ATTACK_MAT;
   }
   document.querySelectorAll('.level').forEach((el, z) => el.classList.toggle('focused', z === f));
   $('level-select').value = String(f);
@@ -1016,6 +1027,7 @@ function renderLevelMap() {
   const checkK = g.status.check && !g.result?.reason?.startsWith('resign') ? findKing(g.board, g.turn) : -1;
   // Same colours as the cube: green moves and red captures for your own piece, blue for a preview.
   const own = app.selected >= 0 && canAct() && viewBoard()[app.selected]?.c === g.turn;
+  const threats = new Set(pawnThreats());
   for (const c of cells) {
     const [x, y, z] = coords(c.sq);
     const p = viewBoard()[c.sq];
@@ -1025,6 +1037,7 @@ function renderLevelMap() {
     if (c.sq === app.selected) cls.push('sel');
     if (last && (c.sq === last.from || c.sq === last.to)) cls.push('last');
     if (t) cls.push('target', t.capture ? 'cap' : '', own ? 'mine' : 'preview');
+    if (threats.has(c.sq)) cls.push('threat');
     if (c.sq === checkK) cls.push('incheck');
     c.el.className = cls.join(' ');
     c.el.textContent = p ? glyph(p.t) : '';

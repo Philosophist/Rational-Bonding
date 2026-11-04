@@ -248,6 +248,13 @@ export const inCheck = (board, c, rules = CLASSIC) => {
   return k >= 0 && isAttacked(board, k, other(c), rules);
 };
 
+// Squares a pawn attacks: where it could capture if an enemy stood there,
+// empty or not. Empty for any other piece.
+export function pawnAttacks(board, from, rules = CLASSIC) {
+  if (board[from]?.t !== 'P') return [];
+  return [...new Set(pieceMoves(board, from, rules, true).map((m) => m.to))];
+}
+
 // Moves of the piece on `from`, ignoring check. With `attack`, returns every
 // square the piece attacks instead (pawn capture squares even when empty).
 function pieceMoves(board, from, rules, attack = false) {
