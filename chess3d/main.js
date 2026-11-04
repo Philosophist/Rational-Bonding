@@ -898,8 +898,17 @@ function showPieceBoard(sq, o, color) {
 }
 
 function refreshHighlights() {
+  // Always show a board in Relative mode: the selected piece's, or else the
+  // board the side to move's king stands on (the starting diagonal), a bit dimmer.
   const sel = app.selected >= 0 ? viewBoard()[app.selected] : null;
-  showPieceBoard(app.selected, sel?.o, sel?.c);
+  if (sel?.o) {
+    pieceBoardMat.opacity = 0.95;
+    showPieceBoard(app.selected, sel.o, sel.c);
+  } else {
+    const k = findKing(viewBoard(), app.game.turn);
+    pieceBoardMat.opacity = 0.5;
+    showPieceBoard(k, k >= 0 ? viewBoard()[k].o : null, app.game.turn);
+  }
   rebuildMarkers();
   renderLevelMap();
 }
