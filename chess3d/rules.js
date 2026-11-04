@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 9;
+export const RULES_VERSION = 10;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -82,7 +82,7 @@ export const isPromotionSquare = (c, i) => {
 // relative: every piece has a facing that defines its own three straight axes.
 //   gridLines      - rooks turned 45° keep the board's axes as well.
 //   pawnsAnyFacing - pawns may face any way, not only toward the enemy.
-//   bishopFacing   - bishops move along the diagonals of their own frame.
+//   bishopFacing   - bishops move along every adjacent line except their own axes.
 //   knightFacing   - knights leap 2-and-1 along their own frame's axes.
 export const DEFAULT_RULES = {
   classic: { mode: 'classic', rookDiagonals: true },
@@ -97,59 +97,71 @@ export function normalizeRules(r) {
 }
 
 // ---------------------------------------------------------------- facing (relative mode)
-// A piece's straight lines are three mutually perpendicular grid directions.
-// On a cube grid there are exactly four such frames: the board's own axes, and
-// the board turned 45° about one axis (that axis stays; the other two become
-// the diagonals of the cross-section). So a facing is a forward direction
-// that is either an axis or a planar diagonal, plus, for an axis, whether its
-// frame is square to the board or turned 45° about that axis.
+// A piece may face any of the 26 straight directions a king can step in.
+// Its own straight lines (its "axes") depend on that facing:
+// - facing along a board axis: the board's own three axes (square frame), or
+//   that axis plus the two diagonals across it (frame turned 45°, marked ◇);
+// - facing a flat diagonal: that diagonal, the axis square to it, and the
+//   other diagonal of the same plane (always a turned frame);
+// - facing a corner (all three coordinates change): that corner line plus the
+//   six directions square to it, which form a hexagon around it. A corner has
+//   no square left/right/up on the grid, so its "sideways" is that hexagon.
 // Stored on a piece as o = [dx, dy, dz, turned].
-export const FACINGS = ALL_DIRS.filter((d) => nonZero(d) <= 2);
+export const FACINGS = ALL_DIRS;
 
 export function normalizeFacing(f) {
   if (!Array.isArray(f) || f.length < 3) return null;
   const d = [f[0], f[1], f[2]];
   if (!FACINGS.some((g) => same(g, d))) return null;
-  return [...d, nonZero(d) === 2 ? 1 : f[3] ? 1 : 0];
+  const n = nonZero(d);
+  return [...d, n === 2 ? 1 : n === 3 ? 0 : f[3] ? 1 : 0];
 }
 
-// The axis (0, 1, 2) the piece's frame is turned about, or -1 if square.
+export const isCornerFacing = (o) => !!o && nonZero(o.slice(0, 3)) === 3;
+
+// The axis (0, 1, 2) the piece's frame is turned about, -1 if square, or a
+// key like 'c1,1,1' for a corner facing's hexagon frame.
 function frameAxis(o) {
-  if (nonZero(o.slice(0, 3)) === 2) return [0, 1, 2].find((a) => o[a] === 0);
+  const n = nonZero(o.slice(0, 3));
+  if (n === 3) return 'c' + o.slice(0, 3).map((v) => v * o[0]).join(',');
+  if (n === 2) return [0, 1, 2].find((a) => o[a] === 0);
   return o[3] ? [0, 1, 2].find((a) => o[a] !== 0) : -1;
 }
+const isTurned = (o) => frameAxis(o) !== -1;
 
-// The six straight directions of a facing's frame.
+// The straight directions of a facing's frame: six for a square or turned
+// frame, eight for a corner (forward, back and the hexagon around it).
 export function frameDirs(o) {
   const a = frameAxis(o);
-  if (a < 0) return ROOK_DIRS;
+  if (a === -1) return ROOK_DIRS;
+  if (typeof a === 'string') {
+    const f = o.slice(0, 3);
+    return ALL_DIRS.filter((d) => dot(d, f) === 0 || same(d, f) || same(d, f.map((v) => -v)));
+  }
   return ALL_DIRS.filter((d) => (nonZero(d) === 1 && d[a] !== 0) || (nonZero(d) === 2 && d[a] === 0));
 }
 
-// One representative of each of the frame's three axes.
-const frameBasis = (o) => {
-  const out = [];
-  for (const d of frameDirs(o)) if (!out.some((e) => same(e, d) || same(e, d.map((v) => -v)))) out.push(d);
-  return out;
-};
-const add3 = (...vs) => vs.reduce((a, v) => [a[0] + v[0], a[1] + v[1], a[2] + v[2]], [0, 0, 0]);
-const signs = [1, -1];
+// The hexagon of directions square to a corner facing (empty otherwise).
+export function hexDirs(o) {
+  if (!isCornerFacing(o)) return [];
+  const f = o.slice(0, 3);
+  return ALL_DIRS.filter((d) => dot(d, f) === 0);
+}
 
-// Bishop in its own frame: every flat diagonal (two of its axes) and every
-// corner-to-corner diagonal (all three). Square to the board this is the
-// classic bishop; turned 45° the board's own axes become diagonals for it
-// (in steps of two) and its 3D diagonals run like (1, 2, 0).
+const add3 = (...vs) => vs.reduce((a, v) => [a[0] + v[0], a[1] + v[1], a[2] + v[2]], [0, 0, 0]);
+// A sum of two single steps, as one step along the same line when it is one
+// (e.g. (0, 0, 2) -> (0, 0, 1)), so nothing skips over a square.
+const unitStep = (d) => (d.every((v) => v % 2 === 0) ? d.map((v) => v / 2) : d);
+
+// Bishop in its own frame: every straight line of touching cubes (face, edge
+// or corner contact, like a king's step) that is not one of its own axes.
+// Square to the board this is the classic bishop (20 directions).
 const bishopCache = new Map();
 export function frameBishopDirs(o) {
   const key = frameAxis(o);
   if (!bishopCache.has(key)) {
-    const [a, b, c] = frameBasis(o);
-    const out = [];
-    for (const [u, v] of [[a, b], [a, c], [b, c]])
-      for (const su of signs) for (const sv of signs) out.push(add3(u.map((x) => x * su), v.map((x) => x * sv)));
-    for (const sa of signs) for (const sb of signs) for (const sc of signs)
-      out.push(add3(a.map((x) => x * sa), b.map((x) => x * sb), c.map((x) => x * sc)));
-    bishopCache.set(key, out);
+    const axes = frameDirs(o);
+    bishopCache.set(key, ALL_DIRS.filter((d) => !axes.some((a) => same(a, d))));
   }
   return bishopCache.get(key);
 }
@@ -176,9 +188,10 @@ export function frameUp(o, c) {
   perps.sort((a, b) => b[2] - a[2] || (b[1] - a[1]) * s || b[0] - a[0]);
   return perps[0];
 }
+// For a corner facing there is no "side" square to both; side is then null.
 export function pawnFrame(o, c) {
   const up = frameUp(o, c);
-  const side = frameDirs(o).find((d) => dot(d, o) === 0 && dot(d, up) === 0);
+  const side = frameDirs(o).find((d) => dot(d, o) === 0 && dot(d, up) === 0) || null;
   return { up, side };
 }
 
@@ -295,7 +308,7 @@ function pieceMoves(board, from, rules, attack = false) {
     case 'R':
       if (relative) {
         slide(frameDirs(p.o));
-        if (rules.gridLines && frameAxis(p.o) >= 0) slide(ROOK_DIRS);
+        if (rules.gridLines && isTurned(p.o)) slide(ROOK_DIRS);
       } else {
         slide(ROOK_DIRS);
         if (rules.rookDiagonals) slide(PLANAR_DIAGONALS);
@@ -324,11 +337,21 @@ function pieceMoves(board, from, rules, attack = false) {
             if (!p.m && t2 >= 0 && !board[t2]) add(t2);
           }
         }
-        const sides = [side, side.map((v) => -v)];
-        for (const d of [...sides, up, down]) strike(step(from, add3(f, d)));
-        for (const d of sides) {
-          strike(step(from, add3(up, d)));
-          strike(step(from, add3(down, d)));
+        if (!side) {
+          // Facing a corner: capture on the six touching squares nearest
+          // straight ahead (one or two of its three forward coordinates).
+          const fw = f.slice(0, 3);
+          for (const d of ALL_DIRS) {
+            const k = dot(d, fw);
+            if (k > 0 && k * k >= nonZero(d) && !same(d, fw)) strike(step(from, d));
+          }
+        } else {
+          const sides = [side, side.map((v) => -v)];
+          for (const d of [...sides, up, down]) strike(step(from, unitStep(add3(f, d))));
+          for (const d of sides) {
+            strike(step(from, unitStep(add3(up, d))));
+            strike(step(from, unitStep(add3(down, d))));
+          }
         }
         for (const m of moves) if (isPromotionSquare(p.c, m.to)) m.promotion = true;
         break;
@@ -483,7 +506,8 @@ export function facingChoices(state, from, promo) {
   if (!usesFacing(piece, state.rules || CLASSIC)) return [];
   const out = [];
   for (const d of FACINGS) {
-    const turns = nonZero(d) === 1 ? [0, 1] : [1];
+    const n = nonZero(d);
+    const turns = n === 1 ? [0, 1] : n === 2 ? [1] : [0];
     for (const t of turns) {
       const o = [...d, t];
       if (facingAllowed(piece, o, state.rules)) out.push(o);

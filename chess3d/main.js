@@ -7,6 +7,7 @@ import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, pawnAttacks, RULES_VERSION,
   DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, pawnFrame, playOnBoard, usesFacing, timeout, canMate,
+  isCornerFacing, hexDirs,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 import { newClock, punch, timeLeft, flagged, formatTime, tcKey, parseTcKey, tcLabel } from './clock.js';
@@ -22,6 +23,12 @@ const RULES_KEY = 'chess3d-rules';
 const DOCK_KEY = 'chess3d-level-map';
 const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing'];
 const TC_KEY = 'chess3d-tc';
+// View options (this device only): move paths and corner-facing hexagons.
+const VIEW_KEY = 'chess3d-view';
+const view = { paths: true, hex: true };
+try {
+  Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'));
+} catch {}
 
 function loadTc() {
   try {
@@ -373,6 +380,84 @@ function addMarker(geo, mat, sq, clickable) {
   return m;
 }
 
+// Move paths: every straight move is a chain of cubes that touch (by a face,
+// an edge or just a corner). Draw each chain's cube outlines and a line through
+// their centres, so you can see nothing is skipped. Knights jump, so they have none.
+const PATH_CELL_MAT = new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 0.4, depthWrite: false });
+const PATH_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.8, depthWrite: false });
+const EDGE_PTS = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.9, 0.9, 0.9)).attributes.position.array;
+function cellEdges(cells) {
+  const out = new Float32Array(cells.length * EDGE_PTS.length);
+  cells.forEach((sq, n) => {
+    const w = worldPos(sq);
+    for (let i = 0; i < EDGE_PTS.length; i += 3) {
+      out[n * EDGE_PTS.length + i] = EDGE_PTS[i] + w.x;
+      out[n * EDGE_PTS.length + i + 1] = EDGE_PTS[i + 1] + w.y;
+      out[n * EDGE_PTS.length + i + 2] = EDGE_PTS[i + 2] + w.z;
+    }
+  });
+  return out;
+}
+function addLines(positions, mat, sq) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const m = new THREE.LineSegments(geo, mat);
+  m.userData.sq = sq;
+  m.userData.path = true;
+  m.renderOrder = 3;
+  markerGroup.add(m);
+}
+function addPaths(from, piece) {
+  if (!piece || piece.t === 'N') return;
+  const o = coords(from);
+  const cells = new Set();
+  const line = [];
+  for (const m of app.targets) {
+    const d = coords(m.to).map((v, k) => v - o[k]);
+    const g = Math.max(...d.map(Math.abs));
+    if (!g || d.some((v) => v % g)) continue; // not a straight line of single steps (castling)
+    for (let k = 1; k <= g; k++) cells.add(idx(...o.map((v, j) => v + (d[j] / g) * k)));
+    const a = worldPos(from), b = worldPos(m.to);
+    line.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  }
+  if (!line.length) return;
+  addLines(cellEdges([...cells]), PATH_CELL_MAT, from);
+  addLines(new Float32Array(line), PATH_LINE_MAT, from);
+}
+
+// Corner facings: the six directions square to the facing form a hexagon.
+// Highlight those six touching cubes and the hexagon through their centres.
+const HEX_CELL_MAT = new THREE.MeshBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.22, depthWrite: false });
+const HEX_LINE_MAT = new THREE.LineBasicMaterial({ color: 0xffe94d, transparent: true, opacity: 0.95, depthWrite: false });
+function addHexagon(from, o) {
+  const f = g2w(o).normalize();
+  const dirs = hexDirs(o);
+  const a = g2w(dirs[0]).normalize();
+  const b = f.clone().cross(a);
+  const angle = (d) => {
+    const w = g2w(d);
+    return Math.atan2(w.dot(b), w.dot(a));
+  };
+  dirs.sort((p, q) => angle(p) - angle(q));
+  const c = coords(from);
+  const ring = [];
+  for (const d of dirs) {
+    const n = c.map((v, k) => v + d[k]);
+    const w = worldPos(from).add(g2w(d));
+    ring.push(w);
+    if (n.every((v) => v >= 0 && v < N)) {
+      const m = addMarker(CELL, HEX_CELL_MAT, idx(...n), false);
+      m.userData.path = true;
+    }
+  }
+  const pts = [];
+  ring.forEach((p, i) => {
+    const q = ring[(i + 1) % ring.length];
+    pts.push(p.x, p.y, p.z, q.x, q.y, q.z);
+  });
+  addLines(new Float32Array(pts), HEX_LINE_MAT, from);
+}
+
 function rebuildMarkers() {
   markerGroup.clear();
   const h = app.game.history.at(-1);
@@ -392,6 +477,9 @@ function rebuildMarkers() {
       else addMarker(DOT, own ? MAT.move : MAT.preview, m.to, own);
     }
     for (const sq of pawnThreats()) addMarker(ATTACK_DOT, ATTACK_MAT, sq, false);
+    const piece = viewBoard()[app.selected];
+    if (view.paths) addPaths(app.selected, piece);
+    if (view.hex && app.game.rules.mode === 'relative' && isCornerFacing(piece?.o)) addHexagon(app.selected, piece.o);
   }
   applyFocus();
 }
@@ -413,7 +501,7 @@ function applyFocus() {
   }
   for (const m of markerGroup.children) {
     const z = coords(m.userData.sq)[2];
-    m.visible = f < 0 || z === f || m.userData.clickable || m.material === MAT.preview || m.material === ATTACK_MAT;
+    m.visible = f < 0 || z === f || m.userData.clickable || m.userData.path || m.material === MAT.preview || m.material === ATTACK_MAT;
   }
   document.querySelectorAll('.level').forEach((el, z) => el.classList.toggle('focused', z === f));
   $('level-select').value = String(f);
@@ -905,10 +993,35 @@ function showPieceBoard(sq, o, color) {
     return;
   }
   const fwd = o.slice(0, 3);
-  const { side } = pawnFrame(o, color);
   const c = coords(sq);
   const pts = [];
   const toWorld = (p) => [p[0] - 3.5, p[2], 3.5 - p[1]];
+  if (isCornerFacing(o)) {
+    // Facing a corner, its "board" is the flat sheet of cubes square to the
+    // facing: a triangle grid through the cube centres, with the hexagon of
+    // touching neighbours around the piece. Shown when "hexagons" is on.
+    if (!view.hex) {
+      pieceBoard.visible = false;
+      return;
+    }
+    const [a, b] = hexDirs(o).filter((d, i, all) => all.findIndex((e) => e.every((v, k) => v === -d[k])) > i);
+    const ab = a.map((v, k) => v + b[k]);
+    const third = hexDirs(o).some((d) => d.every((v, k) => v === ab[k])) ? ab : a.map((v, k) => v - b[k]);
+    for (const [step, along] of [[b, a], [a, b], [a, third]])
+      for (let j = -2 * N; j <= 2 * N; j++) {
+        const p = c.map((v, k) => v + j * step[k]);
+        const t = clipToCube(p, along);
+        if (!t) continue;
+        pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
+      }
+    pieceBoard.geometry.dispose();
+    pieceBoard.geometry = new LineSegmentsGeometry().setPositions(pts);
+    renderer.getSize(pieceBoardMat.resolution);
+    pieceBoard.visible = true;
+    lattice.material.opacity = 0.06;
+    return;
+  }
+  const { side } = pawnFrame(o, color);
   for (const [step, along] of [[side, fwd], [fwd, side]])
     for (let j = -2 * N; j <= 2 * N; j++) {
       const p = c.map((v, k) => v + (j + 0.5) * step[k]);
@@ -1416,6 +1529,17 @@ function wireUI() {
   try {
     showDock(localStorage.getItem(DOCK_KEY) === 'open');
   } catch {}
+  for (const k of ['paths', 'hex']) {
+    const box = $(`view-${k}`);
+    box.checked = !!view[k];
+    box.onchange = () => {
+      view[k] = box.checked;
+      try {
+        localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+      } catch {}
+      refreshHighlights();
+    };
+  }
   $('levels-toggle').onclick = () => {
     const open = dock.classList.contains('collapsed');
     showDock(open);

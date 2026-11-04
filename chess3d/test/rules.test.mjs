@@ -4,7 +4,7 @@ import {
   initialState, allLegalMoves, legalMovesFrom, applyMove, idx, SIZE, replay, sqName,
   KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures, inCheck, isAttacked,
   frameDirs, facingChoices, normalizeRules, allLegalMoves as allMoves, frameBishopDirs, frameKnightJumps,
-  pawnAttacks,
+  pawnAttacks, hexDirs,
 } from '../rules.js';
 
 const REL = { mode: 'relative' };
@@ -324,7 +324,7 @@ test('relative pawn captures: one forward and one sideways (or up/down), never b
   const s = relEmpty([[idx(4, 3, 3), 'P', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]]);
   const caps = [
     idx(5, 4, 4), idx(3, 4, 4), // facing + left/right
-    idx(4, 3, 5), idx(4, 5, 3), // facing + up / down
+    idx(4, 3, 4), idx(4, 4, 3), // facing + up / down: one touching step, never a skip
     idx(5, 2, 4), idx(3, 2, 4), // up + left/right
     idx(5, 4, 2), idx(3, 4, 2), // down + left/right
   ];
@@ -351,17 +351,21 @@ test('relative: facing is chosen with the move and changes what the piece can do
   let r = applyMove(initialState({ mode: 'relative', pawnsAnyFacing: false }), { from: idx(0, 1, 1), to: idx(0, 2, 2), face: [0, 1, 0, 0] });
   r = applyMove(r, { from: idx(0, 6, 6), to: idx(0, 5, 5) });
   assert.equal(applyMove(r, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [0, -1, 0, 0] }), null, 'toggle off: pawns may not face backward');
-  assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [1, 1, 1, 0] }), null, 'no space-diagonal facings');
+  const c = applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [1, 1, 1, 0] });
+  assert.ok(c, 'corner facings are allowed');
+  assert.deepEqual(c.board[idx(0, 3, 2)].o, [1, 1, 1, 0]);
+  assert.ok(c.history.at(-1).label.endsWith('→h8H'));
 });
 
 test('relative: facing choices', () => {
   const s = initialState(REL);
-  assert.equal(facingChoices(s, idx(0, 0, 0)).length, 24, 'rook: 6 axes x 2 frames + 12 diagonals');
-  assert.equal(facingChoices(s, idx(0, 1, 1)).length, 24, 'pawn: any direction by default');
-  assert.equal(facingChoices(initialState({ mode: 'relative', pawnsAnyFacing: false }), idx(0, 1, 1)).length, 9, 'pawn toggle off: only toward the enemy');
-  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 24, 'knight: facing on by default');
+  assert.equal(facingChoices(s, idx(0, 0, 0)).length, 32, 'rook: 6 axes x 2 frames + 12 diagonals + 8 corners');
+  assert.equal(new Set(facingChoices(s, idx(0, 0, 0)).map((o) => o.slice(0, 3).join())).size, 26, 'every king direction');
+  assert.equal(facingChoices(s, idx(0, 1, 1)).length, 32, 'pawn: any direction by default');
+  assert.equal(facingChoices(initialState({ mode: 'relative', pawnsAnyFacing: false }), idx(0, 1, 1)).length, 11, 'pawn toggle off: only toward the enemy (9, plus the 2 corners)');
+  assert.equal(facingChoices(s, idx(1, 0, 0)).length, 32, 'knight: facing on by default');
   assert.equal(facingChoices(initialState({ mode: 'relative', knightFacing: false }), idx(1, 0, 0)).length, 0, 'knight toggle off');
-  assert.equal(facingChoices(s, idx(2, 0, 0)).length, 24, 'bishop: facing on by default');
+  assert.equal(facingChoices(s, idx(2, 0, 0)).length, 32, 'bishop: facing on by default');
   assert.equal(facingChoices(s, idx(3, 0, 0)).length, 0, 'queen: never');
   assert.equal(facingChoices(initialState(), idx(0, 0, 0)).length, 0, 'classic mode has no facings');
 });
@@ -394,26 +398,48 @@ test('relative random playouts with random facings stay consistent', () => {
 
 const key = (ds) => ds.map((d) => d.join(',')).sort();
 
-test('relative bishop: square frame is the classic bishop, turned frame sees board axes as diagonals', () => {
-  assert.deepEqual(key(frameBishopDirs([0, 1, 0, 0])), key(BISHOP_DIRS));
+test('relative bishop: every touching line except its own axes', () => {
+  assert.deepEqual(key(frameBishopDirs([0, 1, 0, 0])), key(BISHOP_DIRS), 'square frame: the classic bishop');
   const turned = frameBishopDirs([0, 1, 1, 1]);
   assert.equal(turned.length, 20);
   const k = key(turned);
-  for (const d of ['0,0,2', '0,2,0', '0,0,-2', '1,1,1', '1,-1,1', '1,0,2', '1,2,0', '-1,-2,0']) assert.ok(k.includes(d), d);
-  assert.ok(!k.includes('0,1,1'), 'its forward axis is not a diagonal for it');
+  for (const d of ['1,1,1', '-1,1,1', '-1,-1,-1', '0,0,1', '0,1,0', '1,0,1', '1,1,0']) assert.ok(k.includes(d), d);
+  for (const d of ['0,1,1', '0,-1,-1', '1,0,0', '-1,0,0', '0,-1,1', '0,1,-1']) assert.ok(!k.includes(d), 'own axis ' + d);
+  assert.ok(turned.every((d) => d.every((v) => Math.abs(v) <= 1)), 'single steps only: nothing skips a square');
+  const corner = frameBishopDirs([1, 1, 1, 0]);
+  assert.equal(corner.length, 18, 'corner facing: 26 minus forward, back and the hexagon of 6');
+  assert.equal(frameDirs([1, 1, 1, 0]).length, 8);
+  assert.equal(hexDirs([1, 1, 1, 0]).length, 6);
 });
 
-test('relative bishop moves: turned bishop slides along the level axis two squares at a time', () => {
+test('relative bishop moves: starting bishop reaches h8H and a8H lines, one touching square at a time', () => {
   const s = relEmpty([[idx(3, 3, 1), 'B', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]], [idx(3, 3, 5), 'P', 'b', [0, -1, -1, 1]]]);
   const t = legalMovesFrom(s, idx(3, 3, 1)).map((m) => m.to);
-  assert.ok(t.includes(idx(3, 3, 3)) && t.includes(idx(3, 3, 5)), 'up the level axis by twos, capturing at the end');
-  assert.ok(!t.includes(idx(3, 3, 2)) && !t.includes(idx(3, 3, 7)));
-  assert.ok(t.includes(idx(4, 4, 2)), 'board space diagonal');
-  assert.ok(t.includes(idx(4, 5, 1)), '(1, 2, 0) line');
-  assert.ok(!t.includes(idx(4, 4, 1)), 'flat board diagonals are not diagonals for it');
+  assert.ok(t.includes(idx(4, 4, 2)) && t.includes(idx(7, 7, 5)), 'toward h8H');
+  assert.ok(t.includes(idx(2, 4, 2)) && t.includes(idx(0, 6, 4)), 'toward a8H');
+  assert.ok(t.includes(idx(3, 3, 2)) && t.includes(idx(3, 3, 5)) && !t.includes(idx(3, 3, 6)), 'up the levels one square at a time, capturing');
+  assert.ok(!t.includes(idx(3, 4, 2)), 'its forward axis is not a bishop line');
+  assert.ok(!t.includes(idx(4, 3, 1)), 'its sideways axis is not a bishop line');
+  assert.ok(!t.includes(idx(4, 5, 1)), 'no two-over-one lines');
   // Turning off the toggle gives the classic bishop back.
   const c = relEmpty([[idx(3, 3, 1), 'B', 'w', DIAG_W], [idx(0, 0, 0), 'K', 'w', DIAG_W], [idx(7, 7, 7), 'K', 'b', [0, -1, -1, 1]]], 'w', { mode: 'relative', bishopFacing: false });
   assert.ok(legalMovesFrom(c, idx(3, 3, 1)).some((m) => m.to === idx(4, 4, 1)));
+});
+
+test('relative corner facing: rook runs along its corner line and the hexagon around it', () => {
+  const s = relEmpty([[idx(3, 3, 3), 'R', 'w', [1, 1, 1, 0]], [idx(0, 0, 7), 'K', 'w', DIAG_W], [idx(7, 0, 0), 'K', 'b', [0, -1, -1, 1]]]);
+  const t = legalMovesFrom(s, idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(t.includes(idx(7, 7, 7)) && t.includes(idx(0, 0, 0)), 'forward and back along the corner line');
+  assert.ok(t.includes(idx(4, 2, 3)) && t.includes(idx(2, 3, 4)) && t.includes(idx(3, 4, 2)), 'hexagon directions');
+  assert.ok(!t.includes(idx(4, 3, 3)) && !t.includes(idx(4, 4, 3)), 'other lines are bishop lines');
+});
+
+test('relative corner pawn: moves along its facing and its up/down, captures any touching square ahead', () => {
+  const s = relEmpty([[idx(3, 3, 3), 'P', 'w', [1, 1, 1, 0]], [idx(0, 0, 7), 'K', 'w', DIAG_W], [idx(7, 0, 0), 'K', 'b', [0, -1, -1, 1]]]);
+  s.board[idx(3, 3, 3)].m = true;
+  const ahead = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1]].map((d) => idx(3 + d[0], 3 + d[1], 3 + d[2]));
+  assert.deepEqual([...pawnAttacks(s.board, idx(3, 3, 3), s.rules)].sort((a, b) => a - b), ahead.sort((a, b) => a - b));
+  assert.ok(legalMovesFrom(s, idx(3, 3, 3)).some((m) => m.to === idx(4, 4, 4)));
 });
 
 test('relative knight (toggle): leaps along its own axes, diagonal legs included', () => {

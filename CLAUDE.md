@@ -119,13 +119,16 @@ en passant, by design.
   or one diagonal step inward.
 
 **Relative mode**
-- Each piece has a facing `o = [dx, dy, dz, turned]`. Only four square frames
+- Each piece has a facing `o = [dx, dy, dz, turned]`, any of the 26 king
+  directions. Only four square frames
   exist on the grid: the board's own, or the board turned 45° about one axis.
-  So a piece faces along an axis (square or turned ◇) or a flat diagonal, never
-  corner to corner.
+  So along an axis it is square or turned ◇, and a flat diagonal is turned.
+  A corner facing has no square frame: its lines are the corner line plus the
+  hexagon of 6 touching directions square to it (`hexDirs`).
 - Both armies start facing each other across the diagonal: White →8H, Black →1A.
 - Rook: its own three axes.
-- Bishop: the diagonals of its own frame (toggle, on).
+- Bishop: every touching (king-step) line except its own axes, sliding with
+  no skips: 20 directions, 18 for a corner facing (toggle, on).
 - Knight: 2+1 along its own axes (toggle, on).
 - Pawn: forward along its facing *and* its own up and down (`frameUp`), 1 square
   or 2 on the first move. It captures forward + sideways (or up/down), never
