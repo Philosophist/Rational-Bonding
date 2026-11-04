@@ -2,15 +2,15 @@
   --bg: #161a22;
   --panel: #1c212c;
   --panel-2: #262d3b;
-  --text: #e8e6e1;
+  --text: #ff2bd6; /* Tron-style neon pink, as is the accent */
   --muted: #9aa0ad;
-  --accent: #e04dff;
+  --accent: #ff2bd6;
   --good: #4fd18b;
   --bad: #ef5d5d;
   --light-sq: #dfe5f2;
   --dark-sq: #6f7d9c;
-  --white-piece: #7fffd4;
-  --black-piece: #3d6fd6;
+  --white-piece: #00e8f0;
+  --black-piece: #1e6bff;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -81,7 +81,7 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .cell.pw { color: var(--white-piece); text-shadow: 0 0 2px #000, 0 0 1px #000; }
 .cell.pb { color: var(--black-piece); text-shadow: 0 0 2px #fff, 0 0 1px #fff; }
 .cell.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
-.cell.last { box-shadow: inset 0 0 0 7px #e04dff55; }
+.cell.last { box-shadow: inset 0 0 0 7px #ff2bd655; }
 .cell.target { background: var(--good); box-shadow: inset 0 0 0 2px #0006; }
 .cell.target.cap { background: var(--bad); }
 .cell.target.preview { background: #7fb4ff; }
