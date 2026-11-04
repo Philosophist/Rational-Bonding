@@ -166,14 +166,44 @@ function openAuth() {
     body.append(el('section', { className: 'auth-sec' },
       el('div', { className: 'auth-label', textContent: 'Crypto wallet' }),
       el('div', { className: 'provider-grid' },
-        m.ethereum && el('button', { textContent: 'Ethereum wallet', onclick: run(() => acct.signInWithWallet('ethereum')) }),
-        m.solana && el('button', { textContent: 'Solana wallet', onclick: run(() => acct.signInWithWallet('solana')) }))));
+        m.ethereum && el('button', { textContent: 'Ethereum wallet', onclick: run(async () => { await acct.signInWithWallet('ethereum'); }) }),
+        m.solana && el('button', { textContent: 'Solana wallet', onclick: run(async () => { await acct.signInWithWallet('solana'); }) }))));
   }
   if (m.email) {
     const email = el('input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'username webauthn', required: true });
-    const code = el('input', { inputMode: 'numeric', placeholder: 'code from the email', autocomplete: 'one-time-code' });
-    const codeRow = el('form', { className: 'row', hidden: true }, code, el('button', { textContent: 'Verify' }));
-    codeRow.onsubmit = run(() => acct.verifyEmailCode(email.value.trim(), code.value.trim()));
+    const code = el('input', { inputMode: 'numeric', placeholder: 'code from the email', autocomplete: 'one-time-code', maxLength: 10 });
+    // What "Send again" repeats: the sign-in email, or the sign-up confirmation.
+    let resend = null;
+    const again = el('button', { type: 'button', className: 'link', textContent: 'Send again' });
+    let timer = 0;
+    const cooldown = (secs) => {
+      clearInterval(timer);
+      const until = Date.now() + secs * 1000;
+      const tick = () => {
+        const left = Math.ceil((until - Date.now()) / 1000);
+        again.disabled = left > 0;
+        again.textContent = left > 0 ? `Send again in ${left}s` : 'Send again';
+        if (left <= 0) clearInterval(timer);
+      };
+      tick();
+      timer = setInterval(tick, 1000);
+    };
+    const codeBox = el('div', { hidden: true },
+      el('form', { className: 'row', onsubmit: run(async () => { await acct.verifyEmailCode(email.value.trim(), code.value.replace(/\s/g, '')); }) },
+        code, el('button', { textContent: 'Verify' })),
+      el('div', { className: 'row' }, again));
+    // Supabase lets each address ask for a new email once a minute.
+    const sent = (fn) => {
+      resend = fn;
+      codeBox.hidden = false;
+      cooldown(60);
+      return `Email sent to ${email.value.trim()}. Click the link in it, or type its code here. It can take a minute, so check your spam folder too.`;
+    };
+    again.onclick = run(async () => {
+      if (!resend) return null;
+      await resend();
+      return sent(resend);
+    });
     const pw = el('input', { type: 'password', placeholder: 'password (8+ characters)', autocomplete: 'current-password', minLength: 8 });
     body.append(el('section', { className: 'auth-sec' },
       el('div', { className: 'auth-label', textContent: 'Email' }),
@@ -181,19 +211,20 @@ function openAuth() {
       el('div', { className: 'row' },
         el('button', { textContent: 'Email me a sign-in link', onclick: run(async () => {
           if (!email.reportValidity()) return 'Enter your email first.';
-          await acct.sendEmailCode(email.value.trim());
-          codeRow.hidden = false;
-          return 'Check your email and click the link. If the email shows a code, you can type it here instead.';
+          const fn = () => acct.sendEmailCode(email.value.trim());
+          await fn();
+          return sent(fn);
         }) })),
-      codeRow,
+      codeBox,
       el('details', {},
         el('summary', { textContent: 'Use a password instead' }),
         pw,
         el('div', { className: 'row' },
           el('button', { textContent: 'Sign in', onclick: run(async () => { await acct.signInWithPassword(email.value.trim(), pw.value); }) }),
           !m.signupDisabled && el('button', { textContent: 'Create account', onclick: run(async () => {
+            if (!email.reportValidity()) return 'Enter your email first.';
             const r = await acct.signUpWithPassword(email.value.trim(), pw.value);
-            return r.session ? null : 'Check your email to confirm your account.';
+            return r.session ? null : sent(() => acct.resendSignupEmail(email.value.trim()));
           }) }),
           el('button', { className: 'link', textContent: 'Forgot password?', onclick: run(async () => {
             await acct.sendPasswordReset(email.value.trim());
@@ -206,7 +237,7 @@ function openAuth() {
     body.append(el('section', { className: 'auth-sec' },
       el('div', { className: 'auth-label', textContent: 'Phone' }),
       el('div', { className: 'row' }, phone, el('button', { textContent: 'Text me a code', onclick: run(async () => { await acct.sendPhoneCode(phone.value.trim()); return 'Code sent.'; }) })),
-      el('div', { className: 'row' }, code, el('button', { textContent: 'Verify', onclick: run(() => acct.verifyPhoneCode(phone.value.trim(), code.value.trim())) }))));
+      el('div', { className: 'row' }, code, el('button', { textContent: 'Verify', onclick: run(async () => { await acct.verifyPhoneCode(phone.value.trim(), code.value.replace(/\s/g, '')); }) }))));
   }
   body.append(msg);
   d.showModal();
