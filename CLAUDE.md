@@ -124,7 +124,7 @@ en passant, by design.
 - Knight: 2+1 along its own axes (toggle, on).
 - Pawn: forward along its facing *and* its own up and down (`frameUp`), 1 square
   or 2 on the first move. It captures forward + sideways (or up/down), never
-  backwards, and may face only toward the enemy (toggle).
+  backwards. By default it may face any direction (toggle off: only toward the enemy).
 - After a piece whose moves depend on facing moves, the player picks its new
   facing by clicking labelled blocks around it.
 

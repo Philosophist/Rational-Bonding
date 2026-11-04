@@ -346,20 +346,22 @@ test('relative: facing is chosen with the move and changes what the piece can do
   const t = legalMovesFrom(s, idx(0, 2, 2)).map((m) => sqName(m.to)).sort();
   assert.deepEqual(t, ['a3B', 'a3D', 'a4C'], 'facing up the rank: forward, its up (a level up) and down, one square each');
   // Illegal facings are rejected.
-  assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [0, -1, 0, 0] }), null, 'pawns may not face backward');
+  assert.ok(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [0, -1, 0, 0] }), 'by default pawns may face any way, even backward');
+  let r = applyMove(initialState({ mode: 'relative', pawnsAnyFacing: false }), { from: idx(0, 1, 1), to: idx(0, 2, 2), face: [0, 1, 0, 0] });
+  r = applyMove(r, { from: idx(0, 6, 6), to: idx(0, 5, 5) });
+  assert.equal(applyMove(r, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [0, -1, 0, 0] }), null, 'toggle off: pawns may not face backward');
   assert.equal(applyMove(s, { from: idx(0, 2, 2), to: idx(0, 3, 2), face: [1, 1, 1, 0] }), null, 'no space-diagonal facings');
 });
 
 test('relative: facing choices', () => {
   const s = initialState(REL);
   assert.equal(facingChoices(s, idx(0, 0, 0)).length, 24, 'rook: 6 axes x 2 frames + 12 diagonals');
-  assert.equal(facingChoices(s, idx(0, 1, 1)).length, 9, 'pawn: only directions toward the enemy');
+  assert.equal(facingChoices(s, idx(0, 1, 1)).length, 24, 'pawn: any direction by default');
+  assert.equal(facingChoices(initialState({ mode: 'relative', pawnsAnyFacing: false }), idx(0, 1, 1)).length, 9, 'pawn toggle off: only toward the enemy');
   assert.equal(facingChoices(s, idx(1, 0, 0)).length, 24, 'knight: facing on by default');
   assert.equal(facingChoices(initialState({ mode: 'relative', knightFacing: false }), idx(1, 0, 0)).length, 0, 'knight toggle off');
   assert.equal(facingChoices(s, idx(2, 0, 0)).length, 24, 'bishop: facing on by default');
   assert.equal(facingChoices(s, idx(3, 0, 0)).length, 0, 'queen: never');
-  const any = initialState({ mode: 'relative', pawnsAnyFacing: true });
-  assert.equal(facingChoices(any, idx(0, 1, 1)).length, 24);
   assert.equal(facingChoices(initialState(), idx(0, 0, 0)).length, 0, 'classic mode has no facings');
 });
 
