@@ -48,7 +48,7 @@ Connections are peer-to-peer (WebRTC via [PeerJS](https://peerjs.com); its free 
 Some strict corporate or mobile networks block peer-to-peer connections; if joining hangs at "Connecting…", try a different network.
 
 ## Controls
-- Click a piece to highlight its moves: green dots = moves, red bubbles = captures. Selecting an opponent's piece shows its moves in blue, so you can check threats. In Relative mode the selected piece's own board (the plane of its facing and its left and right, tilted through the cube when it faces a diagonal) is drawn in bright neon teal lines.
+- Click a piece to highlight its moves: green dots = moves, red bubbles = captures. Selecting an opponent's piece shows its moves in blue, so you can check threats. In Relative mode the selected piece's own board (the plane of its facing and its left and right, tilted through the cube when it faces a diagonal) is drawn in bright neon teal lines. With nothing selected, the board the side to move's king stands on (the starting diagonal) stays visible, a little dimmer.
 - Drag to orbit, scroll (or pinch on a trackpad) to zoom toward the pointer, right-drag to pan.
 - Keyboard: <kbd>+</kbd> / <kbd>−</kbd> (or Page Up / Page Down) zoom, arrow keys or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>Q</kbd> / <kbd>E</kbd> turn around the cube. Hold a key to keep moving. In a replay, ← and → still step through the moves.
 - The **+** and **−** buttons at the top right of the view zoom too.
