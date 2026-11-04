@@ -4,6 +4,7 @@ import {
   initialState, allLegalMoves, legalMovesFrom, applyMove, idx, SIZE, replay, sqName,
   KNIGHT_JUMPS, BISHOP_DIRS, ROOK_DIRS, QUEEN_DIRS, pawnCaptures, inCheck, isAttacked,
   frameDirs, facingChoices, normalizeRules, allLegalMoves as allMoves, frameBishopDirs, frameKnightJumps,
+  pawnAttacks,
 } from '../rules.js';
 
 const REL = { mode: 'relative' };
@@ -429,4 +430,17 @@ test('relative knight (toggle): leaps along its own axes, diagonal legs included
 test('relative start with every facing toggle on: still no captures on move one', () => {
   const s = initialState({ mode: 'relative', bishopFacing: true, knightFacing: true });
   assert.equal(allMoves(s).filter((m) => m.capture).length, 0);
+});
+
+test('pawnAttacks: capture squares even when empty, nothing for other pieces', () => {
+  for (const rules of [undefined, REL]) {
+    const s = initialState(rules);
+    const r = rules ? normalizeRules(rules) : undefined;
+    const sq = idx(4, 1, 1); // e2B pawn
+    const att = pawnAttacks(s.board, sq, r);
+    assert.ok(att.length > 0, 'a pawn attacks some squares');
+    assert.ok(att.every((t) => t !== sq), 'never its own square');
+    assert.equal(legalMovesFrom(s, sq).filter((m) => m.capture).length, 0, 'no captures at the start');
+    assert.deepEqual(pawnAttacks(s.board, idx(4, 0, 0), r), [], 'a king is not a pawn');
+  }
 });
