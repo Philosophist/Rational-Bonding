@@ -27,12 +27,13 @@ function loadTc() {
   }
 }
 
+// New games start in Relative mode unless this browser has saved another choice.
 function loadRules() {
   try {
-    return normalizeRules(JSON.parse(localStorage.getItem(RULES_KEY)));
-  } catch {
-    return normalizeRules();
-  }
+    const saved = JSON.parse(localStorage.getItem(RULES_KEY));
+    if (saved) return normalizeRules(saved);
+  } catch {}
+  return normalizeRules(DEFAULT_RULES.relative);
 }
 
 // ---------------------------------------------------------------- app state
