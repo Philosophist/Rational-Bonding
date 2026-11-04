@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
-  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, playOnBoard, usesFacing, timeout, canMate,
+  DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, pawnFrame, playOnBoard, usesFacing, timeout, canMate,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 import { newClock, punch, timeLeft, flagged, formatTime, tcKey, parseTcKey, tcLabel } from './clock.js';
@@ -105,7 +105,8 @@ const worldPos = (i, lift = 0) => {
 };
 const center = () => new THREE.Vector3(0, (N - 1) / 2, 0);
 
-// Lattice lines along every cell boundary.
+// Lattice lines along every cell boundary, kept faint so a piece's own board stands out.
+const LATTICE_OPACITY = 0.13;
 const lattice = (() => {
   const pts = [];
   const lo = -N / 2, hi = N / 2, ylo = -0.5, yhi = N - 0.5;
@@ -118,7 +119,7 @@ const lattice = (() => {
     }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: THEME.grid, transparent: true, opacity: 0.22, depthWrite: false }));
+  return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: THEME.grid, transparent: true, opacity: LATTICE_OPACITY, depthWrite: false }));
 })();
 scene.add(lattice);
 
@@ -146,7 +147,7 @@ for (let z = 0; z < N; z++) {
 
 const frame = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(N, N, N)),
-  new THREE.LineBasicMaterial({ color: THEME.frame, transparent: true, opacity: 0.8 }),
+  new THREE.LineBasicMaterial({ color: THEME.frame, transparent: true, opacity: 0.55 }),
 );
 frame.position.copy(center());
 scene.add(frame);
@@ -211,7 +212,7 @@ for (let k = 0; k < 4; k++) {
 
 const PIECE_COLORS = {
   w: { color: 0xf6ecd4, emissive: 0x2a2418, roughness: 0.4, metalness: 0.05 },
-  b: { color: 0x1d3f94, emissive: 0x081a44, roughness: 0.3, metalness: 0.35 },
+  b: { color: 0x3d6fd6, emissive: 0x0c2a66, roughness: 0.3, metalness: 0.35 },
 };
 // Models are ~0.94 tall; shrink them to fit a 1×1×1 cell and centre them in it.
 const PIECE_SCALE = 0.78;
@@ -368,7 +369,7 @@ function rebuildMarkers() {
 function applyFocus() {
   const f = app.focus;
   levelMeshes.forEach((m, z) => (m.material.opacity = z === f ? 0.1 : 0));
-  lattice.material.opacity = f < 0 ? 0.22 : 0.08;
+  lattice.material.opacity = f < 0 ? LATTICE_OPACITY : 0.06;
   levelLabels.forEach((s, z) => (s.material.opacity = f < 0 || z === f ? 1 : 0.25));
   for (const g of pieceGroup.children) {
     const z = coords(g.userData.sq)[2];
@@ -840,7 +841,60 @@ function setGame(game, anim = null) {
   maybeSaveLocal(game);
 }
 
+// Bright white lines for the board a piece stands on in Relative mode: the
+// plane of its facing and its left/right, through its square. Facing a flat
+// diagonal, that board is tilted through the cube.
+const pieceBoard = new THREE.LineSegments(
+  new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }),
+);
+pieceBoard.renderOrder = 2;
+pieceBoard.visible = false;
+scene.add(pieceBoard);
+
+// The part of the line p + t·d inside the cube (cell centres 0..7, edges at -0.5 and 7.5).
+function clipToCube(p, d) {
+  let t0 = -Infinity, t1 = Infinity;
+  for (let k = 0; k < 3; k++) {
+    if (d[k] === 0) {
+      if (p[k] < -0.5 || p[k] > N - 0.5) return null;
+      continue;
+    }
+    const a = (-0.5 - p[k]) / d[k], b = (N - 0.5 - p[k]) / d[k];
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  }
+  return t1 - t0 > 1e-6 ? [t0, t1] : null;
+}
+
+function showPieceBoard(sq, o, color) {
+  if (sq < 0 || !o || app.game.rules.mode !== 'relative') {
+    pieceBoard.visible = false;
+    lattice.material.opacity = app.focus < 0 ? LATTICE_OPACITY : 0.06;
+    return;
+  }
+  const fwd = o.slice(0, 3);
+  const { side } = pawnFrame(o, color);
+  const c = coords(sq);
+  const pts = [];
+  const toWorld = (p) => [p[0] - 3.5, p[2], 3.5 - p[1]];
+  for (const [step, along] of [[side, fwd], [fwd, side]])
+    for (let j = -2 * N; j <= 2 * N; j++) {
+      const p = c.map((v, k) => v + (j + 0.5) * step[k]);
+      const t = clipToCube(p, along);
+      if (!t) continue;
+      pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
+    }
+  pieceBoard.geometry.dispose();
+  pieceBoard.geometry = new THREE.BufferGeometry();
+  pieceBoard.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  pieceBoard.visible = true;
+  lattice.material.opacity = 0.06;
+}
+
 function refreshHighlights() {
+  const sel = app.selected >= 0 ? viewBoard()[app.selected] : null;
+  showPieceBoard(app.selected, sel?.o, sel?.c);
   rebuildMarkers();
   renderLevelMap();
 }
