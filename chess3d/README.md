@@ -73,7 +73,7 @@ Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to t
 - There is deliberately **no en passant**.
 
 ## Rule modes
-Pick these in the **Game rules** panel. They can be changed until the first move. Online, the host picks them.
+Pick these in the **Game rules** panel. New games start in **Relative** mode; Classic is one click away, and the panel remembers your last choice. Rules can be changed until the first move. Online, the host picks them.
 
 ### Classic
 All pieces use the board's own axes, as described above.
