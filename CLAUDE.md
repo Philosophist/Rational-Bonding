@@ -48,6 +48,11 @@ developer:
   Supabase project or a second profiles table. A game hosted elsewhere (such
   as itch.io) can use the same account but needs its own sign-in there, plus
   its URL in Supabase's Redirect URLs.
+- **Link previews:** every page has absolute Open Graph and Twitter tags
+  (`og:url`, `og:title`, `og:description`, `og:image` as a full
+  `https://rationalbonding.com/...` URL, `twitter:card`), so links shared on
+  Discord and elsewhere show a preview card. Copy them into any new page. The
+  default image is `images/share.png` (1200×630).
 - **Privacy page:** `privacy/` describes what the site collects. Update it in the
   same PR whenever a change collects new data, adds a service, or changes
   what's public.
