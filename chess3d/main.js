@@ -74,8 +74,8 @@ const THEME = {
   lightCell: 0xdfe5f2,
   darkCell: 0x6f7d9c,
   label: '#a9b4cc',
-  accent: '#e04dff', // the logo's pink
-  bright: 0x7fffd4, // bright aquamarine: White's pieces, the selected piece's own board
+  accent: '#ff2bd6', // Tron-style neon pink
+  bright: 0x00e8f0, // Tron neon teal: White's pieces, the selected piece's own board
 };
 
 const link = new Link({ onMessage: onNetMessage, onStatus: (s) => ($('net-status').textContent = s) });
@@ -216,8 +216,9 @@ for (let k = 0; k < 4; k++) {
 }
 
 const PIECE_COLORS = {
-  w: { color: 0x7fffd4, emissive: 0x123d33, roughness: 0.4, metalness: 0.05 },
-  b: { color: 0x3d6fd6, emissive: 0x0c2a66, roughness: 0.3, metalness: 0.35 },
+  // Tron neon: a little self-glow so the colours stay vivid in shadow.
+  w: { color: 0x00e8f0, emissive: 0x006a70, roughness: 0.35, metalness: 0.1 },
+  b: { color: 0x1e6bff, emissive: 0x0b2c8a, roughness: 0.3, metalness: 0.3 },
 };
 // Models are ~0.94 tall; shrink them to fit a 1×1×1 cell and centre them in it.
 const PIECE_SCALE = 0.78;
@@ -255,7 +256,7 @@ function makePiece(p) {
     orientPiece(g, p.o, p.c);
     if (usesFacing(p, app.game.rules)) {
       // Show the facing of pieces whose moves depend on it.
-      const am = new THREE.MeshStandardMaterial({ color: 0xe04dff, emissive: 0x4a1655, transparent: true });
+      const am = new THREE.MeshStandardMaterial({ color: 0xff2bd6, emissive: 0x6a0a58, transparent: true });
       const arrow = new THREE.Mesh(ARROW, am);
       arrow.position.set(0, 0, -0.42);
       g.add(arrow);
@@ -324,11 +325,11 @@ const MAT = {
   move: new THREE.MeshBasicMaterial({ color: 0x4fd18b, transparent: true, opacity: 0.85 }),
   capture: new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.35, depthWrite: false }),
   preview: new THREE.MeshBasicMaterial({ color: 0x7fb4ff, transparent: true, opacity: 0.7 }),
-  last: new THREE.MeshBasicMaterial({ color: 0xe04dff, transparent: true, opacity: 0.14, depthWrite: false }),
+  last: new THREE.MeshBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 0.14, depthWrite: false }),
   check: new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.45, depthWrite: false }),
 };
 const LINE = {
-  selected: new THREE.LineBasicMaterial({ color: 0xe04dff, transparent: true, opacity: 1 }),
+  selected: new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 1 }),
   hover: new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.6, depthWrite: false }),
 };
 const DOT = new THREE.SphereGeometry(0.13, 16, 12);
@@ -764,7 +765,7 @@ function askFacing(move, promo) {
       for (const b of blocks) {
         const isActive = dirKey(b.userData.opts[0]) === dirKey(active);
         const o = isActive ? active : b.userData.opts.find((x) => key(x) === key(current)) || b.userData.opts[0];
-        b.material.color.set(isActive ? 0xe04dff : 0x3b6dff);
+        b.material.color.set(isActive ? 0xff2bd6 : 0x3b6dff);
         b.material.opacity = isActive ? 0.6 : 0.25;
         if (b.userData.label) {
           b.remove(b.userData.label);
@@ -772,7 +773,7 @@ function askFacing(move, promo) {
           b.userData.label.material.dispose();
         }
         const text = facingLabel(o).slice(1) + (key(o) === key(current) ? ' (now)' : '');
-        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#e04dff' : 'rgba(20,22,30,0.85)');
+        const label = labelSprite(text, isActive ? '#1b1e27' : '#ff2bd6', isActive ? '#ff2bd6' : 'rgba(20,22,30,0.85)');
         b.add(label);
         b.userData.label = label;
       }
