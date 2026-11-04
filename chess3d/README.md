@@ -48,12 +48,12 @@ Connections are peer-to-peer (WebRTC via [PeerJS](https://peerjs.com); its free 
 Some strict corporate or mobile networks block peer-to-peer connections; if joining hangs at "Connecting…", try a different network.
 
 ## Controls
-- Click a piece to highlight its moves: green dots = moves, red bubbles = captures. Selecting an opponent's piece shows its moves in blue, so you can check threats. In Relative mode the selected piece's own board (the plane of its facing and its left and right, tilted through the cube when it faces a diagonal) is drawn in bright white lines.
+- Click a piece to highlight its moves: green dots = moves, red bubbles = captures. Selecting an opponent's piece shows its moves in blue, so you can check threats. In Relative mode the selected piece's own board (the plane of its facing and its left and right, tilted through the cube when it faces a diagonal) is drawn in bright aquamarine lines.
 - Drag to orbit, scroll (or pinch on a trackpad) to zoom toward the pointer, right-drag to pan.
 - Keyboard: <kbd>+</kbd> / <kbd>−</kbd> (or Page Up / Page Down) zoom, arrow keys or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>Q</kbd> / <kbd>E</kbd> turn around the cube. Hold a key to keep moving. In a replay, ← and → still step through the moves.
 - The **+** and **−** buttons at the top right of the view zoom too.
 - **Focus level** (or <kbd>[</kbd> <kbd>]</kbd>, <kbd>0</kbd> for all) fades the other levels so one layer is easy to read.
-- The **Level map** along the bottom shows all 8 levels as flat boards. You can click squares there too.
+- The **Level map** button at the bottom left opens all 8 levels as flat boards (hidden by default; the page remembers if you leave it open). A selected piece's moves are filled in there too: green moves and red captures for your piece, blue for a preview. You can click squares there too.
 
 ## Rules
 Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to top).

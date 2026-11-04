@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, RULES_VERSION,
@@ -16,6 +19,7 @@ const glyph = (t) => GLYPH[t] + '︎';
 const COLOR_NAME = { w: 'White', b: 'Black' };
 const HOST_KEY = 'chess3d-host';
 const RULES_KEY = 'chess3d-rules';
+const DOCK_KEY = 'chess3d-level-map';
 const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing'];
 const TC_KEY = 'chess3d-tc';
 
@@ -70,7 +74,8 @@ const THEME = {
   lightCell: 0xdfe5f2,
   darkCell: 0x6f7d9c,
   label: '#a9b4cc',
-  accent: '#2fe3e6',
+  accent: '#e04dff', // the logo's pink
+  bright: 0x7fffd4, // bright aquamarine: White's pieces, the selected piece's own board
 };
 
 const link = new Link({ onMessage: onNetMessage, onStatus: (s) => ($('net-status').textContent = s) });
@@ -147,7 +152,7 @@ for (let z = 0; z < N; z++) {
 
 const frame = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(N, N, N)),
-  new THREE.LineBasicMaterial({ color: THEME.frame, transparent: true, opacity: 0.55 }),
+  new THREE.LineBasicMaterial({ color: THEME.frame, transparent: true, opacity: 0.2 }),
 );
 frame.position.copy(center());
 scene.add(frame);
@@ -211,7 +216,7 @@ for (let k = 0; k < 4; k++) {
 }
 
 const PIECE_COLORS = {
-  w: { color: 0xf6ecd4, emissive: 0x2a2418, roughness: 0.4, metalness: 0.05 },
+  w: { color: 0x7fffd4, emissive: 0x123d33, roughness: 0.4, metalness: 0.05 },
   b: { color: 0x3d6fd6, emissive: 0x0c2a66, roughness: 0.3, metalness: 0.35 },
 };
 // Models are ~0.94 tall; shrink them to fit a 1×1×1 cell and centre them in it.
@@ -250,7 +255,7 @@ function makePiece(p) {
     orientPiece(g, p.o, p.c);
     if (usesFacing(p, app.game.rules)) {
       // Show the facing of pieces whose moves depend on it.
-      const am = new THREE.MeshStandardMaterial({ color: 0x2fe3e6, emissive: 0x0d4a4b, transparent: true });
+      const am = new THREE.MeshStandardMaterial({ color: 0xe04dff, emissive: 0x4a1655, transparent: true });
       const arrow = new THREE.Mesh(ARROW, am);
       arrow.position.set(0, 0, -0.42);
       g.add(arrow);
@@ -319,12 +324,12 @@ const MAT = {
   move: new THREE.MeshBasicMaterial({ color: 0x4fd18b, transparent: true, opacity: 0.85 }),
   capture: new THREE.MeshBasicMaterial({ color: 0xff5a5a, transparent: true, opacity: 0.35, depthWrite: false }),
   preview: new THREE.MeshBasicMaterial({ color: 0x7fb4ff, transparent: true, opacity: 0.7 }),
-  last: new THREE.MeshBasicMaterial({ color: 0x2fe3e6, transparent: true, opacity: 0.14, depthWrite: false }),
+  last: new THREE.MeshBasicMaterial({ color: 0xe04dff, transparent: true, opacity: 0.14, depthWrite: false }),
   check: new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.45, depthWrite: false }),
 };
 const LINE = {
-  selected: new THREE.LineBasicMaterial({ color: 0x2fe3e6, transparent: true, opacity: 1 }),
-  hover: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }),
+  selected: new THREE.LineBasicMaterial({ color: 0xe04dff, transparent: true, opacity: 1 }),
+  hover: new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.6, depthWrite: false }),
 };
 const DOT = new THREE.SphereGeometry(0.13, 16, 12);
 const BUBBLE = new THREE.SphereGeometry(0.46, 24, 16);
@@ -759,7 +764,7 @@ function askFacing(move, promo) {
       for (const b of blocks) {
         const isActive = dirKey(b.userData.opts[0]) === dirKey(active);
         const o = isActive ? active : b.userData.opts.find((x) => key(x) === key(current)) || b.userData.opts[0];
-        b.material.color.set(isActive ? 0x2fe3e6 : 0x3b6dff);
+        b.material.color.set(isActive ? 0xe04dff : 0x3b6dff);
         b.material.opacity = isActive ? 0.6 : 0.25;
         if (b.userData.label) {
           b.remove(b.userData.label);
@@ -767,7 +772,7 @@ function askFacing(move, promo) {
           b.userData.label.material.dispose();
         }
         const text = facingLabel(o).slice(1) + (key(o) === key(current) ? ' (now)' : '');
-        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#2fe3e6' : 'rgba(20,22,30,0.85)');
+        const label = labelSprite(text, isActive ? '#1b1e27' : '#ffffff', isActive ? '#e04dff' : 'rgba(20,22,30,0.85)');
         b.add(label);
         b.userData.label = label;
       }
@@ -844,10 +849,9 @@ function setGame(game, anim = null) {
 // Bright white lines for the board a piece stands on in Relative mode: the
 // plane of its facing and its left/right, through its square. Facing a flat
 // diagonal, that board is tilted through the cube.
-const pieceBoard = new THREE.LineSegments(
-  new THREE.BufferGeometry(),
-  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }),
-);
+// Drawn with fat lines (plain WebGL lines are always 1 px, too thin to notice).
+const pieceBoardMat = new LineMaterial({ color: THEME.bright, linewidth: 2.5, transparent: true, opacity: 0.95, depthWrite: false });
+const pieceBoard = new LineSegments2(new LineSegmentsGeometry(), pieceBoardMat);
 pieceBoard.renderOrder = 2;
 pieceBoard.visible = false;
 scene.add(pieceBoard);
@@ -886,8 +890,8 @@ function showPieceBoard(sq, o, color) {
       pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
     }
   pieceBoard.geometry.dispose();
-  pieceBoard.geometry = new THREE.BufferGeometry();
-  pieceBoard.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  pieceBoard.geometry = new LineSegmentsGeometry().setPositions(pts);
+  renderer.getSize(pieceBoardMat.resolution);
   pieceBoard.visible = true;
   lattice.material.opacity = 0.06;
 }
@@ -1000,6 +1004,8 @@ function renderLevelMap() {
   const last = g.history.at(-1);
   const targets = new Map(app.targets.map((m) => [m.to, m]));
   const checkK = g.status.check && !g.result?.reason?.startsWith('resign') ? findKing(g.board, g.turn) : -1;
+  // Same colours as the cube: green moves and red captures for your own piece, blue for a preview.
+  const own = app.selected >= 0 && canAct() && viewBoard()[app.selected]?.c === g.turn;
   for (const c of cells) {
     const [x, y, z] = coords(c.sq);
     const p = viewBoard()[c.sq];
@@ -1008,7 +1014,7 @@ function renderLevelMap() {
     if (p) cls.push(p.c === 'w' ? 'pw' : 'pb');
     if (c.sq === app.selected) cls.push('sel');
     if (last && (c.sq === last.from || c.sq === last.to)) cls.push('last');
-    if (t) cls.push('target', t.capture ? 'cap' : '');
+    if (t) cls.push('target', t.capture ? 'cap' : '', own ? 'mine' : 'preview');
     if (c.sq === checkK) cls.push('incheck');
     c.el.className = cls.join(' ');
     c.el.textContent = p ? glyph(p.t) : '';
@@ -1363,10 +1369,21 @@ function wireUI() {
 
   const dock = $('levels-dock');
   const syncDock = () => document.documentElement.style.setProperty('--dock-h', `${dock.offsetHeight}px`);
-  $('levels-toggle').onclick = () => {
-    dock.classList.toggle('collapsed');
-    $('levels-toggle').textContent = dock.classList.contains('collapsed') ? 'Level map ▴' : 'Level map ▾';
+  // Hidden until opened; the page remembers whether it was left open.
+  const showDock = (open) => {
+    dock.classList.toggle('collapsed', !open);
+    $('levels-toggle').textContent = open ? 'Level map ▾' : 'Level map ▴';
     syncDock();
+  };
+  try {
+    showDock(localStorage.getItem(DOCK_KEY) === 'open');
+  } catch {}
+  $('levels-toggle').onclick = () => {
+    const open = dock.classList.contains('collapsed');
+    showDock(open);
+    try {
+      localStorage.setItem(DOCK_KEY, open ? 'open' : 'closed');
+    } catch {}
   };
   new ResizeObserver(syncDock).observe(dock);
 
