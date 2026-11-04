@@ -270,28 +270,42 @@ function makePiece(p) {
 const viewBoard = () => app.preview?.board || app.game.board;
 // Labelled blocks for choosing a facing (Relative mode).
 const facingGroup = new THREE.Group();
-const FACE_BLOCK = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+const FACE_BLOCK = new THREE.BoxGeometry(0.4, 0.4, 0.4);
 
+// Facing labels are drawn at a fixed on-screen size (LABEL_PX tall), so they
+// stay readable and never grow or shrink as you zoom.
+const LABEL_PX = 18;
 function labelSprite(text, color, bg) {
+  const h = 48, pad = 12;
   const c = document.createElement('canvas');
-  c.width = 160;
-  c.height = 56;
+  const g0 = c.getContext('2d');
+  g0.font = 'bold 32px system-ui, sans-serif';
+  c.width = Math.ceil(g0.measureText(text).width) + pad * 2;
+  c.height = h;
   const g = c.getContext('2d');
   g.fillStyle = bg;
   g.beginPath();
-  g.roundRect(4, 4, 152, 48, 12);
+  g.roundRect(0, 0, c.width, h, 10);
   g.fill();
   g.fillStyle = color;
-  g.font = 'bold 30px system-ui, sans-serif';
+  g.font = 'bold 32px system-ui, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(text, 80, 30);
+  g.fillText(text, c.width / 2, h / 2 + 1);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
-  sp.scale.set(1.15, 0.4, 1);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+  sp.userData.aspect = c.width / h;
+  sizeLabel(sp);
   sp.renderOrder = 6;
   return sp;
+}
+// With sizeAttenuation off, a sprite's on-screen height is its scale times the
+// camera's vertical zoom factor, in units where 2 = the view's full height.
+function sizeLabel(sp) {
+  const viewH = Math.max(1, renderer.domElement.clientHeight);
+  const y = (2 * LABEL_PX) / (viewH * camera.projectionMatrix.elements[5]);
+  sp.scale.set(y * sp.userData.aspect, y, 1);
 }
 const pieceGroup = new THREE.Group();
 scene.add(pieceGroup);
@@ -465,6 +479,7 @@ function resize() {
   renderer.setSize(r.width, r.height, false);
   camera.aspect = r.width / Math.max(1, r.height);
   camera.updateProjectionMatrix();
+  facingGroup.traverse((o) => o.isSprite && sizeLabel(o));
 }
 new ResizeObserver(resize).observe(canvas.parentElement);
 
