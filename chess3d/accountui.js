@@ -30,6 +30,7 @@ export async function setup(h) {
   if (!acct.configured()) return; // guest-only site: no account UI at all
   $('account-box').hidden = false;
   $('account-status').textContent = 'Connecting…';
+  const linkError = readLinkError();
   try {
     await acct.init();
   } catch (e) {
@@ -39,6 +40,23 @@ export async function setup(h) {
   acct.onChange(onAccountChange);
   onAccountChange(acct.state);
   wireDialogs();
+  if (linkError && !acct.state.user) openAuth(linkError);
+}
+
+// A sign-in or confirmation link that failed (expired, already used, or opened
+// first by an email app's link scanner) comes back with the error in the URL.
+// Read it, tidy the URL, and say what to do next.
+function readLinkError() {
+  const params = new URLSearchParams(location.hash.slice(1) + '&' + location.search.slice(1));
+  const desc = params.get('error_description');
+  if (!desc) return null;
+  const url = new URL(location.href);
+  url.hash = '';
+  for (const k of ['error', 'error_code', 'error_description', 'sb']) url.searchParams.delete(k);
+  history.replaceState(null, '', url);
+  return /expired|invalid/i.test(desc)
+    ? 'That email link has expired or was already used. Some email apps open links by themselves, which uses them up. Type your email below for a new one, or type the code from the email.'
+    : `That email link didn't work: ${desc}. Type your email below to get a new one.`;
 }
 
 export const signedIn = () => !!(acct.state.user && acct.state.profile);
@@ -129,7 +147,7 @@ async function act(fn) {
 }
 
 // ---------------------------------------------------------------- sign-in dialog
-function openAuth() {
+function openAuth(note) {
   const d = $('auth-dialog');
   const body = $('auth-body');
   body.innerHTML = '';
@@ -151,6 +169,10 @@ function openAuth() {
     }
   };
 
+  if (typeof note === 'string') {
+    msg.textContent = note;
+    msg.classList.add('err');
+  }
   if (m.passkey) {
     body.append(el('section', { className: 'auth-sec' },
       el('button', { className: 'primary wide', textContent: '🔑 Sign in with a passkey', onclick: run(async () => { await acct.signInWithPasskey(); }) }),
@@ -200,9 +222,12 @@ function openAuth() {
       return `Email sent to ${email.value.trim()}. Click the link in it, or type its code here. It can take a minute, so check your spam folder too.`;
     };
     again.onclick = run(async () => {
-      if (!resend) return null;
-      await resend();
-      return sent(resend);
+      if (!email.reportValidity()) return 'Enter your email first.';
+      // Not sent from this dialog yet: send a sign-in email, which also
+      // works as the confirmation for an account that isn't confirmed yet.
+      const fn = resend || (() => acct.sendEmailCode(email.value.trim()));
+      await fn();
+      return sent(fn);
     });
     const pw = el('input', { type: 'password', placeholder: 'password (8+ characters)', autocomplete: 'current-password', minLength: 8 });
     body.append(el('section', { className: 'auth-sec' },
@@ -215,12 +240,22 @@ function openAuth() {
           await fn();
           return sent(fn);
         }) })),
+      el('button', { type: 'button', className: 'link', textContent: 'Have a code, or need the email again?', onclick: () => { codeBox.hidden = false; code.focus(); } }),
       codeBox,
       el('details', {},
         el('summary', { textContent: 'Use a password instead' }),
         pw,
         el('div', { className: 'row' },
-          el('button', { textContent: 'Sign in', onclick: run(async () => { await acct.signInWithPassword(email.value.trim(), pw.value); }) }),
+          el('button', { textContent: 'Sign in', onclick: run(async () => {
+            try {
+              await acct.signInWithPassword(email.value.trim(), pw.value);
+            } catch (err) {
+              if (!/not confirmed/i.test(err.message)) throw err;
+              resend = () => acct.resendSignupEmail(email.value.trim());
+              codeBox.hidden = false;
+              return 'Your email isn\'t confirmed yet. Click Send again for a new confirmation email, then click its link or type its code here.';
+            }
+          }) }),
           !m.signupDisabled && el('button', { textContent: 'Create account', onclick: run(async () => {
             if (!email.reportValidity()) return 'Enter your email first.';
             const r = await acct.signUpWithPassword(email.value.trim(), pw.value);
