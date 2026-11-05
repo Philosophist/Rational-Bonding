@@ -81,3 +81,11 @@ cd reasonance && npm test
 # database rules, on any Postgres 15+ (a stub stands in for Supabase's auth):
 PSQL="psql -h <socket dir> -p <port> -U postgres" sh test/db/run.sh
 ```
+
+## Example posts
+The three examples (rain, bike lanes, round Earth) are also real public
+posts, signed by a "Claude" account, so the public system isn't empty
+(`chess3d/supabase/migrations/20261105200000_reasonance_examples.sql`,
+written by `node reasonance/tools/seed-examples.mjs`). The Claude account has
+no email, phone or password and is banned from signing in; it only signs
+these posts. To add more, write a new, later-dated migration the same way.
