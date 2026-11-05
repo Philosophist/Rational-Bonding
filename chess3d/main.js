@@ -622,11 +622,10 @@ function pick(ev) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const markers = markerGroup.children.filter((m) => m.visible && m.userData.clickable);
-  let hit = raycaster.intersectObjects(markers, false)[0];
-  if (hit) return hit.object.userData.sq;
+  const dot = pickTarget();
+  if (dot >= 0) return dot;
   const pieces = pieceGroup.children.filter((g) => !g.userData.dim);
-  hit = raycaster.intersectObjects(pieces, true)[0];
+  let hit = raycaster.intersectObjects(pieces, true)[0];
   if (hit) {
     let o = hit.object;
     while (o.userData.sq === undefined) o = o.parent;
@@ -636,6 +635,28 @@ function pick(ev) {
   hit = raycaster.intersectObjects(tiles, false)[0];
   if (hit) return hit.instanceId + N * N * hit.object.userData.level;
   return -1;
+}
+
+// Move dots, capture bubbles and pawn attack dots win over the cubes behind
+// them, whether or not you can play the move right now (blue preview dots too).
+// Small dots get a hit area a bit bigger than they look, so they are easy to
+// hit; if the pointer is near several, the one closest to the camera wins.
+const HIT_RADIUS = new Map([[DOT, 0.3], [ATTACK_DOT, 0.24], [BUBBLE, 0.46]]);
+const _p = new THREE.Vector3();
+function pickTarget() {
+  let best = -1, bestDist = Infinity;
+  for (const m of markerGroup.children) {
+    const r = HIT_RADIUS.get(m.geometry);
+    if (!m.visible || !r) continue;
+    _p.copy(m.position);
+    if (raycaster.ray.distanceSqToPoint(_p) > r * r) continue;
+    const along = _p.sub(raycaster.ray.origin).dot(raycaster.ray.direction);
+    if (along > 0 && along < bestDist) {
+      bestDist = along;
+      best = m.userData.sq;
+    }
+  }
+  return best;
 }
 
 let down = null;
