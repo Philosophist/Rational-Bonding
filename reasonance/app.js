@@ -364,7 +364,7 @@ function overviewPanel() {
     h('h2', {}, map.title),
     h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
     h('ul', { class: 'tips' },
-      h('li', {}, 'One statement per node.'),
+      h('li', {}, 'One statement per node or edge.'),
       h('li', {}, 'Arrows point from a claim to its supports and contentions.'),
       h('li', {}, 'Click a post or arrow label to respond.'),
       h('li', { class: 'more' }, 'Shift-click a second node to connect the two.'),
