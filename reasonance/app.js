@@ -168,9 +168,11 @@ function ghostLayout(id) {
   const lines = wrap(text, 24);
   return { text, lines, w: GHOST_W, h: 18 + lines.length * 16 };
 }
+// Premise arrows show just a plus sign; hovering or selecting one spells it out.
 function pillLabel(e) {
-  return e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
+  return e.type === 'premise' ? '+' : EDGE_TYPES[e.type].label;
 }
+const pillWidth = (label) => (label === '+' ? 24 : label.length * 7 + 22);
 function computeBoxes() {
   const boxes = new Map();
   for (const it of Object.values(map.items)) {
@@ -191,7 +193,7 @@ function computeBoxes() {
       // The pill sits halfway along the visible part of the line, so it
       // never covers an arrowhead.
       const p = exitPoint(a, b.cx, b.cy), q = exitPoint(b, a.cx, a.cy);
-      const w = label.length * 7 + 22, len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      const w = pillWidth(label), len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
       const along = Math.min(len / 2, Math.max(len - (w / 2 + 20), len * 0.3)) / len;
       boxes.set(e.id, { cx: p.x + (q.x - p.x) * along, cy: p.y + (q.y - p.y) * along, w, h: 24, label });
       pending.splice(i, 1);
@@ -234,9 +236,17 @@ function render() {
 
     const pg = s('g', { class: `pill${selected === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
     s('rect', { class: 'hit', x: p.cx - p.w / 2 - 8, y: p.cy - p.h / 2 - 8, width: p.w + 16, height: p.h + 16 }, pg);
-    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, pg);
-    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, pg);
+    const short = s('g', { class: e.type === 'premise' ? 'short' : '' }, pg);
+    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, short);
+    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, short);
     t.textContent = p.label;
+    if (e.type === 'premise') {
+      const full = `Premise ${e.premise}`, fw = pillWidth(full);
+      const long = s('g', { class: 'long' }, pg);
+      s('rect', { x: p.cx - fw / 2, y: p.cy - p.h / 2, width: fw, height: p.h, rx: 12, stroke: color }, long);
+      const lt = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, long);
+      lt.textContent = full;
+    }
     if (e.rating?.stance) stanceDot(pg, p.cx + p.w / 2 - 2, p.cy - p.h / 2 + 2, e.rating.stance);
     const title = s('title', {}, pg); title.textContent = itemText(map, e.id);
   }
