@@ -45,11 +45,11 @@ export const STANCES = {
 // stance were proven true, to your own satisfaction.
 export const RELEVANCE = [
   null,
-  { text: "I don't care. Don't bother telling me.", cheer: "Fair enough. Whether you'd rather not know or just don't care, saying so honestly is a good start." },
-  { text: "I wouldn't care", cheer: 'Indifferent' },
-  { text: "I don't know how I'd react", cheer: 'Good answer!' },
-  { text: 'I would want to know', cheer: 'Interested' },
-  { text: "I'd have to know!", cheer: 'Game changing' },
+  { text: "I don't care if I'm wrong. Don't bother telling me.", cheer: "Fair enough. Whether you'd rather not know or just don't care, saying so honestly is a good start." },
+  { text: "I wouldn't care much if I'm wrong", cheer: 'Indifferent' },
+  { text: "I don't know how I'd react if I'm wrong", cheer: 'Good answer!' },
+  { text: "I would want to know if I'm wrong", cheer: 'Interested' },
+  { text: "I'd have to know if I'm wrong!", cheer: 'Game changing' },
 ];
 
 const MAX_TEXT = 2000;
