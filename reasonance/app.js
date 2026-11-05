@@ -166,7 +166,7 @@ function ghostLayout(id) {
   const text = standingContention(map, id);
   if (!text) return null;
   const lines = wrap(text, 24);
-  return { text, lines, w: GHOST_W, h: 26 + lines.length * 16 + 12 };
+  return { text, lines, w: GHOST_W, h: 18 + lines.length * 16 };
 }
 function pillLabel(e) {
   return e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
@@ -258,9 +258,7 @@ function render() {
     const g = s('g', { class: `node ghost${selected === gid ? ' sel' : ''}${off}`, 'data-id': gid }, layers.nodes);
     const x0 = gb.cx - gb.w / 2, y0 = gb.cy - gb.h / 2;
     s('rect', { class: 'box', x: x0, y: y0, width: gb.w, height: gb.h, rx: 14, stroke: GHOST }, g);
-    const kind = s('text', { class: 'kind', x: x0 + 12, y: y0 + 16, fill: GHOST }, g);
-    kind.textContent = map.items[ghostOwner(gid)]?.type === 'axiom' ? 'Automatic · axiom' : 'Automatic · goes away with a support';
-    const t = s('text', { class: 'ghost-text', x: x0 + 12, y: y0 + 20 }, g);
+    const t = s('text', { class: 'ghost-text', x: x0 + 12, y: y0 + 4 }, g);
     gb.G.lines.forEach((line, i) => { const ts = s('tspan', { x: x0 + 12, dy: i ? 16 : 18 }, t); ts.textContent = line; });
   }
 
