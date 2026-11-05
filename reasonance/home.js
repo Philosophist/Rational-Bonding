@@ -246,12 +246,13 @@ const LINE_COLORS = { support: '#4dff88', contention: '#ff4d5e', question: '#ffe
 const OUT_LABEL = { support: 'Supported by', contention: 'Contended by', question: 'Questioned by', clarification: 'Clarified by', same: 'Means the same as', example: 'An example of', premise: 'Premise', contradicts: 'Contradicts', exclusive: 'Mutually exclusive with', necessary: 'Mutually necessary with' };
 const IN_LABEL = { support: 'It supports', contention: 'It contends', question: 'It questions', clarification: 'It clarifies', same: 'Means the same as', example: 'Called a fallacy:', premise: 'A premise of', contradicts: 'Contradicts', exclusive: 'Mutually exclusive with', necessary: 'Mutually necessary with' };
 let floatState = null; // { pid, post, links }
-export async function openFloat(pid) {
+export async function openFloat(pid, { keepCompose = false } = {}) {
+  const compose = keepCompose ? floatState?.compose : null;
   const box = $('float');
   box.hidden = false;
   document.body.classList.add('floating');
   glow(pid);
-  floatState = { pid, post: null, links: null };
+  floatState = { pid, post: floatState?.pid === pid ? floatState.post : null, links: floatState?.pid === pid ? floatState.links : null, compose };
   drawFloat();
   try {
     const [post, links] = await Promise.all([cloud.getPost(pid), cloud.links(pid)]);
@@ -260,7 +261,7 @@ export async function openFloat(pid) {
     const ids = [pid, ...Object.keys(links.ends)];
     const [m, st, ab] = await Promise.all([cloud.myRatings([pid]), cloud.stats(ids), cloud.about([pid])]);
     Object.assign(mine, m); Object.assign(stats, st); Object.assign(about, ab);
-    floatState = { pid, post, links };
+    floatState = { pid, post, links, compose: floatState.compose };
     drawFloat();
   } catch (err) { deps.toast(`Couldn't open it: ${err.message}`); }
 }
@@ -287,7 +288,8 @@ function drawFloat() {
   nodes.append(h('div', { class: `fnode center ${post.type}`, style: `left:${cx}px;top:${cy}px` },
     h('p', { class: 'text' }, postText(post)),
     h('div', { class: 'meta' }, [ab?.by ? `@${ab.by}` : 'anonymous', counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-    stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(post.id, k))));
+    stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(post.id, k)),
+    composeBox(post)));
   // Near: questions, clarifications, rewordings and fallacies it's called.
   const near = links.out.filter((e) => NEAR_TYPES.includes(e.type) && links.ends[e.to_post]?.kind === 'node').slice(0, MAX_NEAR);
   const nearIds = new Set(near.map((e) => e.id));
@@ -346,4 +348,117 @@ function tip(ev, label, text, type) {
   t.style.left = `${Math.min(ev.clientX - r.left + 14, r.width - 300)}px`;
   t.style.top = `${ev.clientY - r.top + 14}px`;
   t.hidden = false;
+}
+
+// ---------------------------------------------------------------- answering from the sea
+// Support or contend the floating post: type a reason, see what's already
+// posted as you go, and on Enter (or leaving the box) choose an existing
+// post, add a clarification, or post your own. The arrow is yours if it's new.
+const COMPOSE = { support: { label: 'Supported by', button: 'Support it', cls: 'agree' }, contention: { label: 'Contended by', button: 'Contend it', cls: 'disagree' } };
+function composeBox(post) {
+  const { h } = deps;
+  const c = floatState.compose;
+  if (!c) {
+    return h('div', { class: 'row respond' }, Object.entries(COMPOSE).map(([type, t]) =>
+      h('button', { class: t.cls, onclick: () => { floatState.compose = { type, text: '', clarify: '', showClarify: false, anonymous: false, checked: null, busy: false }; drawFloat(); setTimeout(() => $('float-text')?.focus(), 0); } }, t.button)));
+  }
+  const t = COMPOSE[c.type];
+  const area = h('textarea', { id: 'float-text', rows: 2, maxlength: 2000, placeholder: 'Write one statement…', 'aria-label': t.label,
+    oninput: (ev) => { c.text = ev.target.value; c.checked = null; $('float-alts')?.replaceChildren(); suggestSoon(post.id); },
+    onkeydown: (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); submit(post.id); } if (ev.key === 'Escape') { ev.stopPropagation(); cancel(); } },
+    onblur: () => { if (c.text.trim() && !c.checked) check(post.id).then(() => drawAlts(post.id)); } }, c.text);
+  return h('div', { class: `compose ${t.cls}` },
+    h('div', { class: 'kind' }, `${t.label}:`),
+    area,
+    h('ul', { id: 'float-suggest', class: 'found', 'aria-label': 'Already posted' }),
+    h('div', { id: 'float-alts', class: 'alts' }, altsParts(post.id)),
+    c.showClarify ? h('textarea', { id: 'float-clarify', rows: 2, maxlength: 2000, placeholder: 'A clarification or definition, such as "By wet I mean puddles."', 'aria-label': 'Clarification',
+      oninput: (ev) => { c.clarify = ev.target.value; const b = ev.target.parentElement.querySelector('.row button.accent'); if (b) b.textContent = postLabel(c); } }, c.clarify) : null,
+    h('label', {}, h('input', { type: 'checkbox', checked: c.anonymous, onchange: (ev) => { c.anonymous = ev.target.checked; } }), 'Post Anonymously'),
+    h('div', { class: 'row' },
+      h('button', { class: 'accent', disabled: c.busy, onclick: () => submit(post.id) }, c.busy ? 'Posting…' : postLabel(c)),
+      c.showClarify ? null : h('button', { onclick: () => { c.showClarify = true; drawFloat(); setTimeout(() => $('float-clarify')?.focus(), 0); } }, 'Add a clarification before posting'),
+      h('button', { onclick: cancel }, 'Cancel')));
+}
+const postLabel = (c) => c.checked?.exact ? (c.clarify.trim() ? 'Use it, with my clarification' : 'Use the posted one') : c.checked?.near?.length && !c.forced ? 'Mine is different: post it' : 'Post';
+function cancel() { floatState.compose = null; drawFloat(); }
+let suggestTimer = 0;
+function suggestSoon(centerId) {
+  clearTimeout(suggestTimer);
+  const c = floatState?.compose;
+  suggestTimer = setTimeout(async () => {
+    const list = $('float-suggest');
+    if (!list || !c) return;
+    const text = c.text;
+    if (text.trim().length < 3) { list.replaceChildren(); return; }
+    try {
+      const rows = (await cloud.similar(text, 0.25)).filter((r) => r.id !== centerId).slice(0, 5);
+      if (floatState?.compose !== c || c.text !== text) return;
+      list.replaceChildren(...rows.map((r) => suggestion(centerId, r)));
+    } catch { /* suggestions are a nicety */ }
+  }, 300);
+}
+function suggestion(centerId, r) {
+  const { h } = deps;
+  return h('li', {}, h('span', {}, postText(r)), h('button', { onmousedown: (ev) => ev.preventDefault(), onclick: () => useExisting(centerId, r.id) }, 'Use this one'));
+}
+async function check(centerId) {
+  const c = floatState?.compose;
+  if (!c) return;
+  const text = c.text;
+  const exactId = await cloud.find({ kind: 'node', type: 'statement', text });
+  const exact = exactId ? await cloud.getPost(exactId) : null;
+  const near = (await cloud.similar(text)).filter((r) => r.id !== exactId && r.id !== centerId).slice(0, 4);
+  if (floatState?.compose === c && c.text === text) c.checked = { exact, near };
+}
+function altsParts(centerId) {
+  const { h } = deps;
+  const c = floatState?.compose;
+  if (!c?.checked) return [];
+  const { exact, near } = c.checked;
+  const out = [];
+  if (exact) out.push(h('p', { class: 'note' }, h('strong', {}, 'Already posted, word for word. '), 'Use it, and add a clarification or definition if you mean something narrower.'),
+    h('ul', { class: 'found' }, suggestion(centerId, exact)));
+  if (near.length) out.push(h('p', { class: 'note' }, h('strong', {}, 'Is it one of these? '), 'Choose one, add a clarification, or post yours if it says something different.'),
+    h('ul', { class: 'found' }, near.map((r) => suggestion(centerId, r))));
+  return out;
+}
+function drawAlts(centerId) {
+  const box = $('float-alts');
+  if (!box) return;
+  box.replaceChildren(...altsParts(centerId));
+  if (box.childElementCount) $('float-suggest')?.replaceChildren(); // the choices replace the live suggestions
+  const c = floatState.compose;
+  const btn = box.parentElement.querySelector('.row button.accent');
+  if (btn && c) btn.textContent = postLabel(c);
+}
+async function submit(centerId) {
+  const c = floatState?.compose;
+  if (!c || c.busy || !c.text.trim()) return;
+  if (!c.checked) {
+    await check(centerId);
+    if (c.checked?.exact || c.checked?.near?.length) { drawAlts(centerId); return; } // choose first
+  }
+  if (c.checked?.exact) return post(centerId, { reasonId: c.checked.exact.id, clarify: c.clarify });
+  c.forced = true;
+  return post(centerId, { text: c.text, clarify: c.clarify });
+}
+const useExisting = (centerId, reasonId) => post(centerId, { reasonId, clarify: floatState?.compose?.clarify ?? '' });
+async function post(centerId, what) {
+  const c = floatState?.compose;
+  if (!c) return;
+  c.busy = true; drawFloat();
+  try {
+    const r = await cloud.respond(centerId, c.type, { ...what, anonymous: c.anonymous });
+    const said = [];
+    said.push(r.reason.made ? 'Posted your statement.' : 'Used the statement already posted.');
+    said.push(r.arrow.made ? 'You wrote the new inference.' : 'That inference was already posted, so it joins your sandbox.');
+    if (r.clarification) said.push('Your clarification is posted too.');
+    deps.toast(said.join(' '));
+    floatState.compose = null;
+    await openFloat(centerId);
+  } catch (err) {
+    c.busy = false; drawFloat();
+    deps.toast(`Not posted: ${err.message}`);
+  }
 }

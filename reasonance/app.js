@@ -818,9 +818,20 @@ function draftBox(it, anon) {
     h('div', { class: 'row' }, anon));
   return els;
 }
+// Use a post that's already out there; any arrow joining it to a posted
+// item in this map is posted too (reused if someone already posted it).
 async function useExisting(id, pid) {
-  try { flushSave(); await cloud.link(map, id, pid); lookupCache.delete(id); changed(); toast('Your map now uses that post.'); }
-  catch (err) { toast(err.message); }
+  try {
+    flushSave();
+    await cloud.link(map, id, pid); lookupCache.delete(id);
+    const arrows = Object.values(map.items).filter((e) => isEdge(e) && !map.posts?.[e.id] && (e.from === id || e.to === id)
+      && map.posts?.[e.from] && map.posts?.[e.to]).map((e) => e.id);
+    const r = arrows.length ? await cloud.post(map, arrows, { share: cloud.settings.share_views }) : null;
+    changed();
+    toast(!r ? 'Your map now uses that post.'
+      : r.posted ? `Your map now uses that post, and you wrote the new ${r.posted === 1 ? 'inference' : 'inferences'} to it.`
+        : 'Your map now uses that post, and the inference to it was already posted.');
+  } catch (err) { toast(err.message); changed(); }
 }
 async function postNow(ids) {
   try {

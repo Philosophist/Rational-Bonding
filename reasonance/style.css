@@ -255,3 +255,16 @@ body.floating .home-feed, body.floating .sea-hint { display: none; }
   html, body, .stage, #board { background: #07090f !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .stage { position: static; height: 180mm; }
 }
+.fnode .respond button.agree { color: var(--agree); border-color: rgba(77, 255, 136, 0.55); }
+.fnode .respond button.disagree { color: var(--disagree); border-color: rgba(255, 77, 94, 0.55); }
+.fnode .compose { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.fnode .compose.agree .kind { color: var(--agree); }
+.fnode .compose.disagree .kind { color: var(--disagree); }
+.fnode .compose textarea { width: 100%; box-sizing: border-box; }
+.fnode .compose .found { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.fnode .compose .found li { display: flex; gap: 8px; align-items: center; justify-content: space-between; border: 1px solid #2a3350; border-radius: 8px; padding: 6px 8px; font-size: 14px; }
+.fnode .compose .found li span { flex: 1; }
+.fnode .compose .note { margin: 0; padding: 6px 8px; border: 1px solid var(--yellow); border-radius: 8px; font-size: 14px; }
+.fnode .compose .alts { display: flex; flex-direction: column; gap: 6px; }
+.fnode .compose label { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+.fnode.center { max-height: calc(100% - 24px); overflow: auto; }

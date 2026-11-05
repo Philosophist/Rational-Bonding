@@ -30,6 +30,13 @@ feed come in later steps.
   `MAX_NEAR`, 4). Its other inferences, and any past the limit, reach off the
   edge of the screen; hovering one shows the post at the far end (green for
   support, red for contention), and clicking goes there. × or Esc goes back.
+- **Answering from the sea:** the floating post has Support it and Contend it.
+  As you type the reason, posts already made are suggested. On Enter (or
+  leaving the box), an exact or close match offers its alternatives and "Add a
+  clarification before posting". Choosing one reuses that post and posts the
+  inference, with you as its author, unless that inference already exists
+  (`cloud.respond`). In the editor, "Use this one" also posts the arrow to it
+  when the other end is posted.
 - **Views:** Agree (green), Disagree (red), and Neither: I don't know,
   Incomprehensible, or I don't care (which gives one star unless you've set
   how much it matters).

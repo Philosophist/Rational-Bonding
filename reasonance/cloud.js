@@ -279,3 +279,30 @@ export async function links(pid, limit = 60) {
   const others = ends.length ? check(await db().from('rs_posts').select(COLS).in('id', ends)) : [];
   return { out, inn, ends: Object.fromEntries(others.map((r) => [r.id, r])) };
 }
+
+// ---------------------------------------------------------------- posting straight from the sea
+// Posts one row unless the same thing is already posted. Returns { id, made }:
+// made is false when an existing post was reused.
+export async function postOrReuse(row) {
+  const same = row.kind === 'node' && row.type === 'combiner' ? null : await find(row);
+  if (same) return { id: same, made: false };
+  const { data, error } = await db().from('rs_posts').insert(row).select(COLS).single();
+  if (error?.code === '23505') { const again = await find(row); if (again) return { id: again, made: false }; }
+  if (error) throw error;
+  mine.add(data.id);
+  sent.set(data.id, sig(data));
+  return { id: data.id, made: true };
+}
+// A reason for a posted claim: the reason (new or existing), the arrow from
+// the claim to it, and optionally a clarification of the reason.
+export async function respond(claimId, type, { reasonId = null, text = '', clarify = '', anonymous = false } = {}) {
+  const reason = reasonId ? { id: reasonId, made: false } : await postOrReuse({ kind: 'node', type: 'statement', text, anonymous });
+  const arrow = await postOrReuse({ kind: 'edge', type, from_post: claimId, to_post: reason.id, premise: null, anonymous });
+  let clarification = null;
+  if (clarify.trim()) {
+    const c = await postOrReuse({ kind: 'node', type: 'clarification', text: clarify, anonymous });
+    await postOrReuse({ kind: 'edge', type: 'clarification', from_post: reason.id, to_post: c.id, premise: null, anonymous });
+    clarification = c;
+  }
+  return { reason, arrow, clarification };
+}
