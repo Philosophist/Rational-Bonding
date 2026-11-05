@@ -14,7 +14,7 @@ feed come in later steps.
 
 ## Posting
 - A draft lives only in your map. "Post it" publishes it under your username
-  (or without a name, if you tick "Post without my name"); posting an arrow
+  (or anonymously, if you tick "Post Anonymously"); posting an arrow
   also posts any draft ends it needs.
 - **Every post is unique.** The same words (ignoring case, spacing, quotes and
   end punctuation), or the same arrow between the same two posts, can be

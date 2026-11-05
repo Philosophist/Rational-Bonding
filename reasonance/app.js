@@ -761,14 +761,14 @@ function postBoxParts(it) {
   const pid = map.posts?.[it.id];
   const anon = h('label', { title: "Anonymous posts don't show your name, so people can't follow you for them." },
     h('input', { type: 'checkbox', checked: !!it.anonymous, onchange: (ev) => { it.anonymous = ev.target.checked; quietChange(); renderPanel(); } }),
-    'Post without my name');
+    'Post Anonymously');
   if (!pid) return draftBox(it, anon);
   const st = statsCache.get(pid), ab = aboutCache.get(pid);
   if (st === undefined) loadStats([pid]);
   if (ab === undefined) loadAbout([pid]);
   const parts = st ? Object.entries(STANCES).filter(([k]) => st[k]).map(([k, label]) => `${st[k]} ${label.toLowerCase()}`) : [];
   const yours = cloud.mine.has(pid);
-  const by = yours ? (it.anonymous ? 'Posted by you, without your name.' : 'Posted by you.')
+  const by = yours ? (it.anonymous ? 'Posted by you, anonymously.' : 'Posted by you.')
     : ab ? (ab.by ? `Posted by @${ab.by}.` : 'Posted anonymously.') : 'Posted.';
   const views = (ab?.views ?? []).filter((v) => !v.me && v.stance);
   return [
@@ -782,7 +782,7 @@ function postBoxParts(it) {
   ];
 }
 function draftBox(it, anon) {
-  const me = it.anonymous ? 'Public, without your name' : `Public, as @${cloud.auth.state.profile.username}`;
+  const me = it.anonymous ? 'Public, posted anonymously' : `Public, as @${cloud.auth.state.profile.username}`;
   const more = postOrder(map, [it.id]).filter((id) => !map.posts?.[id]).length - 1;
   const postIt = more ? `Post it, with the ${more} it joins` : 'Post it';
   const found = isNode(it) && it.type !== 'combiner' ? lookupFor(it) : { exact: null, similar: [] };
