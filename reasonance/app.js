@@ -355,8 +355,8 @@ function overviewPanel() {
     h('h2', {}, map.title),
     h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
     h('ul', { class: 'tips' },
-      h('li', {}, 'One statement per post.'),
-      h('li', {}, 'Arrows point from a claim to its reasons.'),
+      h('li', {}, 'One statement per node.'),
+      h('li', {}, 'Arrows point from a claim to its supports and contentions.'),
       h('li', {}, 'Click a post or arrow label to respond.'),
       h('li', { class: 'more' }, 'Double-click to add. Drag or arrow keys to move.')),
   ];
