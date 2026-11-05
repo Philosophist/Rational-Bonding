@@ -45,6 +45,7 @@ input:focus, textarea:focus, button:focus-visible, select:focus-visible { outlin
 .bar .name { letter-spacing: 0.03em; background: linear-gradient(90deg, var(--cyan), var(--magenta)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .bar .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #map-title { width: 14em; max-width: 40vw; }
+.bar .account { margin-left: auto; }
 body.present .edit-only { display: none !important; }
 
 .stage { position: relative; flex: 1; min-height: 0; }
@@ -102,6 +103,11 @@ body.present .panel { display: none; }
 .panel .stars button { padding: 4px 8px; }
 .panel .stars button.on { color: var(--yellow); border-color: var(--yellow); }
 .panel .tips { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.panel .note { margin: 0; padding: 8px 10px; border: 1px solid #ffe94d; border-radius: 8px; color: #f2f4fa; }
+.panel .found { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.panel .found li { display: flex; gap: 8px; align-items: center; justify-content: space-between; border: 1px solid #2a3350; border-radius: 8px; padding: 6px 8px; }
+.panel .found li span { flex: 1; user-select: text; }
+.panel input[type="search"] { flex: 1; min-width: 0; }
 .panel .history { font-size: 13px; color: var(--muted); margin: 0; padding-left: 18px; }
 .panel label { display: flex; gap: 6px; align-items: center; font-size: 14px; }
 .panel input[type=range] { flex: 1; padding: 0; }
@@ -131,3 +137,4 @@ body:not(.present) .toast { left: calc(50% - 180px); }
 }
 body.present .toast { top: 12px; bottom: auto; }
 .link-preview line { stroke-width: 2.5; }
+.panel .postbox { display: flex; flex-direction: column; gap: 8px; }

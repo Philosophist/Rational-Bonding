@@ -341,7 +341,7 @@ export function serialize(map) {
 
 // Parses an exported map and checks every field, so a pasted file can't
 // smuggle in anything unexpected.
-export function parseMap(text, now = Date.now()) {
+export function parseMap(text, now = Date.now(), { keepPosts = false } = {}) {
   let raw;
   try { raw = JSON.parse(text); } catch { throw new Error('That is not valid map data.'); }
   if (!raw || typeof raw !== 'object' || typeof raw.items !== 'object') throw new Error('That is not valid map data.');
@@ -354,6 +354,7 @@ export function parseMap(text, now = Date.now()) {
       const n = { id: it.id, kind: 'node', type: it.type, text: String(it.text ?? '').slice(0, MAX_TEXT), x: num(it.x), y: num(it.y) };
       if (it.type === 'fallacy') { n.fallacy = String(it.fallacy ?? 'Unnamed').slice(0, 100); n.when = String(it.when ?? '').slice(0, MAX_TEXT); }
       if (it.rating) n.rating = cleanRating(it.rating);
+      keepChoices(n, it);
       map.items[n.id] = n;
     }
   }
@@ -365,6 +366,7 @@ export function parseMap(text, now = Date.now()) {
     const e = { id: it.id, kind: 'edge', type, from: String(it.from), to: String(it.to) };
     if (it.premise !== undefined) e.premise = String(it.premise).slice(0, 12);
     if (it.rating) e.rating = cleanRating(it.rating);
+    keepChoices(e, it);
     map.items[e.id] = e;
   }
   for (const e of Object.values(map.items).filter(isEdge)) {
@@ -373,7 +375,34 @@ export function parseMap(text, now = Date.now()) {
   for (const e of Object.values(map.items).filter(isEdge)) {
     if (dependsOn(map, e.from, e.id) || dependsOn(map, e.to, e.id)) throw new Error('An arrow in that map points at itself.');
   }
+  // Which items are published posts, by their id on the server. Kept only for
+  // a map's own saved copy; an opened file starts as drafts (keepPosts false).
+  if (keepPosts && raw.posts && typeof raw.posts === 'object') {
+    const posts = {};
+    for (const [id, pid] of Object.entries(raw.posts)) if (map.items[id] && UUID.test(String(pid))) posts[id] = String(pid).toLowerCase();
+    if (Object.keys(posts).length) map.posts = posts;
+  }
   return map;
+}
+// Posting choices: post without a name, and share (or not) your view of it.
+function keepChoices(to, from) {
+  if (from.anonymous === true) to.anonymous = true;
+  if (typeof from.share === 'boolean') to.share = from.share;
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Items in the order they must be posted: an arrow after both its ends.
+export function postOrder(map, ids) {
+  const out = [], seen = new Set();
+  const visit = (id) => {
+    if (seen.has(id) || !map.items[id]) return;
+    seen.add(id);
+    const it = map.items[id];
+    if (isEdge(it)) { visit(it.from); visit(it.to); }
+    out.push(id);
+  };
+  for (const id of ids) visit(id);
+  return out;
 }
 
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
