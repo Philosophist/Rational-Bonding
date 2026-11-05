@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Reasonance · Rational Bonding</title>
+  <meta name="description" content="Map an argument the way people really think: claims, the reasons behind them, and arguments about the reasoning itself." />
+  <link rel="canonical" href="https://rationalbonding.com/reasonance/" />
+  <meta name="theme-color" content="#2fe3e6" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Rational Bonding" />
+  <meta property="og:url" content="https://rationalbonding.com/reasonance/" />
+  <meta property="og:title" content="Reasonance · Rational Bonding" />
+  <meta property="og:description" content="Map an argument the way people really think: claims, the reasons behind them, and arguments about the reasoning itself." />
+  <meta property="og:image" content="https://rationalbonding.com/images/share.png" />
+  <meta property="og:image:alt" content="Rational Bonding" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="../favicon.png" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="../" title="Rational Bonding home"><img src="../images/rational-bonding-logo.png" alt="Rational Bonding" width="30" height="27" /></a>
+    <strong class="name">Reasonance</strong>
+    <div class="group edit-only">
+      <select id="map-select" aria-label="Your maps"></select>
+      <input id="map-title" aria-label="Map title" maxlength="200" />
+      <button id="new-map" title="Start a new, empty map">New map</button>
+    </div>
+    <div class="group edit-only">
+      <button id="add-statement" class="accent" title="Add a statement (or double-click the board)">+ Statement</button>
+      <select id="add-other" aria-label="Add another kind of post">
+        <option value="">+ More…</option>
+        <option value="question">Question</option>
+        <option value="clarification">Clarification</option>
+        <option value="combiner">Combined premises</option>
+        <option value="axiom">Axiom</option>
+        <option value="fallacy">Fallacy…</option>
+      </select>
+    </div>
+    <div class="group">
+      <button id="arrange" class="edit-only" title="Lay the map out automatically">Arrange</button>
+      <button id="fit" title="Fit the whole map on screen">Fit</button>
+      <button id="present" title="Hide the editing tools and present the map">Present</button>
+      <select id="file-menu" class="edit-only" aria-label="Save, share or load">
+        <option value="">File…</option>
+        <option value="download">Download map file</option>
+        <option value="import">Open a map file</option>
+        <option value="outline">Copy as text outline</option>
+        <option value="delete">Delete this map</option>
+      </select>
+      <input id="import-file" type="file" accept=".json,application/json" hidden />
+    </div>
+  </header>
+
+  <main class="stage">
+    <svg id="board" role="application" aria-label="Argument map. Drag posts to move them; drag the background to pan; scroll or pinch to zoom.">
+      <g id="world">
+        <g id="layer-edges"></g>
+        <g id="layer-nodes"></g>
+        <g id="layer-pills"></g>
+      </g>
+    </svg>
+    <div id="hint" class="hint" hidden></div>
+    <div id="caption" class="caption" hidden></div>
+    <aside id="panel" class="panel" aria-live="polite"></aside>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </main>
+</body>
+</html>

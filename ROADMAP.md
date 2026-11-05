@@ -92,6 +92,17 @@ in [CLAUDE.md](CLAUDE.md).
   days, handled by hand until then): a `delete_my_account()` function in a new
   migration, plus a button in the profile panel.
 
+- **Reasonance** (argument-mapping app, `reasonance/`). Plan:
+  https://claude.ai/artifact/KYaEnrF5TgaUmroiHLhaRf
+  1. Map editor, guest-only, saving in the browser (this PR).
+  2. Accounts and posts: `rs_*` tables by migration, shared sign-in, axioms,
+     fallacies and dated belief history saved to the account.
+  3. The 3D sea of posts (three.js), clicking a post brings it into the map.
+  4. Feed and search, belief sharing, "wants to know what you think" asks.
+  5. Curation settings (sliders, following someone's curation).
+  6. Default blurs, phone-verified totals, rate limits, illegal-content
+     reports. Then the opt-in, paid data tool and labelled sponsored posts.
+
 ## Ideas
 - **Server-side move validation:** a Supabase Edge Function that runs `rules.js`.
 - **Ratings** (Elo or Glicko) per time control, plus leaderboards.
