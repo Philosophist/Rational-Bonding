@@ -37,6 +37,8 @@ const layers = { edges: $('layer-edges'), nodes: $('layer-nodes'), pills: $('lay
 let store = load();
 let map = store.maps[store.current];
 let selected = null;      // item id
+const YELLOW = '#ffe94d';
+let second = null;        // a second item picked with Shift or Ctrl, to join the two with an arrow
 let connecting = null;    // { from, type } while picking an arrow's far end
 let spotlight = null;     // item id in present mode
 let logScale = false;
@@ -237,7 +239,7 @@ function render() {
     const lineStart = EDGE_TYPES[e.type].twoWay ? head(start, end, color, g) : start;
     s('line', { x1: lineStart.x, y1: lineStart.y, x2: lineEnd.x, y2: lineEnd.y, stroke: color }, g);
 
-    const pg = s('g', { class: `pill${selected === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
+    const pg = s('g', { class: `pill${selected === e.id || second === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
     s('rect', { class: 'hit', x: p.cx - p.w / 2 - 8, y: p.cy - p.h / 2 - 8, width: p.w + 16, height: p.h + 16 }, pg);
     s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, pg);
     const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, pg);
@@ -269,7 +271,7 @@ function render() {
 
   for (const n of Object.values(map.items).filter(isNode)) {
     const b = boxes.get(n.id), L = b.L, color = NODE_COLORS[n.type];
-    const g = s('g', { class: `node t-${n.type}${selected === n.id ? ' sel' : ''}${lit && !lit.has(n.id) ? ' dim' : ''}${connecting && canConnect(n.id) ? ' target-ok' : ''}`, 'data-id': n.id }, layers.nodes);
+    const g = s('g', { class: `node t-${n.type}${selected === n.id || second === n.id ? ' sel' : ''}${lit && !lit.has(n.id) ? ' dim' : ''}${connecting && canConnect(n.id) ? ' target-ok' : ''}`, 'data-id': n.id }, layers.nodes);
     const x0 = b.cx - b.w / 2, y0 = b.cy - b.h / 2;
     if (L.plus) {
       s('rect', { class: 'box', x: x0, y: y0, width: b.w, height: b.h, rx: b.w / 2, stroke: color }, g);
@@ -292,6 +294,12 @@ function render() {
     }
     if (n.rating?.stance) stanceDot(g, x0 + b.w - 12, y0 + 12, n.rating.stance, true);
     if (!n.text && n.type !== 'fallacy' && n.type !== 'combiner') t.querySelector('tspan').textContent = 'Click to write…';
+  }
+  const A = second && boxes.get(selected), B = second && boxes.get(second);
+  if (A && B) {
+    const p = exitPoint(A, B.cx, B.cy), q = exitPoint(B, A.cx, A.cy), g = s('g', { class: 'link-preview' }, layers.edges);
+    const end = head(q, p, YELLOW, g);
+    s('line', { x1: p.x, y1: p.y, x2: end.x, y2: end.y, stroke: YELLOW, 'stroke-dasharray': '6 5' }, g);
   }
   world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
   board.classList.toggle('connecting', !!connecting);
@@ -329,6 +337,7 @@ function renderPanel() {
   if (renderPanelSuppressed) return;
   const panel = $('panel');
   panel.classList.toggle('compact', !(selected && (map.items[selected] || isGhost(selected))));
+  if (second && map.items[second] && map.items[selected]) { panel.replaceChildren(...linkPanel()); return; }
   if (isGhost(selected) && boxes.get(selected)) { panel.replaceChildren(...ghostPanel(ghostOwner(selected))); return; }
   const it = selected && map.items[selected];
   if (!it) { panel.replaceChildren(...overviewPanel()); return; }
@@ -358,6 +367,7 @@ function overviewPanel() {
       h('li', {}, 'One statement per node.'),
       h('li', {}, 'Arrows point from a claim to its supports and contentions.'),
       h('li', {}, 'Click a post or arrow label to respond.'),
+      h('li', { class: 'more' }, 'Shift-click a second node to connect the two.'),
       h('li', { class: 'more' }, 'Double-click to add. Drag or arrow keys to move.')),
   ];
 }
@@ -501,7 +511,48 @@ function quietChange() {
   }, 120);
 }
 
-function select(id) { selected = id; spotlight = null; render(); }
+function select(id) { selected = id; second = null; spotlight = null; render(); }
+// Shift- or Ctrl-click a second post (or arrow label) to connect it to the
+// selected one. The first pick is the claim; the second is its reason.
+function canLink(from, to) {
+  if (!from || !to || from === to || isGhost(from) || isGhost(to) || !map.items[from] || !map.items[to]) return false;
+  const it = map.items[to];
+  return !(isEdge(it) && (it.from === from || it.to === from));
+}
+function pickSecond(id) {
+  if (!selected || !map.items[selected]) { select(id); return; }
+  if (id === selected) { select(null); return; }
+  if (!canLink(selected, id)) { toast("Those two can't be joined: pick a different post or arrow."); return; }
+  second = second === id ? null : id; spotlight = null; render();
+}
+function linkTypes(from, to) {
+  const a = map.items[from], b = map.items[to];
+  if (isNode(b) && b.type === 'fallacy') return ['example'];
+  return Object.keys(EDGE_TYPES).filter((k) => k !== 'example' && (k !== 'premise' || (isNode(a) && a.type === 'combiner')));
+}
+function link(type) {
+  const from = selected, to = second;
+  try { const e = addEdge(map, type, from, to); selected = e.id; second = null; } catch (err) { toast(err.message); return; }
+  changed();
+}
+function swapLink() {
+  if (!canLink(second, selected)) { toast("They can't be joined the other way round."); return; }
+  [selected, second] = [second, selected]; render();
+}
+function linkPanel() {
+  const short = (id) => { const t = itemText(map, id); return t.length > 90 ? t.slice(0, 87) + '…' : t; };
+  const types = linkTypes(selected, second);
+  return [
+    h('h2', {}, 'Connect these two'),
+    h('p', { class: 'muted' }, 'The arrow points from the first to the second.'),
+    h('p', { class: 'full' }, h('strong', {}, '1. '), short(selected)),
+    h('p', { class: 'full' }, h('strong', {}, '2. '), short(second)),
+    h('div', { class: 'row' }, types.map((k) => h('button', { class: k === types[0] ? 'accent' : '', onclick: () => link(k) }, EDGE_TYPES[k].label))),
+    h('div', { class: 'row' },
+      h('button', { onclick: swapLink }, 'Swap order'),
+      h('button', { onclick: () => { second = null; render(); } }, 'Cancel')),
+  ];
+}
 
 function placeNear(id, dx = 330, dy = 0) {
   const b = boxes.get(id) ?? { cx: 0, cy: 0 };
@@ -661,7 +712,7 @@ board.addEventListener('pointerdown', (ev) => {
   const w = toWorld(ev.clientX, ev.clientY);
   if (id) {
     const it = map.items[id];
-    drag = { id, ox: isNode(it) ? w.x - it.x : 0, oy: isNode(it) ? w.y - it.y : 0, sx: ev.clientX, sy: ev.clientY, moved: false };
+    drag = { id, multi: ev.shiftKey || ev.ctrlKey || ev.metaKey, ox: isNode(it) ? w.x - it.x : 0, oy: isNode(it) ? w.y - it.y : 0, sx: ev.clientX, sy: ev.clientY, moved: false };
   } else {
     drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y, moved: false };
     board.classList.add('panning');
@@ -702,7 +753,7 @@ function endPointer(ev) {
   if (d.id) {
     if (connecting) { if (canConnect(d.id)) finishConnect(d.id); else toast('Pick a different post or arrow.'); return; }
     if (present) { const sid = isGhost(d.id) ? ghostOwner(d.id) : d.id; spotlight = spotlight === sid ? null : sid; render(); return; }
-    select(d.id);
+    if (d.multi && !isGhost(d.id)) pickSecond(d.id); else select(d.id);
   } else {
     if (connecting) { cancelConnect(); return; }
     if (present) { spotlight = null; render(); return; }
@@ -773,6 +824,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     if (connecting) cancelConnect();
     else if (document.body.classList.contains('present')) togglePresent();
+    else if (!typing && second) { second = null; render(); }
     else if (!typing) select(null);
   } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && !typing && selected && map.items[selected]) {
     ev.preventDefault(); del(selected);

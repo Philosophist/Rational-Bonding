@@ -23,6 +23,7 @@ feed come in later steps.
 - **Fallacy nodes** are definitions ("A Straw man fallacy is when an argument
   ..."), drawn in neon purple. Arrows to them are labelled "Fallacy":
   `'A' is an example of a Straw man fallacy`.
+- **Connecting:** select a post, then Shift- or Ctrl-click a second post or arrow label. The panel offers each arrow type; the arrow points from the first pick to the second.
 - **Combined premises** nodes join premises numbered 1, 2a, 2b... On the map a combined-premises node is a small round plus sign; hover or click it to see its words.
 - **Ratings** on any post: stance, confidence 0–100 (decimals allowed, with a
   log-scale slider) and 1–5 star relevance. Every change is kept with its date.

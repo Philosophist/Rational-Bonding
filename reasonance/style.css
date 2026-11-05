@@ -130,3 +130,4 @@ body:not(.present) .toast { left: calc(50% - 180px); }
   body:not(.present) .toast { left: 50%; bottom: calc(46% + 20px); }
 }
 body.present .toast { top: 12px; bottom: auto; }
+.link-preview line { stroke-width: 2.5; }
