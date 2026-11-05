@@ -9,8 +9,8 @@ browser (`localStorage`). Accounts, shared posts, the 3D sea of posts and the
 feed come in later steps.
 
 ## Rules of the map
-- **Direction:** arrows run from a claim out to its reasons:
-  `'It rained' is supported by 'The sidewalk is wet'`.
+- **Direction:** arrows run from a claim out to its reasons. The label and
+  sentence read from the reason: `'The sidewalk is wet' supports 'It rained'`.
 - **Unsupported claims** show a standing contention, "No support has been given
   for this claim", until a support arrow is added. **Axioms** keep a permanent
   one: "Held as an axiom: no support is claimed."

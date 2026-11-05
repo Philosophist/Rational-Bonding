@@ -16,9 +16,9 @@ function twoClaims() {
 test('arrows read from the claim out to its reason', () => {
   const { m, a, b } = twoClaims();
   const e = addEdge(m, 'support', a.id, b.id);
-  assert.equal(itemText(m, e.id), "'It rained' is supported by 'The sidewalk is wet'");
+  assert.equal(itemText(m, e.id), "'The sidewalk is wet' supports 'It rained'");
   const c = addEdge(m, 'contention', a.id, b.id);
-  assert.equal(itemText(m, c.id), "'It rained' is contended by 'The sidewalk is wet'");
+  assert.equal(itemText(m, c.id), "'The sidewalk is wet' contends 'It rained'");
 });
 
 test('an inference can itself be supported or contended', () => {
@@ -26,7 +26,7 @@ test('an inference can itself be supported or contended', () => {
   const e = addEdge(m, 'support', a.id, b.id);
   const s = addNode(m, { text: 'Sprinklers ran' });
   const c = addEdge(m, 'contention', e.id, s.id);
-  assert.equal(itemText(m, c.id), "['It rained' is supported by 'The sidewalk is wet'] is contended by 'Sprinklers ran'");
+  assert.equal(itemText(m, c.id), "'Sprinklers ran' contends ['The sidewalk is wet' supports 'It rained']");
 });
 
 test('two-way relations read symmetrically', () => {
@@ -44,7 +44,7 @@ test('fallacy nodes are definitions and arrows to them are examples', () => {
   assert.equal(itemText(m, e.id), "'It rained' is an example of a Straw man fallacy");
   const inf = addEdge(m, 'support', a.id, b.id);
   const e2 = addEdge(m, 'support', inf.id, f.id);
-  assert.equal(itemText(m, e2.id), "['It rained' is supported by 'The sidewalk is wet'] is an example of a Straw man fallacy");
+  assert.equal(itemText(m, e2.id), "['The sidewalk is wet' supports 'It rained'] is an example of a Straw man fallacy");
   assert.throws(() => flipEdge(m, e.id));
   assert.throws(() => setEdgeType(m, e.id, 'support'));
   assert.throws(() => addEdge(m, 'example', a.id, b.id));
@@ -133,6 +133,6 @@ test('maps round-trip through export, and bad data is refused', () => {
 test('the outline starts from conclusions and indents their reasons', () => {
   const text = outline(exampleMap());
   assert.match(text, /^# Did it rain last night\?/);
-  assert.match(text, /'It rained last night\.'\n  - Supported by: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contended by:/);
+  assert.match(text, /'It rained last night\.'\n  - Support: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contention:/);
   assert.match(text, /Example of: 'An Ad hominem fallacy is when an argument attacks/);
 });

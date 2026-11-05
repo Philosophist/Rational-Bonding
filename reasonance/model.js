@@ -3,7 +3,8 @@
 // Every node and every edge is an item ("a post"). An edge connects any two
 // items, including other edges, which is how people support or contend an
 // inference itself. Arrows point from a claim OUT to its reasons:
-//   "It rained" --supported by--> "The sidewalk is wet"
+//   "It rained" --supports--> "The sidewalk is wet", read as
+//   "'The sidewalk is wet' supports 'It rained'"
 // so a user starts from a conclusion and follows the arrows to what backs it.
 import { FALLACIES, fallacyText, article } from './fallacies.js';
 
@@ -18,13 +19,15 @@ export const NODE_TYPES = {
   fallacy: { label: 'Fallacy', hint: 'A definition of a fallacy. Arrows to it are examples.' },
 };
 
-// phrase: how the edge reads between its two ends ("A <phrase> B").
+// phrase: how the edge reads between its two ends ("A <phrase> B"). For
+// reason arrows the sentence starts with the reason, at the arrow's far end:
+// the arrow runs claim -> reason, and reads "<reason> supports <claim>".
 // twoWay edges draw a head at both ends.
 export const EDGE_TYPES = {
-  support: { label: 'Supported by', phrase: 'is supported by' },
-  contention: { label: 'Contended by', phrase: 'is contended by' },
-  question: { label: 'Questioned by', phrase: 'is questioned by' },
-  clarification: { label: 'Clarified by', phrase: 'is clarified by' },
+  support: { label: 'Supports', phrase: 'supports', reason: true, noun: 'Support' },
+  contention: { label: 'Contends', phrase: 'contends', reason: true, noun: 'Contention' },
+  question: { label: 'Questions', phrase: 'questions', reason: true, noun: 'Question' },
+  clarification: { label: 'Clarifies', phrase: 'clarifies', reason: true, noun: 'Clarification' },
   suggestion: { label: 'Suggests', phrase: 'prompts the suggestion' },
   premise: { label: 'Premise', phrase: 'has the premise' },
   example: { label: 'Example of', phrase: 'is an example of' },
@@ -180,7 +183,10 @@ export function edgeSentence(map, e, depth = 0) {
     case 'premise': return `${A} has premise ${e.premise ?? '?'}: ${B}`;
     case 'exclusive': return `${A} and ${B} are mutually exclusive`;
     case 'necessary': return `${A} and ${B} are mutually necessary`;
-    default: return `${A} ${EDGE_TYPES[e.type].phrase} ${B}`;
+    default: {
+      const t = EDGE_TYPES[e.type];
+      return t.reason ? `${B} ${t.phrase} ${A}` : `${A} ${t.phrase} ${B}`;
+    }
   }
 }
 
@@ -261,7 +267,7 @@ export function outline(map) {
     for (const e of edgesFrom(map, id)) {
       if (seen.has(e.id)) continue;
       seen.add(e.id);
-      const label = e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
+      const label = e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].noun ?? EDGE_TYPES[e.type].label;
       lines.push(`${'  '.repeat(depth)}- ${label}: ${quote(map, e.to, 0)}`);
       walkResponses(e.id, depth + 1);
       if (!seen.has(e.to)) { seen.add(e.to); walk(e.to, depth + 1); }
