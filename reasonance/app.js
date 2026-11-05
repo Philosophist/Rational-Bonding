@@ -326,6 +326,7 @@ let renderPanelSuppressed = false;
 function renderPanel() {
   if (renderPanelSuppressed) return;
   const panel = $('panel');
+  panel.classList.toggle('compact', !(selected && (map.items[selected] || isGhost(selected))));
   if (isGhost(selected) && boxes.get(selected)) { panel.replaceChildren(...ghostPanel(ghostOwner(selected))); return; }
   const it = selected && map.items[selected];
   if (!it) { panel.replaceChildren(...overviewPanel()); return; }
@@ -351,14 +352,11 @@ function overviewPanel() {
   return [
     h('h2', {}, map.title),
     h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
-    h('p', {}, h('strong', {}, 'One post, one statement.'), ' If a thought has several parts, give each its own post and join them with Combined premises, so people can agree with one part and disagree with another.'),
-    h('p', {}, 'Start with a conclusion. Arrows point from a claim out to the reasons that support or contend it, so you can follow them to see what a belief rests on.'),
-    h('p', {}, 'Click the label on any arrow to argue about the inference itself, for example "the wet sidewalk doesn\'t show it rained, because the sprinklers ran".'),
-    h('h3', { class: 'more' }, 'Arrows'),
-    h('div', { class: 'legend more' }, Object.entries(EDGE_TYPES).map(([k, t]) =>
-      h('span', {}, h('span', { class: 'swatch', style: `background:${EDGE_COLORS[k]}` }), t.label))),
-    h('h3', { class: 'more' }, 'Moving around'),
-    h('p', { class: 'muted more' }, 'Drag posts to move them. Drag the background to pan, and scroll or pinch to zoom. The arrow keys slide the view, and Page Up and Page Down zoom. Double-click the background to add a statement there. Delete removes the selected post.'),
+    h('ul', { class: 'tips' },
+      h('li', {}, 'One statement per post.'),
+      h('li', {}, 'Arrows point from a claim to its reasons.'),
+      h('li', {}, 'Click a post or arrow label to respond.'),
+      h('li', { class: 'more' }, 'Double-click to add. Drag or arrow keys to move.')),
   ];
 }
 
