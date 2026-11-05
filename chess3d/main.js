@@ -23,9 +23,10 @@ const RULES_KEY = 'chess3d-rules';
 const DOCK_KEY = 'chess3d-level-map';
 const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing'];
 const TC_KEY = 'chess3d-tc';
-// View options (this device only): move paths and corner-facing hexagons.
+// View options (this device only): move paths, corner-facing hexagons, and
+// turning the camera to a piece when it's selected.
 const VIEW_KEY = 'chess3d-view';
-const view = { paths: true, hex: true };
+const view = { paths: true, hex: true, follow: true };
 try {
   Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'));
 } catch {}
@@ -556,13 +557,73 @@ function setFocus(f) {
 }
 
 // ---------------------------------------------------------------- camera
-function resetCamera() {
-  layoutLabels();
+function homeView() {
   const c = center();
   const s = app.viewColor === 'w' ? 1 : -1;
-  camera.position.set(9.5 * s, c.y + 5, 15.5 * s);
-  controls.target.copy(c);
+  return { pos: new THREE.Vector3(9.5 * s, c.y + 5, 15.5 * s), target: c };
+}
+function resetCamera() {
+  layoutLabels();
+  camAnim = null;
+  const h = homeView();
+  camera.position.copy(h.pos);
+  controls.target.copy(h.target);
   controls.update();
+}
+
+// Smooth camera flights (recenter, and turning to a selected piece). The
+// target slides straight over; the view direction swings round on a sphere so
+// the board never flips or lurches. Any drag, wheel or camera key stops it.
+let camAnim = null;
+const CAM_MS = 650;
+function flyTo(pos, target) {
+  const fromOff = camera.position.clone().sub(controls.target);
+  const toOff = pos.clone().sub(target);
+  camAnim = {
+    t0: performance.now(),
+    fromTarget: controls.target.clone(), toTarget: target.clone(),
+    fromDir: fromOff.clone().normalize(), toDir: toOff.clone().normalize(),
+    fromLen: fromOff.length(), toLen: toOff.length(),
+  };
+}
+function stepCamAnim(now) {
+  const a = camAnim;
+  if (!a) return;
+  const t = Math.min(1, (now - a.t0) / CAM_MS);
+  const e = 1 - Math.pow(1 - t, 3); // ease out
+  const q = new THREE.Quaternion().setFromUnitVectors(a.fromDir, a.toDir);
+  const dir = a.fromDir.clone().applyQuaternion(new THREE.Quaternion().slerp(q, e));
+  controls.target.lerpVectors(a.fromTarget, a.toTarget, e);
+  camera.position.copy(controls.target).addScaledVector(dir, THREE.MathUtils.lerp(a.fromLen, a.toLen, e));
+  if (t >= 1) camAnim = null;
+}
+function recenter() {
+  const h = homeView();
+  flyTo(h.pos, h.target);
+}
+
+// A view that frames a piece and every square it can reach. The camera looks
+// at the middle of them from the player's side, a little from above, and
+// backs off just far enough that all of them fit on screen.
+function focusOn(sq, targets) {
+  const pts = [worldPos(sq), ...targets.map((m) => worldPos(m.to))];
+  const box = new THREE.Box3().setFromPoints(pts);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  // Lean the aim toward the piece itself so it stays near the middle.
+  const target = sphere.center.clone().lerp(pts[0], 0.35);
+  const r = Math.max(2.5, sphere.radius + target.distanceTo(sphere.center)) + 0.8;
+  const vFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+  const hFov = Math.atan(Math.tan(vFov) * camera.aspect);
+  const dist = THREE.MathUtils.clamp(r / Math.sin(Math.min(vFov, hFov)), 9, controls.maxDistance);
+  // Keep the side you're looking from (no sudden swing to the far side), but
+  // settle at a comfortable height: about 30° above the piece.
+  const off = camera.position.clone().sub(controls.target);
+  off.y = 0;
+  if (off.lengthSq() < 1e-6) off.set(0, 0, app.viewColor === 'w' ? 1 : -1);
+  off.normalize();
+  const elev = THREE.MathUtils.degToRad(30);
+  const dir = off.multiplyScalar(Math.cos(elev)).setY(Math.sin(elev));
+  flyTo(target.clone().addScaledVector(dir, dist), target);
 }
 
 // Keyboard and button camera moves. Held keys move smoothly, a little each frame.
@@ -592,6 +653,7 @@ function orbitBy(angle) {
 }
 function stepCamera(dt) {
   if (!camKeys.size) return;
+  camAnim = null;
   const k = Math.min(dt, 0.05); // seconds, capped so a slow frame doesn't jump
   for (const a of camKeys) {
     if (a === 'left') panBy(-0.6 * k, 0);
@@ -699,6 +761,7 @@ function select(sq) {
   // Opponent pieces (or pieces you can't move right now) show their moves as a preview.
   app.targets = p ? legalMovesFrom({ ...app.game, turn: p.c, result: null }, sq) : [];
   refreshHighlights();
+  if (view.follow && p) focusOn(sq, app.targets);
 }
 
 function deselect() {
@@ -1572,7 +1635,7 @@ function wireUI() {
   try {
     showDock(localStorage.getItem(DOCK_KEY) === 'open');
   } catch {}
-  for (const k of ['paths', 'hex']) {
+  for (const k of ['paths', 'hex', 'follow']) {
     const box = $(`view-${k}`);
     box.checked = !!view[k];
     box.onchange = () => {
@@ -1593,6 +1656,8 @@ function wireUI() {
   new ResizeObserver(syncDock).observe(dock);
 
   $('zoom-in').onclick = () => zoomBy(0.8);
+  $('recenter').onclick = recenter;
+  controls.addEventListener('start', () => (camAnim = null)); // a drag or wheel takes over
   $('zoom-out').onclick = () => zoomBy(1.25);
   window.addEventListener('keyup', (e) => camKeys.delete(CAM_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key]));
   window.addEventListener('blur', () => camKeys.clear());
@@ -1608,6 +1673,7 @@ function wireUI() {
     if (e.key === ']') setFocus(app.focus < 0 ? 0 : Math.min(N - 1, app.focus + 1));
     else if (e.key === '[') setFocus(app.focus < 0 ? N - 1 : Math.max(0, app.focus - 1));
     else if (e.key === '0') setFocus(-1);
+    else if (e.key === 'r' || e.key === 'R' || e.key === 'Home') recenter();
     else if (e.key === 'Escape') app.preview ? app.preview.cancel() : deselect();
     else if (e.key === 'Enter' && app.preview) app.preview.confirm();
     else if (app.mode === 'review' && e.key === 'ArrowLeft') showReviewPly(app.review.ply - 1);
@@ -1620,6 +1686,7 @@ const ANIM_MS = 380;
 let lastFrame = 0;
 function animate(now) {
   stepCamera(lastFrame ? (now - lastFrame) / 1000 : 0);
+  stepCamAnim(now);
   lastFrame = now;
   for (const g of pieceGroup.children) {
     const a = g.userData.anim;
