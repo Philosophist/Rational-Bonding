@@ -23,11 +23,15 @@ that ladder instead of picking one rung.
    saved in standard formats, with ready-to-run input files for xtb, ORCA,
    OpenMM and LAMMPS. That is the "worth re-running in a real simulator" step.
 
-For platform: **design for VR first and build it on the web** (three.js with
-WebXR), which continues your 2019 A-Frame scene and keeps it on
-rationalbonding.com and itch.io. Keep the physics core separate from the
-graphics so it can move into Godot 4 later if the Quest headset needs more
-speed.
+For platform: **PC VR first, built on the web** (three.js with WebXR), which
+continues your 2019 A-Frame scene and keeps it on rationalbonding.com and
+itch.io. The same game also plays as a **first-person space shooter in a
+normal window**, with a setting to switch between the two. Keep the physics
+core separate from the graphics so it can move into Godot 4 later if needed.
+
+*Steve's decisions (2026-11-05): PC VR first, with a flat-screen first-person
+mode as a toggle; the export button is in the free version; no server for
+now.*
 
 The rest of this document explains why.
 
@@ -174,11 +178,25 @@ them with GFN2-xTB or an ML potential:
 - This is also how we tune the live engine during development: run thousands
   of test molecules through both and fix the worst mismatches.
 
-Where it runs is a cost decision for later. Options: on the player's PC (free
-for us, works for PC VR and desktop), in the browser if a WebAssembly build of
-a referee proves fast enough, or on a small server (costs money each month, so
-probably only for the paid version or for "submit to the community" builds).
-The game must work fully without it.
+**Where it runs: on the player's own PC.** Since the game is PC VR first,
+players already have a strong computer, so the referee runs locally in the
+background at no cost to Rational Bonding. The game must also work fully
+without it (for example on a weak laptop), just without the confidence meter.
+
+**What a server would add later, if ever.** Nothing in this design needs one
+now. A small referee server only becomes useful with the **shared creations
+community**:
+
+- *Trust.* A result checked on a player's own PC can be faked by editing the
+  game. If shared creations carry a "lab-checked" badge, the community site
+  would re-run the check itself before showing the badge.
+- *Fairness.* Players on phones or weak laptops could ask the server to check
+  their build, since their device can't.
+- *Heavier checks.* The server could run a slower, more accurate method (an ML
+  potential or DFT) on featured creations.
+
+Cost would be a small monthly fee and could be limited to shared creations
+only. That's a decision for when the community feature is built.
 
 ### 3e. Export: hand the experiment to a professional
 
@@ -197,7 +215,8 @@ One button, available in campaign and creative mode, writes a folder with:
   from the referee, and what a professional should check first.
 
 This is the promise in the game's pitch made concrete: players do an
-experiment, and anyone with a laptop and free tools can test it properly.
+experiment, and anyone with a laptop and free tools can test it properly. The
+export button is part of the **free** version.
 
 ## 4. Why not just use one professional method live?
 
@@ -212,22 +231,51 @@ The three-speed design uses each where it's strong. As headsets and ML
 potentials get faster, the ML referee can move closer to live, and the game's
 accuracy rises without redesigning anything.
 
-## 5. Platform: VR first, built on the web
+## 5. Platform: PC VR first, with a flat-screen mode
 
 Your 2019 vision (`alchemfighter/vr/`) is an A-Frame WebVR scene: a hydrogen
 atom floating in zero-gravity space against a starfield, a gaze cursor, and
 "Rational Bonding Presents Alchem Fighter". The current prototype is plain
-WebGL2 in the browser. The natural path keeps both:
+WebGL2 in the browser. The natural path keeps both.
 
 **Build with three.js and WebXR.** A-Frame itself is built on three.js, so this
-is the same family, just with more control. One URL then works:
+is the same family, just with more control. Desktop Chrome and Edge already
+run WebXR with PC headsets (Valve Index, HTC Vive, Windows Mixed Reality, and
+Quest through Link or Air Link). One URL then gives:
 
-- in a Quest browser as full VR, with hand controllers;
-- on a PC VR headset through a desktop browser;
-- on a flat screen and phone as a "window" mode, for testing and for the free
-  itch.io version.
+- **PC VR (main target):** full VR with hand controllers, the computer's
+  graphics card doing the work.
+- **Flat-screen first person:** the same game in a normal window, played like
+  a space shooter with mouse and keyboard or a gamepad. This is also how the
+  free itch.io version plays for anyone without a headset.
+- **Standalone Quest and phones:** later, with smaller levels (see the risk
+  below).
 
-**What VR changes in the design:**
+### The VR / first-person toggle
+
+Yes, this is reasonable, and WebXR makes it cheap: the page already draws in a
+window, and an **Enter VR** button switches the same scene into the headset.
+Leaving VR drops you back into the window. The simulation, levels and
+graphics are shared; only three things differ:
+
+| | VR mode | First-person window mode |
+|---|---|---|
+| Looking around | Your head | Mouse, or right stick on a gamepad |
+| Flying and aiming | Controllers: stick to fly, trigger to fire, aim with your hand | WASD or left stick to fly, mouse to aim, click to fire |
+| Grabbing atoms (creative mode) | Reach out and grab with your hand | Point with the crosshair, hold a button to grab, scroll to pull closer or push away |
+| Instruments | Cockpit panels you look at | The same panels on the edges of the screen |
+
+To keep both modes good, the rules are:
+
+- **Every action works in both.** Nothing is VR-only or mouse-only.
+- **Instruments live in the cockpit** (in the 3-D scene), not on a flat web
+  overlay, so they work in VR and simply sit at the screen edges in a window.
+- **Comfort settings matter only in VR** (snap turning, vignette when
+  flying fast); the window mode can turn faster.
+- **Test both every time.** The browser-test setup already used for Cube
+  Chess can check window mode automatically; VR needs a quick headset check.
+
+### What VR changes in the design
 
 - **90 frames a second is a hard floor**, or players feel sick. The simulation
   runs in a separate worker at its own pace and the renderer smooths between
@@ -243,45 +291,47 @@ is the same family, just with more control. One URL then works:
   shader needs lower resolution, foveated rendering, or baked impostors for
   distant atoms.
 
-**The honest risk:** standalone Quest headsets have phone-class graphics
-chips, and WebGPU compute inside WebXR on Quest's browser is still marked
-*experimental* (added in browser v146, April 2026, and still behind flags for
-some features in v152). Until it's stable, the live engine runs on the CPU in
-WebAssembly, which limits it to a few hundred detailed atoms on a standalone
-headset.
+**Why PC VR first helps the chemistry:** a desktop graphics card can run the
+live engine with WebGPU compute for thousands of atoms, and the referee
+(§3d) runs on the same PC. Standalone Quest headsets have phone-class chips,
+and WebGPU inside WebXR on Quest's browser is still marked *experimental*
+(added in browser v146, April 2026, still behind flags for some features in
+v152), so a standalone version would be limited to a few hundred atoms for now.
 
 **The escape hatch:** write the physics core as an engine-independent module
 (Rust compiled to WebAssembly, as `GAME_DESIGN.md` §9 already suggests). If the
-web can't go fast enough on headsets, the same core plugs into **Godot 4**
-with native OpenXR and the Meta and Steam stores, without rewriting the
-chemistry. The repo's `Alchem_Fighter_GODOT/` stub is Godot 3 and would be
-replaced, not upgraded.
+browser ever holds the game back, the same core plugs into **Godot 4** with
+native OpenXR and the Steam and Meta stores, without rewriting the chemistry.
+The repo's `Alchem_Fighter_GODOT/` stub is Godot 3 and would be replaced, not
+upgraded.
 
 ## 6. Suggested order of work
 
 1. **Physics core, small:** the reactive force field for H, C, N, O, Cl, Na,
    plus a test suite that compares bond lengths and bond energies of ~30 small
    molecules against GFN2-xTB reference numbers checked into the repo.
-2. **Export button** (structures and xtb input). Cheap, and it delivers the
-   "re-run it professionally" promise from day one.
-3. **First chemistry level: hydrogen meets oxygen.** Two H₂ and one O₂ become
-   water with a flash. It is the best-studied combustion reaction there is,
-   with ReaxFF parameters and many published simulations to compare against.
-4. **WebXR mode** with hand-grabbing for a creative-mode first slice.
+2. **Export button** (structures and xtb input), in the free version. Cheap,
+   and it delivers the "re-run it professionally" promise from day one.
+3. **First chemistry level: hydrogen meets oxygen**, in first-person window
+   mode. Two H₂ and one O₂ become water with a flash. It is the best-studied
+   combustion reaction there is, with ReaxFF parameters and many published
+   simulations to compare against.
+4. **Enter VR** on the same level: PC VR with controllers, cockpit instruments,
+   and hand-grabbing for a creative-mode first slice.
 5. **Fireworks metals** (strontium, barium, copper, sodium) with real emission
    lines: a "make a red firework" level.
-6. **Referee (xTB or ML) on PC**, then decide whether a server is worth paying for.
-7. **Revisit WebGPU-in-WebXR** on Quest; if still experimental, measure whether
-   Godot 4 is needed.
+6. **Referee (xTB or ML) on the player's PC**, with the confidence meter.
+7. **Later:** shared creations community (and only then, a decision on a
+   checking server); a standalone Quest version once WebGPU in WebXR is stable.
 
-## 7. Open questions for Steve
+## 7. Decisions so far
 
-- Is a **PC-VR-first** release acceptable (more power, fewer players), or must
-  the standalone Quest browser be the main target from the start?
-- Should the free itch.io version include the **export button**, or is that a
-  paid-version or community feature?
-- Are you willing to pay for a small **referee server** later, or should the
-  referee only ever run on the player's own computer?
+| Question | Steve's answer (2026-11-05) |
+|---|---|
+| PC VR first, or standalone Quest first? | **PC VR first.** |
+| Flat-screen play too? | **Yes:** a setting to play as a first-person space shooter or in VR. |
+| Export button in the free itch.io version? | **Yes, include it.** |
+| Pay for a referee server? | **Not now.** No multiplayer yet. Revisit when shared creations are built (§3d explains what a server would be for). |
 
 ## Sources and further reading
 
