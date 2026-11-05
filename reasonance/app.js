@@ -3,7 +3,7 @@
 // <marker> references), so they show up wherever the page is hosted.
 import {
   NODE_TYPES, EDGE_TYPES, STANCES, RELEVANCE, createMap, addNode, addEdge, removeItem, flipEdge,
-  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap,
+  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES,
   isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider,
   compoundParts, splitIntoPremises,
 } from './model.js';
@@ -15,7 +15,7 @@ const NODE_W = 240, CHARS = 30, LINE = 18;
 
 const EDGE_COLORS = {
   support: '#2fe3e6', contention: '#e04dff', question: '#ffe94d', clarification: '#6f93ff',
-  suggestion: '#a5afc6', premise: '#d9def0', example: '#b026ff', same: '#7dffb0',
+  premise: '#d9def0', example: '#b026ff', same: '#7dffb0',
   contradicts: '#ff5c7a', exclusive: '#ff5c7a', necessary: '#7dffb0',
 };
 const NODE_COLORS = {
@@ -167,7 +167,8 @@ function nodeLayout(n) {
 }
 // The automatic post sits just to the right of its claim, where reasons go,
 // and stays clear of the next column that Arrange uses.
-const GHOST_GAP = 110, GHOST_W = 190;
+const GHOST_GAP = 110, GHOST_W = 190, GHOST_DROP = 44;
+const ghostBelow = (id) => edgesFrom(map, id).length > 0;
 function ghostLayout(id) {
   const text = standingContention(map, id);
   if (!text) return null;
@@ -187,7 +188,12 @@ function computeBoxes() {
     const G = ghostLayout(n.id);
     if (!G) continue;
     const b = boxes.get(n.id);
-    boxes.set(GHOST_PREFIX + n.id, { cx: b.cx + b.w / 2 + GHOST_GAP + G.w / 2, cy: b.cy, w: G.w, h: G.h, G, ghost: true });
+    // A claim with reasons of its own keeps its automatic post just below it,
+    // out of the way of its arrows; otherwise it sits to the right.
+    const below = ghostBelow(n.id);
+    boxes.set(GHOST_PREFIX + n.id, below
+      ? { cx: b.cx - b.w / 2 + 24 + G.w / 2, cy: b.cy + b.h / 2 + GHOST_DROP + G.h / 2, w: G.w, h: G.h, G, ghost: true, below }
+      : { cx: b.cx + b.w / 2 + GHOST_GAP + G.w / 2, cy: b.cy, w: G.w, h: G.h, G, ghost: true });
   }
   const pending = Object.values(map.items).filter(isEdge);
   for (let pass = 0; pass < 8 && pending.length; pass++) {
@@ -257,7 +263,8 @@ function render() {
     const lineEnd = head(end, start, color, eg);
     s('line', { x1: start.x, y1: start.y, x2: lineEnd.x, y2: lineEnd.y, stroke: color, 'stroke-dasharray': '6 4' }, eg);
     // The label rides just above the short dashed arrow, leaving it visible.
-    const label = 'Contention', pw = label.length * 7 + 22, px = (start.x + lineEnd.x) / 2, py = (start.y + lineEnd.y) / 2 - 20;
+    const label = 'Contention', pw = label.length * 7 + 22;
+    const px = (start.x + lineEnd.x) / 2 + (gb.below ? pw / 2 + 10 : 0), py = (start.y + lineEnd.y) / 2 - (gb.below ? 0 : 20);
     const pg = s('g', { class: `pill${off}`, 'data-id': gid }, layers.pills);
     s('rect', { x: px - pw / 2, y: py - 12, width: pw, height: 24, rx: 12, stroke: color }, pg);
     const pt = s('text', { x: px, y: py + 4, 'text-anchor': 'middle', fill: color }, pg); pt.textContent = label;
@@ -374,7 +381,7 @@ function overviewPanel() {
 
 const REASONS = [
   ['support', 'Support it'], ['contention', 'Contend it'], ['question', 'Question it'],
-  ['clarification', 'Clarify it'], ['suggestion', 'Suggest'], ['same', 'Say it another way'],
+  ['clarification', 'Clarify it'], ['same', 'Say it another way'],
 ];
 function reasonButtons(it) {
   const fallacyPick = h('select', { 'aria-label': 'Call a fallacy', onchange: (ev) => { if (ev.target.value) callFallacy(it.id, ev.target.value); } },
@@ -662,12 +669,15 @@ function arrange() {
   const place = (n, depth) => {
     n.x = depth * COL;
     const k = kids.get(n);
-    const G = ghostLayout(n.id), hgt = Math.max(nodeLayout(n).h, G ? G.h : 0);
-    if (!k.length) { n.y = cursor + hgt / 2; cursor += hgt + GAP; return; }
+    const G = ghostLayout(n.id), h = nodeLayout(n).h;
+    // How far the post (and its automatic post, if any) reaches above and below its centre.
+    const up = G && !ghostBelow(n.id) ? Math.max(h, G.h) / 2 : h / 2;
+    const down = G ? (ghostBelow(n.id) ? h / 2 + GHOST_DROP + G.h : Math.max(h, G.h) / 2) : h / 2;
+    if (!k.length) { n.y = cursor + up; cursor += up + down + GAP; return; }
     const start = cursor;
     for (const c of k) place(c, depth + 1);
-    n.y = Math.max(start + hgt / 2, (k[0].y + k.at(-1).y) / 2);
-    cursor = Math.max(cursor, n.y + hgt / 2 + GAP);
+    n.y = Math.max(start + up, (k[0].y + k.at(-1).y) / 2);
+    cursor = Math.max(cursor, n.y + down + GAP);
   };
   for (const r of nodes.filter((n) => !parent.has(n))) { place(r, 0); cursor += GAP * 2; }
   for (const n of nodes) { n.x = Math.round(n.x); n.y = Math.round(n.y); }
@@ -840,8 +850,10 @@ document.addEventListener('keydown', (ev) => {
 // ---------- toolbar ----------
 function refreshMapList() {
   const sel = $('map-select');
-  sel.replaceChildren(...Object.values(store.maps).sort((a, b) => b.updated - a.updated)
-    .map((m) => h('option', { value: m.id, selected: m.id === map.id }, m.title || 'Untitled map')));
+  sel.replaceChildren(
+    h('optgroup', { label: 'Your maps' }, Object.values(store.maps).sort((a, b) => b.updated - a.updated)
+      .map((m) => h('option', { value: m.id, selected: m.id === map.id }, m.title || 'Untitled map'))),
+    h('optgroup', { label: 'Load an example here' }, EXAMPLES.map((ex) => h('option', { value: `example:${ex.key}` }, ex.title))));
   $('map-title').value = map.title;
 }
 function openMap(id) {
@@ -857,7 +869,20 @@ $('clear').addEventListener('click', () => {
   changed(); flushSave();
   toast('Map cleared. Undo brings it back.');
 });
-$('map-select').addEventListener('change', (ev) => openMap(ev.target.value));
+// Loading an example replaces this map's posts; Undo brings them back.
+function loadExample(key) {
+  const ex = exampleMap(Date.now(), key);
+  flushSave();
+  map.title = ex.title; map.items = ex.items;
+  selected = null; second = null; spotlight = null; connecting = null;
+  refreshMapList();
+  arrange(); flushSave();
+  toast('Example loaded. Undo brings back what was here.');
+}
+$('map-select').addEventListener('change', (ev) => {
+  const v = ev.target.value;
+  if (v.startsWith('example:')) { loadExample(v.slice(8)); refreshMapList(); } else openMap(v);
+});
 $('map-title').addEventListener('input', (ev) => { map.title = ev.target.value.slice(0, 200); refreshMapList(); renderPanel(); save(); });
 $('new-map').addEventListener('click', () => {
   const m = createMap('Untitled map');

@@ -15,7 +15,7 @@ feed come in later steps.
 - **Direction:** arrows run from a claim out to its reasons, labelled Support,
   Contention, Question or Clarification:
   `'It rained' is supported by 'The sidewalk is wet'`.
-- **Means the same** is a two-way arrow for rewordings and translations ("IOW = translation = means the same thing"): `'A' means the same thing as 'B'`.
+- **Means the same** is a two-way arrow for rewordings and translations ("IOW = translation = means the same thing"): `'A' means the same thing as 'B'`. A rewording shares the support of what it rewords. ("Suggests" arrows were dropped; old maps load them as Questions.)
 - **Unsupported claims** get an automatic post, in bright pink, joined by a
   Contention arrow: "'X' is not yet supported." It disappears once a Support
   arrow is added. It is drawn, not stored. In the social app it should appear
@@ -24,6 +24,7 @@ feed come in later steps.
 - **Fallacy nodes** are definitions ("A Straw man fallacy is when an argument
   ..."), drawn in neon purple. Arrows to them are labelled "Fallacy":
   `'A' is an example of a Straw man fallacy`.
+- **Examples:** the map menu has "Load an example here" (rain, bike lanes, round Earth). Loading one replaces the current map, and Undo brings it back.
 - **Connecting:** select a post, then Shift- or Ctrl-click a second post or arrow label. The panel offers each arrow type; the arrow points from the first pick to the second.
 - **Combined premises** nodes join premises numbered 1, 2a, 2b... On the map a combined-premises node is a small round plus sign; hover or click it to see its words.
 - **Ratings** on any post: stance, confidence 0–100 (decimals allowed, with a
