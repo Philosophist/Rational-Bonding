@@ -57,6 +57,7 @@
       <input id="import-file" type="file" accept=".json,application/json" hidden />
     </div>
     <div id="account-box" class="group account" hidden>
+      <button id="home-btn" hidden>Home</button>
       <button id="sign-in">Sign in</button>
       <select id="account-menu" aria-label="Your account" hidden>
         <option value="">@you</option>
@@ -79,6 +80,38 @@
     <div id="caption" class="caption" hidden></div>
     <aside id="panel" class="panel" aria-live="polite"></aside>
     <div id="toast" class="toast" role="status" hidden></div>
+    <div id="tutorial" class="tutorial" role="dialog" aria-label="Tutorial" hidden></div>
+    <section id="home" class="home" aria-label="Home" hidden>
+      <canvas id="sea" aria-hidden="true"></canvas>
+      <div class="home-feed">
+        <div class="home-head">
+          <h2>What people are saying</h2>
+          <button id="home-sandbox" class="accent">Open my maps</button>
+        </div>
+        <input id="feed-search" type="search" placeholder="Find a statement, then press Enter" aria-label="Find a statement" />
+        <div id="feed" class="feed" aria-live="polite"></div>
+      </div>
+      <p class="sea-hint">Every orb is a post, and every line an inference. Drag to turn the sea, click an orb to find its post.</p>
+    </section>
   </main>
+
+  <div id="welcome" class="welcome" hidden>
+    <div class="card" role="dialog" aria-labelledby="welcome-title">
+      <img src="../images/rational-bonding-logo.png" alt="" width="64" height="58" />
+      <h1 id="welcome-title">Reasonance</h1>
+      <p class="lead">Map what you think, and why. Then see where people really agree.</p>
+      <ul>
+        <li><strong>Every statement and every inference is a post.</strong> Arrows run from a claim to the reasons for and against it.</li>
+        <li><strong>Argue about the reasoning itself,</strong> not just the facts: an arrow can be supported or contended too.</li>
+        <li><strong>Say how much you agree and how sure you are.</strong> Your views stay private unless you share them.</li>
+        <li><strong>Each statement is posted once,</strong> so everyone builds on the same map instead of talking past each other.</li>
+      </ul>
+      <div class="actions">
+        <button id="welcome-signup" class="accent">Sign up or sign in</button>
+        <button id="welcome-tutorial">Start tutorial</button>
+      </div>
+      <a href="#" id="welcome-sandbox" class="small">Or try the sandbox offline, without an account</a>
+    </div>
+  </div>
 </body>
 </html>

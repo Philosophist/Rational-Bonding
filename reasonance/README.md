@@ -12,6 +12,20 @@ privately with their dated history (`rs_ratings`, `rs_rating_history`). Only
 the totals per post are public (`rs_post_stats`). The 3D sea of posts and the
 feed come in later steps.
 
+## First visit and home
+- **First visit** (signed out): a welcome card explains the idea, with "Sign up
+  or sign in", "Start tutorial", and a small link to the offline sandbox. It
+  shows once per browser ("What is Reasonance?" in the overview brings it back).
+- The sandbox starts **blank**. The examples are under "Load an example here"
+  in the map menu.
+- **Tutorial:** a coach card that moves on by itself as you add a claim, write
+  it, support it, contend it and give a view (`TUTORIAL` in `app.js`).
+- **Signed-in home** (`home.js`): the sea of orbs (three.js 0.160.0, loaded
+  only here) where every public post is an orb and every arrow a line, behind
+  a feed of the newest statements. Give a view straight from the feed, find a
+  statement, or "Open in my map". Click an orb to find its post. "Open my maps"
+  goes to the editor, and "Home" comes back.
+
 ## Posting
 - A draft lives only in your map. "Post it" publishes it under your username
   (or anonymously, if you tick "Post Anonymously"); posting an arrow
@@ -69,6 +83,7 @@ feed come in later steps.
 | `fallacies.js` | The built-in fallacy library |
 | `app.js` | SVG board, panel, saving, import/export, the account and posting |
 | `cloud.js` | Supabase calls: saved maps, posts, ratings, totals |
+| `home.js` | The signed-in home: sea of orbs and the feed |
 | `test/db/` | Database tests for the `rs_*` migration on a plain Postgres |
 | `index.html`, `style.css` | The page |
 

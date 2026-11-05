@@ -69,7 +69,7 @@ developer:
 | `blog/` | *The Philosophist's Blog*: plain HTML, no build step. See "Adding a blog post" below. |
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
-| `reasonance/` | Reasonance, the argument-mapping app (working name; see `reasonance/README.md`). Arrows point from a claim out to its reasons. Guests save to the browser; signed in, maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
+| `reasonance/` | Reasonance, the argument-mapping app (working name; see `reasonance/README.md`). Arrows point from a claim out to its reasons. First visit shows a welcome card (sign up, tutorial, or the blank offline sandbox). Signed in, the home is a sea of orbs (three.js) behind a feed; maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
 | `alchemfighter/` | Alchem Fighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
 | `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |

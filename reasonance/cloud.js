@@ -251,3 +251,22 @@ export async function saveSettings(patch) {
   Object.assign(settings, patch);
   check(await db().from('rs_settings').upsert({ user_id: userId(), ...settings }, { onConflict: 'user_id' }));
 }
+
+// ---------------------------------------------------------------- the home page: feed and sea
+// The newest posted statements, for the feed.
+export async function recent(limit = 40) {
+  return check(await db().from('rs_posts').select(COLS).eq('kind', 'node').neq('type', 'combiner')
+    .order('created_at', { ascending: false }).limit(limit));
+}
+// Many posts and arrows at once, just enough to draw the sea of orbs.
+export async function sea(limit = 600) {
+  return check(await db().from('rs_posts').select('id, kind, type, from_post, to_post')
+    .order('created_at', { ascending: false }).limit(limit));
+}
+// Your own views of these posts: { id: { stance, confidence, relevance, public } }.
+export async function myRatings(pids) {
+  if (!pids.length || !signedIn()) return {};
+  const rows = check(await db().from('rs_ratings').select('post_id, stance, confidence, relevance, public')
+    .eq('user_id', userId()).in('post_id', pids));
+  return Object.fromEntries(rows.map((r) => [r.post_id, r]));
+}
