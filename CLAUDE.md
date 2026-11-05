@@ -69,7 +69,7 @@ developer:
 | `blog/` | *The Philosophist's Blog*: plain HTML, no build step. See "Adding a blog post" below. |
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
-| `reasonance/` | Ourgument, the argument-mapping app (formerly called Reasonance; see `reasonance/README.md`). Arrows point from a claim out to its reasons. First visit shows a welcome card (sign up, tutorial, or the blank offline sandbox). Signed in, the home is a sea of orbs (three.js) behind a feed; maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
+| `reasonance/` | Ourgument, the argument-mapping app (formerly called Reasonance; see `reasonance/README.md`), also served at **https://ourgument.com** by a Cloudflare Worker (`reasonance/hosting/`). Arrows point from a claim out to its reasons. First visit shows a welcome card (sign up, tutorial, or the blank offline sandbox). Signed in, the home is a sea of orbs (three.js) behind a feed; maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
 | `alchemfighter/` | Alchem Fighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
 | `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |
@@ -200,6 +200,9 @@ npm run test:db # needs a Supabase stack: SUPABASE_URL, SUPABASE_ANON_KEY, SUPAB
     `chess3d/SETUP.md` under "Sending sign-in emails with Brevo". The SMTP key
     lives only in Supabase.
   - Also recommended: the GitHub domain-verification TXT.
+- **ourgument.com** (Steve's, since 2026-11-05) is in Cloudflare too. A Worker
+  named `ourgument` serves it from rationalbonding.com/reasonance/; see
+  `reasonance/hosting/README.md`. Its URL is in Supabase's Redirect URLs.
 - **GitHub Pages:** custom domain `rationalbonding.com` ("DNS check successful").
   Tick Enforce HTTPS once the certificate is issued.
 - **Donations:**
