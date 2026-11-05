@@ -96,8 +96,10 @@ in [CLAUDE.md](CLAUDE.md).
   https://claude.ai/artifact/KYaEnrF5TgaUmroiHLhaRf
   1. Map editor, guest-only, saving in the browser (done).
   2. Accounts and posts (done): `rs_*` tables by migration, shared sign-in
-     (`accounts/auth.js`, `accounts/signin.js`), posting, private ratings with
-     dated history, public totals, maps saved to the account. Later, Cube
+     (`accounts/auth.js`, `accounts/signin.js`), unique posts (matching what's
+     already posted), anonymous posting, views private unless shared, dated
+     history, public totals, maps saved to the account, pulling public posts
+     into a private map. Later, Cube
      Chess could switch from its own `chess3d/account.js` to `accounts/auth.js`.
   3. The 3D sea of posts (three.js), clicking a post brings it into the map.
   4. Feed and search, belief sharing, "wants to know what you think" asks.

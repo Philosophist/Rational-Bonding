@@ -354,6 +354,7 @@ export function parseMap(text, now = Date.now(), { keepPosts = false } = {}) {
       const n = { id: it.id, kind: 'node', type: it.type, text: String(it.text ?? '').slice(0, MAX_TEXT), x: num(it.x), y: num(it.y) };
       if (it.type === 'fallacy') { n.fallacy = String(it.fallacy ?? 'Unnamed').slice(0, 100); n.when = String(it.when ?? '').slice(0, MAX_TEXT); }
       if (it.rating) n.rating = cleanRating(it.rating);
+      keepChoices(n, it);
       map.items[n.id] = n;
     }
   }
@@ -365,6 +366,7 @@ export function parseMap(text, now = Date.now(), { keepPosts = false } = {}) {
     const e = { id: it.id, kind: 'edge', type, from: String(it.from), to: String(it.to) };
     if (it.premise !== undefined) e.premise = String(it.premise).slice(0, 12);
     if (it.rating) e.rating = cleanRating(it.rating);
+    keepChoices(e, it);
     map.items[e.id] = e;
   }
   for (const e of Object.values(map.items).filter(isEdge)) {
@@ -381,6 +383,11 @@ export function parseMap(text, now = Date.now(), { keepPosts = false } = {}) {
     if (Object.keys(posts).length) map.posts = posts;
   }
   return map;
+}
+// Posting choices: post without a name, and share (or not) your view of it.
+function keepChoices(to, from) {
+  if (from.anonymous === true) to.anonymous = true;
+  if (typeof from.share === 'boolean') to.share = from.share;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

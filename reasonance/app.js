@@ -351,12 +351,13 @@ let renderPanelSuppressed = false;
 function renderPanel() {
   if (renderPanelSuppressed) return;
   const panel = $('panel');
+  const put = (...els) => panel.replaceChildren(...els.flat().filter((e) => e != null && e !== false));
   panel.classList.toggle('compact', !(selected && (map.items[selected] || isGhost(selected))));
-  if (second && map.items[second] && map.items[selected]) { panel.replaceChildren(...linkPanel()); return; }
-  if (isGhost(selected) && boxes.get(selected)) { panel.replaceChildren(...ghostPanel(ghostOwner(selected))); return; }
+  if (second && map.items[second] && map.items[selected]) { put(linkPanel()); return; }
+  if (isGhost(selected) && boxes.get(selected)) { put(ghostPanel(ghostOwner(selected))); return; }
   const it = selected && map.items[selected];
-  if (!it) { panel.replaceChildren(...overviewPanel()); return; }
-  panel.replaceChildren(...(isNode(it) ? nodePanel(it) : edgePanel(it)));
+  if (!it) { put(overviewPanel()); return; }
+  put((isNode(it) ? nodePanel(it) : edgePanel(it)));
 }
 
 function ghostPanel(ownerId) {
@@ -385,7 +386,71 @@ function overviewPanel() {
       h('li', { class: 'more' }, 'Shift-click a second node to connect the two.'),
       h('li', { class: 'more' }, 'Double-click to add. Drag or arrow keys to move.')),
     cloud.auth.state.enabled && !cloud.signedIn() && h('div', { class: 'row' }, h('button', { onclick: signIn }, 'Sign in to post and save to your account')),
+    ...searchBox(),
   ];
+}
+
+// ---------- pulling public posts into this map ----------
+let searchState = { q: '', rows: null, busy: false };
+function searchBox() {
+  if (!cloud.signedIn()) return [];
+  const input = h('input', { type: 'search', placeholder: 'Words from a statement…', value: searchState.q, 'aria-label': 'Search public posts',
+    onkeydown: (ev) => { if (ev.key === 'Enter') runSearch(ev.target.value); } });
+  const rows = searchState.rows;
+  return [
+    h('h3', {}, 'Add from public posts'),
+    h('div', { class: 'row' }, input, h('button', { onclick: () => runSearch(input.value) }, searchState.busy ? 'Searching…' : 'Search')),
+    rows && (rows.length
+      ? h('ul', { class: 'found' }, rows.map((r) => h('li', {}, h('span', {}, postLabel(r)),
+        h('button', { onclick: () => pullPost(r.id) }, itemFor(r.id) ? 'Show it' : 'Add to map'))))
+      : h('p', { class: 'muted' }, 'Nothing posted matches yet. Post it yourself.')),
+  ];
+}
+const postLabel = (r) => r.type === 'fallacy' ? `${r.fallacy} fallacy: ${r.text}` : r.text;
+async function runSearch(q) {
+  searchState = { q, rows: searchState.rows, busy: true }; renderPanel();
+  try { searchState.rows = q.trim() ? await cloud.search(q) : null; } catch (err) { toast(`Search didn't work: ${err.message}`); }
+  searchState.busy = false; renderPanel();
+}
+// The map item standing for a post, if the map has one.
+const itemFor = (pid) => Object.entries(map.posts ?? {}).find(([id, p]) => p === pid && map.items[id])?.[0] ?? null;
+function addPostedNode(r, pos) {
+  const n = addNode(map, { type: r.type, text: r.text, fallacy: r.fallacy, ...pos });
+  cloud.adopt(map, n.id, r);
+  return n.id;
+}
+async function pullPost(pid) {
+  try {
+    const have = itemFor(pid);
+    if (have) { select(have); return; }
+    const r = await cloud.getPost(pid);
+    if (!r) { toast('That post is gone.'); return; }
+    if (r.kind !== 'node') { toast('Add the posts at its ends first.'); return; }
+    const c = toWorld(board.clientWidth / 2, board.clientHeight / 2);
+    selected = addPostedNode(r, { x: c.x, y: c.y });
+    changed();
+    await bringReasons(selected, { quiet: true });
+  } catch (err) { toast(err.message); }
+}
+// Adds the posted arrows leading out from a posted item, and their far ends.
+async function bringReasons(id, { quiet = false } = {}) {
+  const pid = map.posts?.[id];
+  if (!pid) return;
+  try {
+    const { edges, nodes } = await cloud.neighbourhood(pid);
+    const byId = new Map(nodes.map((r) => [r.id, r]));
+    let added = 0;
+    for (const e of edges) {
+      if (itemFor(e.id)) continue;
+      let to = itemFor(e.to_post);
+      const end = byId.get(e.to_post);
+      if (!to && end?.kind === 'node') { computeBoxes(); to = addPostedNode(end, placeNear(id, 330, 0)); }
+      if (!to) continue;
+      try { const made = addEdge(map, e.type, id, to); cloud.adopt(map, made.id, e); added++; } catch { /* doesn't fit this map */ }
+    }
+    changed();
+    if (!quiet || added) toast(added ? `Added ${added} posted ${added === 1 ? 'reason' : 'reasons'}.` : 'Nobody has posted reasons for it yet.');
+  } catch (err) { toast(err.message); }
 }
 
 const REASONS = [
@@ -484,6 +549,18 @@ function edgePanel(e) {
   return els;
 }
 
+const sharing = (it) => it.share ?? cloud.settings.share_views;
+function shareToggle(it) {
+  const pid = cloud.signedIn() && map.posts?.[it.id];
+  if (!pid) return null;
+  const on = sharing(it);
+  return h('div', {},
+    h('label', {}, h('input', { type: 'checkbox', checked: on, onchange: (ev) => {
+      it.share = ev.target.checked; quietChange(); renderPanel();
+      cloud.setShared(pid, it.share).then(() => loadAbout([pid], true)).catch((err) => toast(err.message));
+    } }), 'Share my view publicly'),
+    h('p', { class: 'muted' }, on ? 'Anyone can see your view of this, with your username.' : 'Only you see your view. The public totals count it without your name.'));
+}
 function ratingBlock(it) {
   const r = it.rating ?? {};
   const stance = h('div', { class: 'row' }, Object.entries(STANCES).map(([k, label]) =>
@@ -498,7 +575,7 @@ function ratingBlock(it) {
     h('button', { class: r.relevance >= v ? 'on' : '', title: RELEVANCE[v].text, onclick: () => doRate(it.id, { relevance: r.relevance === v ? null : v }) }, '★')));
   const history = (r.history ?? []).filter((x) => x.stance).slice(-6).reverse();
   return [
-    h('h3', {}, 'Your view'), stance,
+    h('h3', {}, 'Your view'), stance, shareToggle(it),
     h('label', {}, 'Confidence', range, num, '%'),
     h('label', {}, h('input', { type: 'checkbox', checked: logScale, onchange: (ev) => { logScale = ev.target.checked; renderPanel(); } }), 'Log scale (tells 99% from 99.999%)'),
     h('p', { class: 'muted' }, 'How much would it matter to you if the opposite were proven?'), stars,
@@ -525,6 +602,7 @@ function quietChange() {
     renderPanelSuppressed = false;
     const it = map.items[selected];
     if (isNode(it)) $('compound-warn')?.replaceWith(compoundWarning(it));
+    refreshPostBox();
     save();
   }, 120);
 }
@@ -624,9 +702,9 @@ function cancelConnect() { connecting = null; $('hint').hidden = true; render();
 function doRate(id, change) {
   try { const msgs = rate(map, id, change); if (msgs.length) toast(msgs.join(' ')); } catch (err) { toast(err.message); }
   changed();
-  // A posted item's rating is also saved (privately) to the account, with its date.
+  // A posted item's rating is also saved to the account, with its date: private unless shared.
   const pid = cloud.signedIn() && map.posts?.[id];
-  if (pid) cloud.rate(pid, map.items[id].rating).then(() => loadStats([pid], true)).catch((err) => toast(`Your rating wasn't saved to your account: ${err.message}`));
+  if (pid) cloud.rate(pid, map.items[id].rating, sharing(map.items[id])).then(() => { loadStats([pid], true); loadAbout([pid], true); }).catch((err) => toast(`Your rating wasn't saved to your account: ${err.message}`));
 }
 
 // ---------- posting and the account ----------
@@ -642,31 +720,116 @@ async function loadStats(pids, force = false) {
   } catch { /* totals are a nicety */ }
 }
 const othersRated = (it, st) => !!st && st.raters > (it.rating?.stance ? 1 : 0);
-function isFrozen(it) { const pid = map.posts?.[it.id]; return !!pid && othersRated(it, statsCache.get(pid)); }
+// Someone else's post, or yours once others have rated it: its words are fixed.
+const notMine = (pid) => cloud.signedIn() && !cloud.mine.has(pid);
+function isFrozen(it) { const pid = map.posts?.[it.id]; return !!pid && (notMine(pid) || othersRated(it, statsCache.get(pid))); }
+const aboutCache = new Map(); // post id -> { by, anonymous, views }
+async function loadAbout(pids, force = false) {
+  const want = pids.filter((p) => force || !aboutCache.has(p));
+  if (!want.length || !cloud.signedIn()) return;
+  for (const p of want) aboutCache.set(p, aboutCache.get(p) ?? null);
+  try { const got = await cloud.about(want); for (const p of want) aboutCache.set(p, got[p] ?? null); renderPanel(); } catch { /* a nicety */ }
+}
+// What's already posted that a draft matches, by the draft's current words.
+const lookupCache = new Map(); // item id -> { key, result }
+function lookupFor(it) {
+  const row = cloud.rowFor(map, it);
+  const key = JSON.stringify(row);
+  const got = lookupCache.get(it.id);
+  if (got?.key === key) return got.result;
+  lookupCache.set(it.id, { key, result: null });
+  clearTimeout(lookupFor.timer);
+  lookupFor.timer = setTimeout(async () => {
+    try {
+      const result = await cloud.lookup(map, it);
+      if (lookupCache.get(it.id)?.key === key) { lookupCache.set(it.id, { key, result }); if (selected === it.id) refreshPostBox(); }
+    } catch { lookupCache.delete(it.id); }
+  }, 500);
+  return null;
+}
+const confirmedDifferent = new Set(); // drafts their author says differ from the near matches
 
-function postBox(it) {
+// The posting part of the panel, in its own box so it can update while you type.
+function postBox(it) { return [h('div', { id: 'post-box', class: 'postbox' }, postBoxParts(it))]; }
+function refreshPostBox() {
+  const it = map.items[selected];
+  if (it && $('post-box')) $('post-box').replaceWith(...postBox(it));
+}
+function postBoxParts(it) {
   if (!cloud.auth.configured()) return [];
   if (!cloud.signedIn()) return [h('div', { class: 'row' }, h('button', { onclick: signIn }, 'Sign in to post this'))];
   const pid = map.posts?.[it.id];
-  if (!pid) {
-    const more = postOrder(map, [it.id]).filter((id) => !map.posts?.[id]).length - 1;
-    return [h('div', { class: 'row' },
-      h('button', { class: 'accent', onclick: () => postNow([it.id]) }, more ? `Post it, with the ${more} it joins` : 'Post it'),
-      h('span', { class: 'muted' }, `Public, as @${cloud.auth.state.profile.username}`))];
-  }
-  const st = statsCache.get(pid);
+  const anon = h('label', { title: "Anonymous posts don't show your name, so people can't follow you for them." },
+    h('input', { type: 'checkbox', checked: !!it.anonymous, onchange: (ev) => { it.anonymous = ev.target.checked; quietChange(); renderPanel(); } }),
+    'Post without my name');
+  if (!pid) return draftBox(it, anon);
+  const st = statsCache.get(pid), ab = aboutCache.get(pid);
   if (st === undefined) loadStats([pid]);
+  if (ab === undefined) loadAbout([pid]);
   const parts = st ? Object.entries(STANCES).filter(([k]) => st[k]).map(([k, label]) => `${st[k]} ${label.toLowerCase()}`) : [];
-  return [h('p', { class: 'muted' }, h('strong', {}, 'Posted. '),
-    !st ? '' : st.raters ? `So far: ${parts.join(' · ')}.` : 'Nobody has rated it yet.',
-    othersRated(it, st) ? ' Others have rated it, so its words are fixed.' : '')];
+  const yours = cloud.mine.has(pid);
+  const by = yours ? (it.anonymous ? 'Posted by you, without your name.' : 'Posted by you.')
+    : ab ? (ab.by ? `Posted by @${ab.by}.` : 'Posted anonymously.') : 'Posted.';
+  const views = (ab?.views ?? []).filter((v) => !v.me && v.stance);
+  return [
+    h('p', { class: 'muted' }, h('strong', {}, by), ' ',
+      !st ? '' : st.raters ? `So far: ${parts.join(' · ')}.` : 'Nobody has rated it yet.',
+      yours && othersRated(it, st) ? ' Others have rated it, so its words are fixed.' : ''),
+    views.length ? h('p', { class: 'muted' }, 'Shared views: ', views.slice(0, 8).map((v) => `@${v.name ?? 'someone'} ${STANCES[v.stance].toLowerCase()}${v.confidence != null ? ` (${v.confidence}%)` : ''}`).join(' · ')) : null,
+    !yours ? h('p', { class: 'muted' }, "Someone else's post, so the words are theirs. To say it another way, or narrow what it means, add a clarification.") : null,
+    yours ? h('div', { class: 'row' }, anon) : null,
+    isNode(it) ? h('div', { class: 'row' }, h('button', { onclick: () => bringReasons(it.id) }, 'Bring in its posted reasons')) : null,
+  ];
+}
+function draftBox(it, anon) {
+  const me = it.anonymous ? 'Public, without your name' : `Public, as @${cloud.auth.state.profile.username}`;
+  const more = postOrder(map, [it.id]).filter((id) => !map.posts?.[id]).length - 1;
+  const postIt = more ? `Post it, with the ${more} it joins` : 'Post it';
+  const found = isNode(it) && it.type !== 'combiner' ? lookupFor(it) : { exact: null, similar: [] };
+  const els = [];
+  if (found?.exact) {
+    els.push(h('p', { class: 'note' }, h('strong', {}, 'Already posted, word for word. '), 'Each statement is posted once, so your map can use that post. To mean something narrower, use it and add a clarification or a definition.'),
+      h('div', { class: 'row' },
+        h('button', { class: 'accent', onclick: () => postNow([it.id]) }, 'Use the posted one'),
+        h('button', { onclick: async () => { await postNow([it.id]); if (map.posts?.[it.id]) addReason(it.id, 'clarification'); } }, 'Use it and clarify')));
+    return els;
+  }
+  if (found?.similar?.length) {
+    els.push(h('p', { class: 'note' }, h('strong', {}, 'Is it one of these? '), 'These are already posted. Use one, or say how yours differs.'),
+      h('ul', { class: 'found' }, found.similar.slice(0, 4).map((r) => h('li', {}, h('span', {}, postLabel(r)),
+        h('button', { onclick: () => useExisting(it.id, r.id) }, 'Use this one')))));
+    const differs = confirmedDifferent.has(it.id);
+    els.push(h('div', { class: 'row' },
+      h('button', { class: differs ? 'accent' : '', onclick: () => { confirmedDifferent.add(it.id); postNow([it.id]); } }, 'Mine is different: post it'),
+      h('button', { onclick: () => addReason(it.id, 'clarification') }, 'Add a clarification')),
+      h('div', { class: 'row' }, anon, h('span', { class: 'muted' }, me)));
+    return els;
+  }
+  els.push(h('div', { class: 'row' },
+    h('button', { class: 'accent', onclick: () => postNow([it.id]) }, postIt),
+    h('span', { class: 'muted' }, found === null && isNode(it) ? 'Checking what is already posted…' : me)),
+    h('div', { class: 'row' }, anon));
+  return els;
+}
+async function useExisting(id, pid) {
+  try { flushSave(); await cloud.link(map, id, pid); lookupCache.delete(id); changed(); toast('Your map now uses that post.'); }
+  catch (err) { toast(err.message); }
 }
 async function postNow(ids) {
   try {
     flushSave();
-    const n = await cloud.post(map, ids);
+    const r = await cloud.post(map, ids, { confirmed: confirmedDifferent, share: cloud.settings.share_views });
     changed();
-    toast(n === 1 ? 'Posted.' : `Posted ${n} items.`);
+    const said = [];
+    if (r.posted) said.push(r.posted === 1 ? 'Posted.' : `Posted ${r.posted} items.`);
+    if (r.linked) said.push(r.linked === 1 ? 'One was already posted, so your map uses that post.' : `${r.linked} were already posted, so your map uses those posts.`);
+    const close = r.held.find((id) => isNode(map.items[id]));
+    if (close) {
+      said.push(r.held.length === 1 ? 'One looks like a post already out there: have a look before posting it.'
+        : `${r.held.length} wait on posts that look like ones already out there: have a look before posting them.`);
+      selected = close; render();
+    }
+    toast(said.join(' ') || 'Nothing new to post.');
   } catch (err) { toast(`Not posted: ${err.message}`); changed(); }
 }
 function deleteRow(it) {
@@ -747,9 +910,10 @@ async function useAccount(uid, { quiet = false } = {}) {
   mine.owner = uid;
   store = mine; map = store.maps[store.current];
   selected = null; second = null; spotlight = null; connecting = null;
-  statsCache.clear();
+  forgetAccount();
   resetHistory(); refreshMapList(); fit();
   try { localStorage.setItem(storeKey(), JSON.stringify(store)); } catch { /* fine */ }
+  cloud.loadSettings().then(() => { renderAccount(); renderPanel(); }).catch(() => {});
   // Send up anything the account doesn't have yet.
   for (const m of Object.values(store.maps)) {
     if (!(m.id in remoteUpdated) || remoteUpdated[m.id] < m.updated) cloud.saveMap(m).catch(() => {});
@@ -758,13 +922,18 @@ async function useAccount(uid, { quiet = false } = {}) {
   if (moved || !quiet) toast(moved ? `Signed in. ${moved === 1 ? 'The map' : `${moved} maps`} you made here ${moved === 1 ? 'is' : 'are'} now saved to your account.` : 'Signed in. Your maps save to your account.');
 }
 async function refreshPosted() {
-  try { if (await cloud.refresh(map)) { render(); } } catch { /* offline: keep the local copy */ }
+  try { if (await cloud.refresh(map)) render(); else renderPanel(); } catch { /* offline: keep the local copy */ }
 }
 function useGuest() {
   store = load(STORE); map = store.maps[store.current];
   selected = null; second = null; spotlight = null; connecting = null;
-  statsCache.clear();
+  forgetAccount();
+  cloud.settings.share_views = false;
   resetHistory(); refreshMapList(); fit();
+}
+function forgetAccount() {
+  statsCache.clear(); aboutCache.clear(); lookupCache.clear(); confirmedDifferent.clear();
+  cloud.forgetMine(); searchState = { q: '', rows: null, busy: false };
 }
 async function signOut() {
   await pushCloud();
@@ -781,6 +950,8 @@ function renderAccount() {
   $('sign-in').textContent = user && !profile ? 'Choose a username' : 'Sign in';
   $('account-menu').hidden = !profile;
   if (profile) $('account-menu').firstElementChild.textContent = `@${profile.username}`;
+  const share = $('account-menu').querySelector('option[value="share"]');
+  if (share) share.textContent = `Share my views by default: ${cloud.settings.share_views ? 'on' : 'off'}`;
 }
 let accountUser = null, accountsReady = false;
 async function onAccount(st) {
@@ -1160,6 +1331,11 @@ $('sign-in').addEventListener('click', signIn);
 $('account-menu').addEventListener('change', (ev) => {
   const what = ev.target.value; ev.target.value = '';
   if (what === 'username') openUsername();
+  else if (what === 'share') {
+    cloud.saveSettings({ share_views: !cloud.settings.share_views })
+      .then(() => { renderAccount(); renderPanel(); toast(cloud.settings.share_views ? 'New views you give will be public. You can still keep any one private.' : 'New views you give will be private. You can still share any one.'); })
+      .catch((err) => toast(err.message));
+  }
   else if (what === 'signout') signOut();
 });
 addEventListener('pagehide', () => { if (store.owner) pushCloud(); });

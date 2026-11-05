@@ -184,3 +184,12 @@ test('posted items keep their server ids only in a map\'s own saved copy', () =>
   assert.equal(parseMap(serialize(m)).posts, undefined, 'an opened file starts as drafts');
   assert.deepEqual(postOrder(m, [e.id]), [a.id, b.id, e.id], 'ends are posted before their arrow');
 });
+
+test('posting choices (anonymous, share) survive saving and loading', () => {
+  const m = createMap('t', 1);
+  const a = addNode(m, { text: 'A.' });
+  a.anonymous = true; a.share = false;
+  const back = parseMap(serialize(m));
+  assert.equal(back.items[a.id].anonymous, true);
+  assert.equal(back.items[a.id].share, false);
+});

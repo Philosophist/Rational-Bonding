@@ -13,8 +13,22 @@ the totals per post are public (`rs_post_stats`). The 3D sea of posts and the
 feed come in later steps.
 
 ## Posting
-- A draft lives only in your map. "Post it" publishes it under your username;
-  posting an arrow also posts any draft ends it needs.
+- A draft lives only in your map. "Post it" publishes it under your username
+  (or without a name, if you tick "Post without my name"); posting an arrow
+  also posts any draft ends it needs.
+- **Every post is unique.** The same words (ignoring case, spacing, quotes and
+  end punctuation), or the same arrow between the same two posts, can be
+  posted only once (`rs_post_key`, a unique index). Statements, axioms and
+  clarifications share words; questions and fallacies are compared on their
+  own. If it's already posted, the map uses that post instead. A statement
+  that shares most of its words with an existing one (`rs_similar`) is held
+  back with "Is it one of these?" until its author picks one, adds a
+  clarification, or says theirs is different.
+- **Pulling from public posts:** signed in, the overview has "Add from public
+  posts" (search), and a posted statement has "Bring in its posted reasons",
+  so a private map can be built from what's already posted.
+- **Views** are private unless shared, one by one ("Share my view publicly")
+  or by default (the account menu). The history of a view is always private.
 - You can edit a post's words until someone else rates it. Then they freeze
   (the database refuses the change), so nobody can change what people agreed
   with. Flipping an arrow is always allowed.

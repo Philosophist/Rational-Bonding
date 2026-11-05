@@ -87,4 +87,58 @@ do $$ begin
 end $$;
 select pg_temp.expect_fail($q$insert into rs_posts (kind, type, text) values ('node','statement','too many')$q$, 'lot of posting');
 reset role;
+-- uniqueness: the same words (any case, spacing, end punctuation) post once
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a', false); end $$;
+set role authenticated;
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, text) values ('node','statement','  the sidewalk   is WET ')$q$, 'already been posted');
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, text) values ('node','axiom','“The sidewalk is wet”')$q$, 'already been posted');
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, text) values ('node','statement','  ...  ')$q$, 'Write the statement');
+insert into rs_posts (id, kind, type, text) values ('10000000-0000-0000-0000-000000000006','node','question','Is the sidewalk wet?');
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, text) values ('node','question','is the sidewalk wet')$q$, 'already been posted');
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, from_post, to_post) values ('edge','support','10000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000002')$q$, 'already been posted');
+insert into rs_posts (id, kind, type, from_post, to_post) values ('10000000-0000-0000-0000-000000000007','edge','support','10000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001');
+insert into rs_posts (id, kind, type, from_post, to_post) values ('10000000-0000-0000-0000-000000000008','edge','same','10000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000006');
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, from_post, to_post) values ('edge','same','10000000-0000-0000-0000-000000000006','10000000-0000-0000-0000-000000000002')$q$, 'already been posted');
+-- editing into a duplicate is refused too
+select pg_temp.expect_fail($q$update rs_posts set text='It rained last night' where id='10000000-0000-0000-0000-000000000002'$q$, 'already been posted');
+do $$ begin
+  if public.rs_find('node','statement','the sidewalk is wet.',null,null,null) <> '10000000-0000-0000-0000-000000000002' then raise exception 'rs_find statement'; end if;
+  if public.rs_find('edge','support',null,null,'10000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000002') <> '10000000-0000-0000-0000-000000000003' then raise exception 'rs_find edge'; end if;
+  if public.rs_find('node','statement','The street is wet',null,null,null) is not null then raise exception 'rs_find false match'; end if;
+  if (select id from public.rs_similar('The sidewalks were wet') limit 1) <> '10000000-0000-0000-0000-000000000002' then raise exception 'rs_similar %', (select array_agg(text) from public.rs_similar('The sidewalks were wet')); end if;
+  if exists (select 1 from public.rs_similar('Bananas are yellow') where score >= 0.5) then raise exception 'rs_similar false match'; end if;
+end $$;
+-- the author column is never readable; byline is, unless anonymous
+select pg_temp.expect_fail($q$select author from rs_posts$q$, 'permission');
+insert into rs_posts (id, kind, type, text, anonymous) values ('10000000-0000-0000-0000-000000000009','node','statement','Nobody knows I said this.', true);
+do $$ begin
+  if (select byline from rs_posts where id='10000000-0000-0000-0000-000000000006') <> '00000000-0000-0000-0000-00000000000a' then raise exception 'byline missing'; end if;
+  if (select byline from rs_posts where id='10000000-0000-0000-0000-000000000009') is not null then raise exception 'anonymous post shows its author'; end if;
+  if (select count(*) from public.rs_mine(array['10000000-0000-0000-0000-000000000009','10000000-0000-0000-0000-000000000002']::uuid[])) <> 2 then raise exception 'rs_mine for alice'; end if;
+end $$;
+update rs_posts set anonymous = false where id='10000000-0000-0000-0000-000000000009';
+update rs_posts set anonymous = true where id='10000000-0000-0000-0000-000000000009';
+-- views: private unless shared, history always private
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000b', false); end $$;
+do $$ begin
+  if exists (select 1 from public.rs_mine(array['10000000-0000-0000-0000-000000000009']::uuid[])) then raise exception 'rs_mine leaked'; end if;
+  if (select byline from rs_posts where id='10000000-0000-0000-0000-000000000009') is not null then raise exception 'anonymous leaked to bob'; end if;
+end $$;
+select pg_temp.expect_fail($q$select author from rs_posts$q$, 'permission');
+update rs_ratings set public = true where post_id='10000000-0000-0000-0000-000000000001';
+insert into rs_settings (share_views) values (true);
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a', false); end $$;
+do $$ begin
+  if (select count(*) from rs_ratings where post_id='10000000-0000-0000-0000-000000000001' and user_id='00000000-0000-0000-0000-00000000000b') <> 1 then raise exception 'shared view not visible'; end if;
+  if exists (select 1 from rs_rating_history where user_id='00000000-0000-0000-0000-00000000000b') then raise exception 'history leaked with a shared view'; end if;
+  if exists (select 1 from rs_settings) then raise exception 'settings leaked'; end if;
+end $$;
+update rs_ratings set stance='disagree' where user_id='00000000-0000-0000-0000-00000000000b'; -- matches 0 rows under RLS
+do $$ begin if (select stance from rs_ratings where user_id='00000000-0000-0000-0000-00000000000b' and post_id='10000000-0000-0000-0000-000000000001') <> 'agree' then raise exception 'alice changed bob''s shared view'; end if; end $$;
+reset role; set role anon;
+do $$ begin perform set_config('request.jwt.claim.sub','', false); end $$;
+do $$ begin
+  if (select count(*) from rs_ratings) <> 1 then raise exception 'anon should see just the one shared view'; end if;
+end $$;
+reset role;
 select 'ALL PASSED';

@@ -11,10 +11,17 @@
 --     any social post. Only the author can change or delete one, and its words
 --     and arrow type freeze as soon as anyone else has rated it, so nobody can
 --     change what people agreed or disagreed with.
+--   * Every post is unique: the same statement (ignoring case, spacing and
+--     end punctuation), or the same arrow between the same two posts, can be
+--     posted only once. Later posters reuse it, or say something different.
+--   * Posts show their author's username unless the author chose to post
+--     anonymously. The author column itself can't be read by anyone; the
+--     public `byline` column holds it only for posts that aren't anonymous.
 --   * A post can't be deleted while someone else has rated it, and an arrow
 --     pointing at it keeps it alive (the arrow must go first).
---   * Ratings and their history are private to the person who made them.
---     Only the totals per post (rs_post_stats) are public, kept by the
+--   * Ratings are private unless the rater shares that one (`public`), or
+--     sets sharing as their default (rs_settings). Rating history is always
+--     private. The totals per post (rs_post_stats) are public, kept by the
 --     database itself.
 --   * Saved maps (a person's sandbox, including unposted drafts) are private.
 --   * A light limit stops any one account posting more than 300 posts an hour.
@@ -35,6 +42,12 @@ create table if not exists public.rs_posts (
   from_post uuid references public.rs_posts (id) on delete restrict,
   to_post uuid references public.rs_posts (id) on delete restrict,
   premise text check (premise is null or char_length(premise) <= 12),
+  -- Posted without a name: byline stays empty.
+  anonymous boolean not null default false,
+  -- The author, shown publicly; null for anonymous posts. Set by the database.
+  byline uuid,
+  -- What makes the post unique (see rs_post_key). Set by the database.
+  ukey text,
   created_at timestamptz not null default now(),
   edited_at timestamptz,
   check (
@@ -49,7 +62,13 @@ create table if not exists public.rs_posts (
 create index if not exists rs_posts_author on public.rs_posts (author, created_at desc);
 create index if not exists rs_posts_from on public.rs_posts (from_post);
 create index if not exists rs_posts_to on public.rs_posts (to_post);
+create unique index if not exists rs_posts_ukey on public.rs_posts (ukey);
+create index if not exists rs_posts_words on public.rs_posts using gin (to_tsvector('english', text));
 alter table public.rs_posts enable row level security;
+-- Everything but the author column is public to read.
+revoke select on public.rs_posts from anon, authenticated;
+grant select (id, kind, type, text, fallacy, from_post, to_post, premise, anonymous, byline, ukey, created_at, edited_at)
+  on public.rs_posts to anon, authenticated;
 
 -- ---------------------------------------------------------------- ratings
 create table if not exists public.rs_ratings (
@@ -58,6 +77,8 @@ create table if not exists public.rs_ratings (
   stance text check (stance in ('agree', 'disagree', 'unknown', 'incomprehensible')),
   confidence numeric check (confidence between 0 and 100),
   relevance smallint check (relevance between 1 and 5),
+  -- Shared publicly by the rater (off unless they choose it).
+  public boolean not null default false,
   updated_at timestamptz not null default now(),
   primary key (user_id, post_id)
 );
@@ -89,6 +110,15 @@ create table if not exists public.rs_post_stats (
 );
 alter table public.rs_post_stats enable row level security;
 
+-- A person's Reasonance settings.
+create table if not exists public.rs_settings (
+  user_id uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  -- Share new ratings publicly unless turned off on the post.
+  share_views boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table public.rs_settings enable row level security;
+
 -- ---------------------------------------------------------------- maps
 -- A person's saved sandbox, in the editor's own format. Posted items carry
 -- the id of their rs_posts row; drafts live only here.
@@ -103,6 +133,67 @@ create table if not exists public.rs_maps (
 alter table public.rs_maps enable row level security;
 
 -- ---------------------------------------------------------------- helpers
+-- A statement's words in a standard form: lower case, single spaces, curly
+-- quotes made straight, and no quotes or end punctuation around it.
+create or replace function public.rs_norm(t text) returns text
+language sql immutable set search_path = public as $$
+  select regexp_replace(
+    regexp_replace(lower(translate(coalesce(t, ''), '‘’“”', '''''""')), '\s+', ' ', 'g'),
+    '^[ "'']+|[ "''.!?;:,…]+$', '', 'g');
+$$;
+
+-- What makes a post unique. Statements, axioms and clarifications share words
+-- (the same words are the same statement); questions are their own; a
+-- fallacy is its name plus its definition; combined-premises nodes are
+-- defined by their premises, so they aren't compared. An arrow is its type
+-- and its two ends, in either order for the two-way types.
+create or replace function public.rs_post_key(k text, ty text, tx text, fa text, a uuid, b uuid) returns text
+language sql immutable set search_path = public as $$
+  select case
+    when k = 'node' and ty = 'fallacy' then 'f:' || public.rs_norm(fa) || '|' || public.rs_norm(tx)
+    when k = 'node' and ty = 'combiner' then null
+    when k = 'node' then (case when ty = 'question' then 'q:' else 's:' end) || public.rs_norm(tx)
+    when ty in ('same', 'contradicts', 'exclusive', 'necessary')
+      then 'e:' || ty || ':' || least(a::text, b::text) || ':' || greatest(a::text, b::text)
+    else 'e:' || ty || ':' || a::text || ':' || b::text
+  end;
+$$;
+
+-- The post that already says this, if any (an arrow to a fallacy counts as
+-- an example, as it would be posted).
+create or replace function public.rs_find(k text, ty text, tx text, fa text, a uuid, b uuid) returns uuid
+language sql stable security definer set search_path = public as $$
+  select id from public.rs_posts where ukey = public.rs_post_key(k,
+    case when k = 'edge' and exists (select 1 from public.rs_posts f where f.id = b and f.kind = 'node' and f.type = 'fallacy')
+      then 'example' else ty end, tx, fa, a, b);
+$$;
+
+-- Posted statements that share most of their words with q, best first, for
+-- "is this what you mean?" suggestions and for search.
+create or replace function public.rs_similar(q text, min_score real default 0.5, lim int default 8)
+returns table (id uuid, type text, text text, fallacy text, byline uuid, score real)
+language sql stable security definer set search_path = public as $$
+  with w as (
+    select array(select distinct unnest(tsvector_to_array(to_tsvector('english', q)))) as ql
+  ), c as (
+    select p.*, array(select distinct unnest(tsvector_to_array(to_tsvector('english', p.text)))) as pl
+    from public.rs_posts p, w
+    where p.kind = 'node' and cardinality(w.ql) > 0
+      and to_tsvector('english', p.text) @@ array_to_string(array(select quote_literal(x) from unnest(w.ql) x), ' | ')::tsquery
+  )
+  select c.id, c.type, c.text, c.fallacy, c.byline,
+    ((select count(*) from unnest(c.pl) x where x = any(w.ql))::real / greatest(cardinality(w.ql), cardinality(c.pl), 1)) as score
+  from c, w
+  order by score desc, c.created_at
+  limit least(greatest(lim, 1), 50);
+$$;
+
+-- Which of these posts are yours (the author column itself isn't readable).
+create or replace function public.rs_mine(ids uuid[]) returns setof uuid
+language sql stable security definer set search_path = public as $$
+  select id from public.rs_posts where id = any(ids) and author = auth.uid();
+$$;
+
 -- Whether anyone other than the author has rated a post. Security definer,
 -- because ratings are private and a plain query would only see your own.
 create or replace function public.rs_rated_by_others(p uuid) returns boolean
@@ -131,6 +222,7 @@ begin
     end if;
     new.created_at := now();
     new.edited_at := null;
+    new.anonymous := coalesce(new.anonymous, false);
   else
     if new.id <> old.id or new.author is distinct from old.author or new.kind <> old.kind
        or new.created_at <> old.created_at then
@@ -172,6 +264,16 @@ begin
     if new.type <> 'premise' then new.premise := null; end if;
     new.text := '';
     new.fallacy := null;
+  end if;
+
+  if new.kind = 'node' and new.type not in ('combiner', 'fallacy') and public.rs_norm(new.text) = '' then
+    raise exception 'Write the statement before posting it.';
+  end if;
+  new.byline := case when new.anonymous then null else new.author end;
+  new.ukey := public.rs_post_key(new.kind, new.type, new.text, new.fallacy, new.from_post, new.to_post);
+  if new.ukey is not null and exists (select 1 from public.rs_posts where ukey = new.ukey and id <> new.id) then
+    raise exception 'That has already been posted. Use the existing post, or clarify how yours is different.'
+      using errcode = 'unique_violation';
   end if;
   return new;
 end;
@@ -225,6 +327,10 @@ drop trigger if exists rs_ratings_stamp on public.rs_ratings;
 create trigger rs_ratings_stamp before insert or update on public.rs_ratings
   for each row execute function public.rs_ratings_stamp();
 
+drop trigger if exists rs_settings_stamp on public.rs_settings;
+create trigger rs_settings_stamp before insert or update on public.rs_settings
+  for each row execute function public.rs_ratings_stamp();
+
 drop trigger if exists rs_maps_stamp on public.rs_maps;
 create trigger rs_maps_stamp before insert or update on public.rs_maps
   for each row execute function public.rs_ratings_stamp();
@@ -244,6 +350,14 @@ create policy "rs_posts: delete your own until others rate it" on public.rs_post
 
 drop policy if exists "rs_ratings: your own only" on public.rs_ratings;
 create policy "rs_ratings: your own only" on public.rs_ratings for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+drop policy if exists "rs_ratings: anyone can read shared ones" on public.rs_ratings;
+create policy "rs_ratings: anyone can read shared ones" on public.rs_ratings for select
+  using (public);
+
+drop policy if exists "rs_settings: your own only" on public.rs_settings;
+create policy "rs_settings: your own only" on public.rs_settings for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
 drop policy if exists "rs_rating_history: read your own" on public.rs_rating_history;
