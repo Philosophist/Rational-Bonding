@@ -151,7 +151,11 @@ function wrap(text, chars = CHARS) {
 // ---------- geometry ----------
 // Every item has a box {cx, cy, w, h}. A node's comes from its text; an
 // edge's is its label pill, sitting halfway between its two ends.
+// A combined-premises node is a small round plus sign. Its words show on
+// hover, and in the panel when it is selected.
+const COMBINER_D = 44;
 function nodeLayout(n) {
+  if (n.type === 'combiner') return { lines: [], sLines: [], w: COMBINER_D, h: COMBINER_D, plus: true };
   const lines = wrap(nodeText(n));
   const sLines = [];
   const parts = compoundParts(n);
@@ -168,11 +172,10 @@ function ghostLayout(id) {
   const lines = wrap(text, 24);
   return { text, lines, w: GHOST_W, h: 18 + lines.length * 16 };
 }
-// Premise arrows show just a plus sign; hovering or selecting one spells it out.
 function pillLabel(e) {
-  return e.type === 'premise' ? '+' : EDGE_TYPES[e.type].label;
+  return e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
 }
-const pillWidth = (label) => (label === '+' ? 24 : label.length * 7 + 22);
+const pillWidth = (label) => label.length * 7 + 22;
 function computeBoxes() {
   const boxes = new Map();
   for (const it of Object.values(map.items)) {
@@ -236,17 +239,9 @@ function render() {
 
     const pg = s('g', { class: `pill${selected === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
     s('rect', { class: 'hit', x: p.cx - p.w / 2 - 8, y: p.cy - p.h / 2 - 8, width: p.w + 16, height: p.h + 16 }, pg);
-    const short = s('g', { class: e.type === 'premise' ? 'short' : '' }, pg);
-    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, short);
-    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, short);
+    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, pg);
+    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, pg);
     t.textContent = p.label;
-    if (e.type === 'premise') {
-      const full = `Premise ${e.premise}`, fw = pillWidth(full);
-      const long = s('g', { class: 'long' }, pg);
-      s('rect', { x: p.cx - fw / 2, y: p.cy - p.h / 2, width: fw, height: p.h, rx: 12, stroke: color }, long);
-      const lt = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, long);
-      lt.textContent = full;
-    }
     if (e.rating?.stance) stanceDot(pg, p.cx + p.w / 2 - 2, p.cy - p.h / 2 + 2, e.rating.stance);
     const title = s('title', {}, pg); title.textContent = itemText(map, e.id);
   }
@@ -276,6 +271,13 @@ function render() {
     const b = boxes.get(n.id), L = b.L, color = NODE_COLORS[n.type];
     const g = s('g', { class: `node t-${n.type}${selected === n.id ? ' sel' : ''}${lit && !lit.has(n.id) ? ' dim' : ''}${connecting && canConnect(n.id) ? ' target-ok' : ''}`, 'data-id': n.id }, layers.nodes);
     const x0 = b.cx - b.w / 2, y0 = b.cy - b.h / 2;
+    if (L.plus) {
+      s('rect', { class: 'box', x: x0, y: y0, width: b.w, height: b.h, rx: b.w / 2, stroke: color }, g);
+      const plus = s('text', { class: 'plus', x: b.cx, y: b.cy + 9, 'text-anchor': 'middle', fill: color }, g); plus.textContent = '+';
+      const tip = s('title', {}, g); tip.textContent = `Combined premises: ${nodeText(n)}`;
+      if (n.rating?.stance) stanceDot(g, x0 + b.w - 4, y0 + 4, n.rating.stance);
+      continue;
+    }
     s('rect', { class: 'box', x: x0, y: y0, width: b.w, height: b.h, rx: 14, stroke: color }, g);
     const kind = s('text', { class: 'kind', x: x0 + 12, y: y0 + 18 }, g);
     kind.textContent = n.type === 'fallacy' ? `Fallacy · ${n.fallacy}` : NODE_TYPES[n.type].label;
