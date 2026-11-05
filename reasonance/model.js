@@ -45,7 +45,7 @@ export const STANCES = {
 // stance were proven true, to your own satisfaction.
 export const RELEVANCE = [
   null,
-  { text: "I wouldn't want to know", cheer: 'Thanks for being honest! =)' },
+  { text: "I don't care. Don't bother telling me.", cheer: "Fair enough. Whether you'd rather not know or just don't care, saying so honestly is a good start." },
   { text: "I wouldn't care", cheer: 'Indifferent' },
   { text: "I don't know how I'd react", cheer: 'Good answer!' },
   { text: 'I would want to know', cheer: 'Interested' },
