@@ -1,4 +1,4 @@
-// Reasonance and the shared Rational Bonding account: saved maps, published
+// Ourgument and the shared Rational Bonding account: saved maps, published
 // posts and ratings, in the rs_* tables
 // (chess3d/supabase/migrations/20261105120000_reasonance.sql).
 //

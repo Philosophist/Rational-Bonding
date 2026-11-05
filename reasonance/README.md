@@ -1,4 +1,4 @@
-# Reasonance
+# Ourgument
 
 An argument-mapping app: every statement (node) and every inference (arrow) is
 a post, and an arrow can point at another arrow, so people can support or
@@ -15,7 +15,7 @@ feed come in later steps.
 ## First visit and home
 - **First visit** (signed out): a welcome card explains the idea, with "Sign up
   or sign in", "Start tutorial", and a small link to the offline sandbox. It
-  shows once per browser ("What is Reasonance?" in the overview brings it back).
+  shows once per browser ("What is Ourgument?" in the overview brings it back).
 - The sandbox starts **blank**. The examples are under "Load an example here"
   in the map menu.
 - **Tutorial:** a coach card that moves on by itself as you add a claim, write

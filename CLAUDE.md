@@ -63,13 +63,13 @@ developer:
 | `index.html`, `site.css`, `site.js` | Homepage: the hub that points to every project (add a card for each new one), plus "Buy me a coffee" |
 | `site-config.js` | Public donation details (Monero address, Cash App `$youngidealist`) and the privacy contact email. Empty values are hidden. |
 | `accounts/config.js` | The shared Rational Bonding account settings (Supabase URL, publishable key, wallet chains) used by every game |
-| `accounts/auth.js`, `accounts/signin.js` | Shared sign-in for any page: Supabase auth and `profiles`, plus the sign-in and username dialogs (used by Reasonance; Cube Chess still has its own copy) |
+| `accounts/auth.js`, `accounts/signin.js` | Shared sign-in for any page: Supabase auth and `profiles`, plus the sign-in and username dialogs (used by Ourgument; Cube Chess still has its own copy) |
 | `privacy/` | Privacy policy, linked from every footer and the sign-in dialog |
 | `blog/more-ways/` | "More ways (ref links) to hook me up": referral links (Wise), each explained and disclosed as a referral, with `rel="sponsored"` |
 | `blog/` | *The Philosophist's Blog*: plain HTML, no build step. See "Adding a blog post" below. |
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
-| `reasonance/` | Reasonance, the argument-mapping app (working name; see `reasonance/README.md`). Arrows point from a claim out to its reasons. First visit shows a welcome card (sign up, tutorial, or the blank offline sandbox). Signed in, the home is a sea of orbs (three.js) behind a feed; maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
+| `reasonance/` | Ourgument, the argument-mapping app (formerly called Reasonance; see `reasonance/README.md`). Arrows point from a claim out to its reasons. First visit shows a welcome card (sign up, tutorial, or the blank offline sandbox). Signed in, the home is a sea of orbs (three.js) behind a feed; maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
 | `alchemfighter/` | Alchem Fighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
 | `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |

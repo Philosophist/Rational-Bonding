@@ -1,4 +1,4 @@
-// Reasonance map model: no DOM code, so it can be tested in Node.
+// Ourgument map model: no DOM code, so it can be tested in Node.
 //
 // Every node and every edge is an item ("a post"). An edge connects any two
 // items, including other edges, which is how people support or contend an

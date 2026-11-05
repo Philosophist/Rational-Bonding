@@ -24,7 +24,7 @@ for (const ex of EXAMPLES) {
   }
 }
 
-console.log(`-- Reasonance: the example arguments (rain, bike lanes, round Earth) as real
+console.log(`-- Ourgument: the example arguments (rain, bike lanes, round Earth) as real
 -- public posts, authored by a "Claude" account, so the public system has
 -- something in it from the start. Written by reasonance/tools/seed-examples.mjs.
 --
@@ -66,5 +66,5 @@ begin
 
 ${lines.join('\n')}
 exception when others then
-  raise warning 'Reasonance examples were not posted: %', sqlerrm;
+  raise warning 'Ourgument examples were not posted: %', sqlerrm;
 end $$;`);

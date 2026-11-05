@@ -139,7 +139,7 @@ body.present .toast { top: 12px; bottom: auto; }
 .link-preview line { stroke-width: 2.5; }
 .panel .postbox { display: flex; flex-direction: column; gap: 8px; }
 
-/* First visit: what Reasonance is, and a nudge to sign up. */
+/* First visit: what Ourgument is, and a nudge to sign up. */
 .welcome {
   position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px;
   background: radial-gradient(circle at 30% 20%, rgba(47, 227, 230, 0.12), transparent 50%),

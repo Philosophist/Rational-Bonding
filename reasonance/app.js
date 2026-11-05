@@ -1,4 +1,4 @@
-// Reasonance map editor: SVG board, panel and saving. The rules of the map
+// Ourgument map editor: SVG board, panel and saving. The rules of the map
 // live in model.js. Arrowheads are drawn as plain triangles (no SVG
 // <marker> references), so they show up wherever the page is hosted.
 import {
@@ -392,7 +392,7 @@ function overviewPanel() {
     cloud.auth.state.enabled && !cloud.signedIn() && h('div', { class: 'row' }, h('button', { onclick: signIn }, 'Sign in to post and save to your account')),
     h('div', { class: 'row' },
       h('button', { onclick: startTutorial }, tutorial ? 'Restart the tutorial' : 'Start tutorial'),
-      h('button', { onclick: showWelcome }, 'What is Reasonance?')),
+      h('button', { onclick: showWelcome }, 'What is Ourgument?')),
     ...searchBox(),
   ];
 }
@@ -1361,7 +1361,7 @@ $('file-menu').addEventListener('change', async (ev) => {
   const what = ev.target.value; ev.target.value = '';
   if (what === 'download') {
     const blob = new Blob([serialize(map)], { type: 'application/json' });
-    const a = h('a', { href: URL.createObjectURL(blob), download: `${(map.title || 'map').replace(/[^\w\- ]+/g, '').trim() || 'map'}.reasonance.json` });
+    const a = h('a', { href: URL.createObjectURL(blob), download: `${(map.title || 'map').replace(/[^\w\- ]+/g, '').trim() || 'map'}.ourgument.json` });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   } else if (what === 'import') {

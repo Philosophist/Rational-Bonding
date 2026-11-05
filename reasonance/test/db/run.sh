@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs the Reasonance database tests against a throwaway database on a plain
+# Runs the Ourgument database tests against a throwaway database on a plain
 # local Postgres (no Supabase stack needed): a tiny stand-in for Supabase's
 # auth schema and roles, then both migrations, then the checks.
 #   PSQL="psql -h localhost -p 5432 -U postgres" sh test/db/run.sh

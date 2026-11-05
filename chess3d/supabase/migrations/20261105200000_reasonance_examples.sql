@@ -1,4 +1,4 @@
--- Reasonance: the example arguments (rain, bike lanes, round Earth) as real
+-- Ourgument: the example arguments (rain, bike lanes, round Earth) as real
 -- public posts, authored by a "Claude" account, so the public system has
 -- something in it from the start. Written by reasonance/tools/seed-examples.mjs.
 --
@@ -97,5 +97,5 @@ begin
   insert into seed_posts values ('earth:n19e29bb07e83', pg_temp.rs_seed(claude, 'f580ae9b-cf0e-44b2-a693-9ead7232b12a', 'node', 'fallacy', 'treats a claim as true because many people believe it.', 'Appeal to popularity', null, null, null));
   insert into seed_posts values ('earth:e6bc6fd2d35f9', pg_temp.rs_seed(claude, 'abe9de25-103e-4907-a204-9adaeca23a10', 'edge', 'example', '', null, (select post from seed_posts where item = 'earth:e52de97c8c305'), (select post from seed_posts where item = 'earth:n19e29bb07e83'), null));
 exception when others then
-  raise warning 'Reasonance examples were not posted: %', sqlerrm;
+  raise warning 'Ourgument examples were not posted: %', sqlerrm;
 end $$;

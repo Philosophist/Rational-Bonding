@@ -92,7 +92,7 @@ in [CLAUDE.md](CLAUDE.md).
   days, handled by hand until then): a `delete_my_account()` function in a new
   migration, plus a button in the profile panel.
 
-- **Reasonance** (argument-mapping app, `reasonance/`). Plan:
+- **Ourgument** (argument-mapping app, formerly Reasonance, at `reasonance/`). Plan:
   https://claude.ai/artifact/KYaEnrF5TgaUmroiHLhaRf
   1. Map editor, guest-only, saving in the browser (done).
   2. Accounts and posts (done): `rs_*` tables by migration, shared sign-in
