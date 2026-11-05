@@ -235,10 +235,22 @@ const PIECE_MID = 0.47;
 const g2w = (d) => new THREE.Vector3(d[0], d[2], -d[1]);
 const ARROW = new THREE.ConeGeometry(0.08, 0.2, 12).rotateX(-Math.PI / 2);
 
-// The model's "up" for a facing: the frame axis square to it that points most
-// upward (then most toward the enemy), so pieces lean the way they look.
-// The same "up" the rules use (see frameUp), so pieces lean the way they look.
-const upFor = frameUp;
+// The board a piece stands on in Relative mode is the plane of its facing and
+// its sideways direction. Facing a corner there is no square sideways, so it
+// is the hexagon step that stays on the same level: the ordinary board tipped
+// up toward the corner.
+function boardSide(o, c) {
+  return isCornerFacing(o) ? [o[0], -o[1], 0] : pawnFrame(o, c).side;
+}
+// The model's "up": square to its board, pointing upward, so pieces stand on
+// their board and lean the way they look. Apart from corner facings this is
+// the same "up" the rules use (see frameUp).
+function upFor(o, c) {
+  if (!isCornerFacing(o)) return frameUp(o, c);
+  const f = o.slice(0, 3), s = boardSide(o, c);
+  const u = [s[1] * f[2] - s[2] * f[1], s[2] * f[0] - s[0] * f[2], s[0] * f[1] - s[1] * f[0]];
+  return u[2] < 0 ? u.map((v) => -v) : u;
+}
 
 function orientPiece(g, o, c) {
   const y = g2w(upFor(o, c)).normalize();
@@ -1060,18 +1072,28 @@ function showPieceBoard(sq, o, color) {
   const c = coords(sq);
   const pts = [];
   const toWorld = (p) => [p[0] - 3.5, p[2], 3.5 - p[1]];
-  // Facing a corner, the board is the one the piece looks straight along: its
-  // corner line forward, and sideways the level (flat) step of the hexagon
-  // around it. It is the ordinary board tipped up toward the corner, so every
-  // cube on it is a square of that board (rectangles, sqrt 3 long by sqrt 2 wide).
-  const side = isCornerFacing(o) ? [fwd[0], -fwd[1], 0] : pawnFrame(o, color).side;
-  for (const [step, along] of [[side, fwd], [fwd, side]])
-    for (let j = -2 * N; j <= 2 * N; j++) {
-      const p = c.map((v, k) => v + (j + 0.5) * step[k]);
+  // The board is the plane of the piece's facing and its sideways direction
+  // (see boardSide), through its square. Its lines are exactly where that
+  // plane cuts the walls between cubes, so every cell shown is the slice of a
+  // real cube (squares on the ordinary board, other shapes when it is tilted).
+  const side = boardSide(o, color);
+  const n = [side[1] * fwd[2] - side[2] * fwd[1], side[2] * fwd[0] - side[0] * fwd[2], side[0] * fwd[1] - side[1] * fwd[0]];
+  for (let a = 0; a < 3; a++) {
+    const u = n.map((v, k) => (k === a ? 0 : v)); // n without its part along axis a
+    const uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+    if (!uu) continue; // the board is parallel to these walls
+    const e = [0, 1, 2].map((k) => (k === a ? 1 : 0));
+    const along = [n[1] * e[2] - n[2] * e[1], n[2] * e[0] - n[0] * e[2], n[0] * e[1] - n[1] * e[0]];
+    for (let w = 0; w <= N; w++) {
+      const q = c.slice();
+      q[a] = w - 0.5; // the wall between cubes w-1 and w
+      const off = n[a] * (q[a] - c[a]);
+      const p = q.map((v, k) => v - (off * u[k]) / uu);
       const t = clipToCube(p, along);
       if (!t) continue;
       pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
     }
+  }
   pieceBoard.geometry.dispose();
   pieceBoard.geometry = new LineSegmentsGeometry().setPositions(pts);
   renderer.getSize(pieceBoardMat.resolution);
