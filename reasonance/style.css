@@ -29,6 +29,7 @@ button, select {
   padding: 6px 12px; cursor: pointer;
 }
 button:hover, select:hover { border-color: var(--cyan); }
+button:disabled { opacity: 0.45; cursor: default; border-color: #36405c; }
 button.accent { background: linear-gradient(90deg, var(--cyan), var(--blue)); color: #04121a; border: none; font-weight: 700; }
 button.danger { border-color: #5a2a3a; color: #ffb3c1; }
 button.on { border-color: var(--yellow); color: var(--yellow); }
@@ -58,8 +59,14 @@ body.present .edit-only { display: none !important; }
 .node text { fill: var(--text); font-size: 14px; }
 .node text.kind { fill: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
 .node text.standing { fill: #ff9fe9; font-size: 12px; font-style: italic; }
+.node tspan.compound { fill: var(--yellow); font-style: normal; }
 .node text.stance { font-size: 11px; font-weight: 700; }
+.node.sel text, .pill.sel text { user-select: text; -webkit-user-select: text; cursor: text; }
+.panel, .caption, .toast, .hint { user-select: text; -webkit-user-select: text; }
 .node.sel rect.box { stroke-width: 3; filter: drop-shadow(0 0 8px rgba(47, 227, 230, 0.6)); }
+.node.ghost rect.box { fill: rgba(255, 47, 180, 0.08); stroke-dasharray: 6 4; }
+.node.ghost text.ghost-text { fill: #ff2fb4; font-size: 13px; font-weight: 600; }
+.panel .ghost-full { border-left-color: #ff2fb4; color: #ff7fd0; }
 .node.t-axiom rect.box { stroke-dasharray: 8 3; }
 .node.t-combiner rect.box { stroke-dasharray: 3 3; }
 
@@ -87,6 +94,8 @@ body.present .panel { display: none; }
 .panel textarea { width: 100%; min-height: 84px; resize: vertical; }
 .panel .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .panel .full { background: var(--bg); border-left: 3px solid var(--cyan); border-radius: 6px; padding: 8px 10px; }
+.panel .warn { border: 1px solid #6b5f1a; background: rgba(255, 233, 77, 0.07); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.panel .warn ul { margin: 0; padding-left: 18px; }
 .panel .standing { color: #ff9fe9; font-style: italic; }
 .panel .stars button { padding: 4px 8px; }
 .panel .stars button.on { color: var(--yellow); border-color: var(--yellow); }

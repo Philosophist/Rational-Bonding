@@ -3,8 +3,8 @@
 // Every node and every edge is an item ("a post"). An edge connects any two
 // items, including other edges, which is how people support or contend an
 // inference itself. Arrows point from a claim OUT to its reasons:
-//   "It rained" --supports--> "The sidewalk is wet", read as
-//   "'The sidewalk is wet' supports 'It rained'"
+//   "It rained" --Support--> "The sidewalk is wet", read as
+//   "'It rained' is supported by 'The sidewalk is wet'"
 // so a user starts from a conclusion and follows the arrows to what backs it.
 import { FALLACIES, fallacyText, article } from './fallacies.js';
 
@@ -19,18 +19,16 @@ export const NODE_TYPES = {
   fallacy: { label: 'Fallacy', hint: 'A definition of a fallacy. Arrows to it are examples.' },
 };
 
-// phrase: how the edge reads between its two ends ("A <phrase> B"). For
-// reason arrows the sentence starts with the reason, at the arrow's far end:
-// the arrow runs claim -> reason, and reads "<reason> supports <claim>".
+// phrase: how the edge reads between its two ends ("A <phrase> B").
 // twoWay edges draw a head at both ends.
 export const EDGE_TYPES = {
-  support: { label: 'Supports', phrase: 'supports', reason: true, noun: 'Support' },
-  contention: { label: 'Contends', phrase: 'contends', reason: true, noun: 'Contention' },
-  question: { label: 'Questions', phrase: 'questions', reason: true, noun: 'Question' },
-  clarification: { label: 'Clarifies', phrase: 'clarifies', reason: true, noun: 'Clarification' },
+  support: { label: 'Support', phrase: 'is supported by' },
+  contention: { label: 'Contention', phrase: 'is contended by' },
+  question: { label: 'Question', phrase: 'is questioned by' },
+  clarification: { label: 'Clarification', phrase: 'is clarified by' },
   suggestion: { label: 'Suggests', phrase: 'prompts the suggestion' },
   premise: { label: 'Premise', phrase: 'has the premise' },
-  example: { label: 'Example of', phrase: 'is an example of' },
+  example: { label: 'Fallacy', phrase: 'is an example of' },
   same: { label: 'Same as', phrase: 'means the same as', twoWay: true },
   contradicts: { label: 'Contradicts', phrase: 'contradicts', twoWay: true },
   exclusive: { label: 'Mutually exclusive', twoWay: true },
@@ -101,7 +99,7 @@ export function addEdge(map, type, from, to, { premise } = {}) {
   if (b.type === 'fallacy' && isNode(b)) type = 'example';
   if (!EDGE_TYPES[type]) throw new Error(`Unknown arrow type: ${type}`);
   if (type === 'example' && !(isNode(b) && b.type === 'fallacy')) {
-    throw new Error('"Example of" arrows must point at a fallacy.');
+    throw new Error('"Fallacy" arrows must point at a fallacy.');
   }
   if (type === 'premise' && !(isNode(a) && a.type === 'combiner')) {
     throw new Error('Premise arrows start at a combined-premises node.');
@@ -134,7 +132,7 @@ export function setEdgeType(map, id, type) {
   const e = map.items[id];
   if (!isEdge(e) || !EDGE_TYPES[type]) return;
   const to = map.items[e.to], from = map.items[e.from];
-  if (type === 'example' && !(isNode(to) && to.type === 'fallacy')) throw new Error('"Example of" arrows must point at a fallacy.');
+  if (type === 'example' && !(isNode(to) && to.type === 'fallacy')) throw new Error('"Fallacy" arrows must point at a fallacy.');
   if (e.type === 'example' && type !== 'example') throw new Error('Arrows to a fallacy are always examples of it.');
   if (type === 'premise' && !(isNode(from) && from.type === 'combiner')) throw new Error('Premise arrows start at a combined-premises node.');
   e.type = type;
@@ -168,7 +166,51 @@ export function itemText(map, id, depth = 0) {
 
 export function nodeText(node) {
   if (node.type === 'fallacy') return fallacyText({ name: node.fallacy, when: node.when });
+  if (node.type === 'combiner' && !node.text?.trim()) return 'These premises, taken together';
   return node.text?.trim() || '(empty)';
+}
+
+// One post, one statement. These spot a post that holds several, so it can
+// be split into premises joined by a combined-premises node.
+const ABBREV = /(?:\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jr|Sr|vs|etc|No|Mt|e\.g|i\.e)|\b[A-Z](?:\.[A-Z])*)\.$/;
+const JOINERS = /\b(and|but|because|so|although|however|therefore)\b/i;
+export function splitStatements(text) {
+  const t = String(text ?? '').trim();
+  if (!t) return [];
+  return t
+    .split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z0-9])|;\s*|,\s+(?:but|and|so|yet)\s+/)
+    .reduce((out, p) => {
+      // "Dr. Smith" and "U.S. law" are one statement, not two.
+      if (out.length && ABBREV.test(out.at(-1))) out[out.length - 1] += ' ' + p;
+      else out.push(p);
+      return out;
+    }, [])
+    .map((p) => p.trim().replace(/[,;]+$/, ''))
+    .filter((p) => /[a-z0-9]/i.test(p))
+    .map((p) => (p[0].toUpperCase() + p.slice(1)).replace(/([^.!?])$/, '$1.'));
+}
+// null when the text reads as one statement; otherwise the parts it could be
+// split into (just one part when a joining word is the only sign).
+export function compoundParts(node) {
+  if (!isNode(node) || !['statement', 'axiom', 'clarification'].includes(node.type)) return null;
+  const parts = splitStatements(node.text);
+  if (parts.length > 1) return parts;
+  return JOINERS.test(node.text ?? '') ? parts : null;
+}
+// Turns a post into a combined-premises node with one premise per part. The
+// post keeps its id, so every arrow attached to it stays attached.
+export function splitIntoPremises(map, id, parts) {
+  const n = map.items[id];
+  if (!isNode(n) || parts.length < 2) throw new Error('Give at least two statements to split into.');
+  n.type = 'combiner';
+  n.text = '';
+  const made = parts.map((text, i) => {
+    const p = addNode(map, { text, x: n.x + 380, y: n.y + (i - (parts.length - 1) / 2) * 140 });
+    addEdge(map, 'premise', n.id, p.id);
+    return p.id;
+  });
+  touch(map);
+  return made;
 }
 
 function quote(map, id, depth) {
@@ -183,23 +225,23 @@ export function edgeSentence(map, e, depth = 0) {
     case 'premise': return `${A} has premise ${e.premise ?? '?'}: ${B}`;
     case 'exclusive': return `${A} and ${B} are mutually exclusive`;
     case 'necessary': return `${A} and ${B} are mutually necessary`;
-    default: {
-      const t = EDGE_TYPES[e.type];
-      return t.reason ? `${B} ${t.phrase} ${A}` : `${A} ${t.phrase} ${B}`;
-    }
+    default: return `${A} ${EDGE_TYPES[e.type].phrase} ${B}`;
   }
 }
 
-// The standing contention shown on a claim with nothing supporting it, like a
-// "citation needed". Axioms carry it permanently, reworded. Returns null when
-// none applies.
+// The automatic contention on a claim with nothing supporting it, like a
+// "citation needed". It is shown as its own post, joined by a Contention
+// arrow, and disappears once a support is added. Axioms carry it for good,
+// reworded. Returns null when none applies. (In the social app it should
+// appear only when no support exists anywhere, not just in one sandbox.)
 export function standingContention(map, id) {
   const n = map.items[id];
   if (!isNode(n)) return null;
-  if (n.type === 'axiom') return 'Held as an axiom: no support is claimed.';
+  const said = n.text?.trim() || '(empty)';
+  if (n.type === 'axiom') return `'${said}' is held as an axiom, with no support claimed.`;
   if (n.type !== 'statement') return null;
   const supported = edgesFrom(map, id).some((e) => e.type === 'support');
-  return supported ? null : 'No support has been given for this claim.';
+  return supported ? null : `'${said}' is not yet supported.`;
 }
 
 // Ratings. Every change is kept with its time, so a map remembers when and
@@ -267,7 +309,7 @@ export function outline(map) {
     for (const e of edgesFrom(map, id)) {
       if (seen.has(e.id)) continue;
       seen.add(e.id);
-      const label = e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].noun ?? EDGE_TYPES[e.type].label;
+      const label = e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
       lines.push(`${'  '.repeat(depth)}- ${label}: ${quote(map, e.to, 0)}`);
       walkResponses(e.id, depth + 1);
       if (!seen.has(e.to)) { seen.add(e.to); walk(e.to, depth + 1); }
@@ -350,14 +392,18 @@ export function exampleMap(now = Date.now()) {
   const rain = addNode(m, { text: 'It rained last night.', x: -200, y: 0 });
   const wet = addNode(m, { text: 'The sidewalk is wet this morning.', x: 260, y: 0 });
   const inf = addEdge(m, 'support', rain.id, wet.id);
-  const sprink = addNode(m, { text: 'The sprinklers run every night and soak the sidewalk.', x: 130, y: 230 });
+  const sprink = addNode(m, { text: 'The sprinklers soak the sidewalk every night.', x: 260, y: 230 });
   addEdge(m, 'contention', inf.id, sprink.id);
-  const street = addNode(m, { text: 'The street is wet too, and the sprinklers do not reach it.', x: 130, y: -230 });
+  const street = addNode(m, { type: 'combiner', x: 260, y: -230 });
   addEdge(m, 'support', inf.id, street.id);
-  const neighbour = addNode(m, { text: "My neighbour says it didn't rain, but he's wrong about everything.", x: -330, y: 290 });
-  const doubt = addEdge(m, 'contention', rain.id, neighbour.id);
-  const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 145 });
-  addEdge(m, 'example', doubt.id, fal.id);
+  addEdge(m, 'premise', street.id, addNode(m, { text: 'The street is wet too.', x: 640, y: -310 }).id);
+  addEdge(m, 'premise', street.id, addNode(m, { text: 'The sprinklers do not reach the street.', x: 640, y: -170 }).id);
+  const neighbour = addNode(m, { type: 'combiner', x: -200, y: 330 });
+  const hom = addEdge(m, 'support', rain.id, neighbour.id);
+  addEdge(m, 'premise', neighbour.id, addNode(m, { text: "My neighbour says it didn't rain.", x: 220, y: 440 }).id);
+  addEdge(m, 'premise', neighbour.id, addNode(m, { text: 'My neighbour is wrong about everything.', x: 220, y: 580 }).id);
+  const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 170 });
+  addEdge(m, 'example', hom.id, fal.id);
   m.updated = now;
   return m;
 }
