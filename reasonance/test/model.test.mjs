@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
+  splitStatements, compoundParts, splitIntoPremises, isNode,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -133,6 +134,33 @@ test('maps round-trip through export, and bad data is refused', () => {
 test('the outline starts from conclusions and indents their reasons', () => {
   const text = outline(exampleMap());
   assert.match(text, /^# Did it rain last night\?/);
-  assert.match(text, /'It rained last night\.'\n  - Support: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contention:/);
+  assert.match(text, /'It rained last night\.'\n  - Support: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contention: 'The sprinklers soak the sidewalk every night\.'/);
+  assert.match(text, /- Premise 1: 'The street is wet too\.'/);
   assert.match(text, /Example of: 'An Ad hominem fallacy is when an argument attacks/);
+});
+
+test('every post in the example map is a single statement', () => {
+  const m = exampleMap();
+  for (const n of Object.values(m.items).filter(isNode)) assert.equal(compoundParts(n), null, n.text);
+});
+
+test('compound posts are spotted and can be split into combined premises', () => {
+  assert.deepEqual(splitStatements("My neighbour says it didn't rain, but he's wrong about everything."),
+    ["My neighbour says it didn't rain.", "He's wrong about everything."]);
+  assert.deepEqual(splitStatements('Dr. Smith is here. U.S. law agrees; so do I'), ['Dr. Smith is here.', 'U.S. law agrees.', 'So do I.']);
+  assert.deepEqual(compoundParts({ kind: 'node', type: 'statement', text: 'Salt and pepper is tasty.' }), ['Salt and pepper is tasty.']);
+  assert.equal(compoundParts({ kind: 'node', type: 'statement', text: 'It rained.' }), null);
+  assert.equal(compoundParts({ kind: 'node', type: 'question', text: 'Why? How?' }), null);
+
+  const m = createMap();
+  const claim = addNode(m, { text: 'It rained' });
+  const both = addNode(m, { text: 'The street is wet too, and the sprinklers do not reach it.' });
+  const e = addEdge(m, 'support', claim.id, both.id);
+  const made = splitIntoPremises(m, both.id, compoundParts(both));
+  assert.equal(made.length, 2);
+  assert.equal(m.items[both.id].type, 'combiner');
+  assert.equal(m.items[e.id].to, both.id, 'arrows stay attached');
+  assert.equal(itemText(m, e.id), "'These premises, taken together' supports 'It rained'");
+  assert.deepEqual(made.map((id) => m.items[id].text), ['The street is wet too.', 'The sprinklers do not reach it.']);
+  assert.throws(() => splitIntoPremises(m, claim.id, ['one']));
 });

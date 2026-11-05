@@ -168,7 +168,51 @@ export function itemText(map, id, depth = 0) {
 
 export function nodeText(node) {
   if (node.type === 'fallacy') return fallacyText({ name: node.fallacy, when: node.when });
+  if (node.type === 'combiner' && !node.text?.trim()) return 'These premises, taken together';
   return node.text?.trim() || '(empty)';
+}
+
+// One post, one statement. These spot a post that holds several, so it can
+// be split into premises joined by a combined-premises node.
+const ABBREV = /(?:\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jr|Sr|vs|etc|No|Mt|e\.g|i\.e)|\b[A-Z](?:\.[A-Z])*)\.$/;
+const JOINERS = /\b(and|but|because|so|although|however|therefore)\b/i;
+export function splitStatements(text) {
+  const t = String(text ?? '').trim();
+  if (!t) return [];
+  return t
+    .split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z0-9])|;\s*|,\s+(?:but|and|so|yet)\s+/)
+    .reduce((out, p) => {
+      // "Dr. Smith" and "U.S. law" are one statement, not two.
+      if (out.length && ABBREV.test(out.at(-1))) out[out.length - 1] += ' ' + p;
+      else out.push(p);
+      return out;
+    }, [])
+    .map((p) => p.trim().replace(/[,;]+$/, ''))
+    .filter((p) => /[a-z0-9]/i.test(p))
+    .map((p) => (p[0].toUpperCase() + p.slice(1)).replace(/([^.!?])$/, '$1.'));
+}
+// null when the text reads as one statement; otherwise the parts it could be
+// split into (just one part when a joining word is the only sign).
+export function compoundParts(node) {
+  if (!isNode(node) || !['statement', 'axiom', 'clarification'].includes(node.type)) return null;
+  const parts = splitStatements(node.text);
+  if (parts.length > 1) return parts;
+  return JOINERS.test(node.text ?? '') ? parts : null;
+}
+// Turns a post into a combined-premises node with one premise per part. The
+// post keeps its id, so every arrow attached to it stays attached.
+export function splitIntoPremises(map, id, parts) {
+  const n = map.items[id];
+  if (!isNode(n) || parts.length < 2) throw new Error('Give at least two statements to split into.');
+  n.type = 'combiner';
+  n.text = '';
+  const made = parts.map((text, i) => {
+    const p = addNode(map, { text, x: n.x + 380, y: n.y + (i - (parts.length - 1) / 2) * 140 });
+    addEdge(map, 'premise', n.id, p.id);
+    return p.id;
+  });
+  touch(map);
+  return made;
 }
 
 function quote(map, id, depth) {
@@ -350,14 +394,18 @@ export function exampleMap(now = Date.now()) {
   const rain = addNode(m, { text: 'It rained last night.', x: -200, y: 0 });
   const wet = addNode(m, { text: 'The sidewalk is wet this morning.', x: 260, y: 0 });
   const inf = addEdge(m, 'support', rain.id, wet.id);
-  const sprink = addNode(m, { text: 'The sprinklers run every night and soak the sidewalk.', x: 130, y: 230 });
+  const sprink = addNode(m, { text: 'The sprinklers soak the sidewalk every night.', x: 260, y: 230 });
   addEdge(m, 'contention', inf.id, sprink.id);
-  const street = addNode(m, { text: 'The street is wet too, and the sprinklers do not reach it.', x: 130, y: -230 });
+  const street = addNode(m, { type: 'combiner', x: 260, y: -230 });
   addEdge(m, 'support', inf.id, street.id);
-  const neighbour = addNode(m, { text: "My neighbour says it didn't rain, but he's wrong about everything.", x: -330, y: 290 });
-  const doubt = addEdge(m, 'contention', rain.id, neighbour.id);
-  const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 145 });
-  addEdge(m, 'example', doubt.id, fal.id);
+  addEdge(m, 'premise', street.id, addNode(m, { text: 'The street is wet too.', x: 640, y: -310 }).id);
+  addEdge(m, 'premise', street.id, addNode(m, { text: 'The sprinklers do not reach the street.', x: 640, y: -170 }).id);
+  const neighbour = addNode(m, { type: 'combiner', x: -200, y: 330 });
+  const hom = addEdge(m, 'support', rain.id, neighbour.id);
+  addEdge(m, 'premise', neighbour.id, addNode(m, { text: "My neighbour says it didn't rain.", x: 220, y: 440 }).id);
+  addEdge(m, 'premise', neighbour.id, addNode(m, { text: 'My neighbour is wrong about everything.', x: 220, y: 580 }).id);
+  const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 170 });
+  addEdge(m, 'example', hom.id, fal.id);
   m.updated = now;
   return m;
 }
