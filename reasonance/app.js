@@ -374,7 +374,7 @@ function overviewPanel() {
 
 const REASONS = [
   ['support', 'Support it'], ['contention', 'Contend it'], ['question', 'Question it'],
-  ['clarification', 'Clarify it'], ['suggestion', 'Suggest'],
+  ['clarification', 'Clarify it'], ['suggestion', 'Suggest'], ['same', 'Say it another way'],
 ];
 function reasonButtons(it) {
   const fallacyPick = h('select', { 'aria-label': 'Call a fallacy', onchange: (ev) => { if (ev.target.value) callFallacy(it.id, ev.target.value); } },
@@ -382,7 +382,7 @@ function reasonButtons(it) {
   const linkPick = h('select', { 'aria-label': 'Connect to a post already on the map', onchange: (ev) => { if (ev.target.value) startConnect(it.id, ev.target.value); } },
     h('option', { value: '' }, 'Connect to an existing post…'),
     Object.entries(EDGE_TYPES).filter(([k]) => k !== 'example' && (k !== 'premise' || it.type === 'combiner')).map(([k, t]) => h('option', { value: k }, t.label)));
-  const row = h('div', { class: 'row' }, REASONS.map(([type, label]) => h('button', { onclick: () => addReason(it.id, type) }, label)));
+  const row = h('div', { class: 'row' }, REASONS.map(([type, label]) => h('button', { title: EDGE_TYPES[type].note ?? '', onclick: () => addReason(it.id, type) }, label)));
   if (it.type === 'combiner') row.prepend(h('button', { class: 'accent', onclick: () => addReason(it.id, 'premise') }, 'Add premise'));
   return [h('h3', {}, isEdge(it) ? 'Respond to this inference' : 'Add a reason'), row, h('div', { class: 'row' }, fallacyPick, linkPick)];
 }
@@ -452,7 +452,9 @@ function copyButton(id) {
 }
 
 function edgePanel(e) {
-  const els = [h('h2', {}, 'Inference'), h('p', { class: 'full' }, itemText(map, e.id)), copyButton(e.id)];
+  const els = [h('h2', {}, 'Inference'), h('p', { class: 'full' }, itemText(map, e.id))];
+  if (EDGE_TYPES[e.type].note) els.push(h('p', { class: 'muted' }, EDGE_TYPES[e.type].note));
+  els.push(copyButton(e.id));
   const fixed = e.type === 'example' || e.type === 'premise';
   if (!fixed) {
     els.push(h('div', { class: 'row' },
@@ -547,7 +549,7 @@ function linkPanel() {
     h('p', { class: 'muted' }, 'The arrow points from the first to the second.'),
     h('p', { class: 'full' }, h('strong', {}, '1. '), short(selected)),
     h('p', { class: 'full' }, h('strong', {}, '2. '), short(second)),
-    h('div', { class: 'row' }, types.map((k) => h('button', { class: k === types[0] ? 'accent' : '', onclick: () => link(k) }, EDGE_TYPES[k].label))),
+    h('div', { class: 'row' }, types.map((k) => h('button', { class: k === types[0] ? 'accent' : '', title: EDGE_TYPES[k].note ?? '', onclick: () => link(k) }, EDGE_TYPES[k].label))),
     h('div', { class: 'row' },
       h('button', { onclick: swapLink }, 'Swap order'),
       h('button', { onclick: () => { second = null; render(); } }, 'Cancel')),

@@ -15,6 +15,7 @@ feed come in later steps.
 - **Direction:** arrows run from a claim out to its reasons, labelled Support,
   Contention, Question or Clarification:
   `'It rained' is supported by 'The sidewalk is wet'`.
+- **Means the same** is a two-way arrow for rewordings and translations ("IOW = translation = means the same thing"): `'A' means the same thing as 'B'`.
 - **Unsupported claims** get an automatic post, in bright pink, joined by a
   Contention arrow: "'X' is not yet supported." It disappears once a Support
   arrow is added. It is drawn, not stored. In the social app it should appear

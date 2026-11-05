@@ -33,7 +33,7 @@ test('an inference can itself be supported or contended', () => {
 test('two-way relations read symmetrically', () => {
   const { m, a, b } = twoClaims();
   assert.equal(itemText(m, addEdge(m, 'exclusive', a.id, b.id).id), "'It rained' and 'The sidewalk is wet' are mutually exclusive");
-  assert.equal(itemText(m, addEdge(m, 'same', a.id, b.id).id), "'It rained' means the same as 'The sidewalk is wet'");
+  assert.equal(itemText(m, addEdge(m, 'same', a.id, b.id).id), "'It rained' means the same thing as 'The sidewalk is wet'");
 });
 
 test('fallacy nodes are definitions and arrows to them are examples', () => {

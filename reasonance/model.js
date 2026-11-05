@@ -29,7 +29,8 @@ export const EDGE_TYPES = {
   suggestion: { label: 'Suggests', phrase: 'prompts the suggestion' },
   premise: { label: 'Premise', phrase: 'has the premise' },
   example: { label: 'Fallacy', phrase: 'is an example of' },
-  same: { label: 'Same as', phrase: 'means the same as', twoWay: true },
+  // note: a line of flavour text shown wherever the type is explained.
+  same: { label: 'Means the same', phrase: 'means the same thing as', twoWay: true, note: 'IOW = translation = means the same thing.' },
   contradicts: { label: 'Contradicts', phrase: 'contradicts', twoWay: true },
   exclusive: { label: 'Mutually exclusive', twoWay: true },
   necessary: { label: 'Mutually necessary', twoWay: true },
