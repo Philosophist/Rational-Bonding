@@ -12,13 +12,16 @@ feed come in later steps.
 - **One post, one statement.** A post that reads like several statements gets a
   warning and a one-click split into premises joined by a combined-premises
   node (`compoundParts`, `splitIntoPremises`). The example map follows this.
-- **Direction:** arrows run from a claim out to its reasons. The label and
-  sentence read from the reason: `'The sidewalk is wet' supports 'It rained'`.
-- **Unsupported claims** show a standing contention, "No support has been given
-  for this claim", until a support arrow is added. **Axioms** keep a permanent
-  one: "Held as an axiom: no support is claimed."
+- **Direction:** arrows run from a claim out to its reasons, labelled Support,
+  Contention, Question or Clarification:
+  `'It rained' is supported by 'The sidewalk is wet'`.
+- **Unsupported claims** get an automatic post, in bright pink, joined by a
+  Contention arrow: "'X' is not yet supported." It disappears once a Support
+  arrow is added. It is drawn, not stored. In the social app it should appear
+  only when no support exists anywhere, not just in one sandbox. **Axioms**
+  keep a permanent one: "'X' is held as an axiom, with no support claimed."
 - **Fallacy nodes** are definitions ("A Straw man fallacy is when an argument
-  ..."). Arrows to them are always "example of" arrows:
+  ..."), drawn in neon purple. Arrows to them are labelled "Fallacy":
   `'A' is an example of a Straw man fallacy`.
 - **Combined premises** nodes join premises numbered 1, 2a, 2b...
 - **Ratings** on any post: stance, confidence 0–100 (decimals allowed, with a

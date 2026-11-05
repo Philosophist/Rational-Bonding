@@ -17,9 +17,9 @@ function twoClaims() {
 test('arrows read from the claim out to its reason', () => {
   const { m, a, b } = twoClaims();
   const e = addEdge(m, 'support', a.id, b.id);
-  assert.equal(itemText(m, e.id), "'The sidewalk is wet' supports 'It rained'");
+  assert.equal(itemText(m, e.id), "'It rained' is supported by 'The sidewalk is wet'");
   const c = addEdge(m, 'contention', a.id, b.id);
-  assert.equal(itemText(m, c.id), "'The sidewalk is wet' contends 'It rained'");
+  assert.equal(itemText(m, c.id), "'It rained' is contended by 'The sidewalk is wet'");
 });
 
 test('an inference can itself be supported or contended', () => {
@@ -27,7 +27,7 @@ test('an inference can itself be supported or contended', () => {
   const e = addEdge(m, 'support', a.id, b.id);
   const s = addNode(m, { text: 'Sprinklers ran' });
   const c = addEdge(m, 'contention', e.id, s.id);
-  assert.equal(itemText(m, c.id), "'Sprinklers ran' contends ['The sidewalk is wet' supports 'It rained']");
+  assert.equal(itemText(m, c.id), "['It rained' is supported by 'The sidewalk is wet'] is contended by 'Sprinklers ran'");
 });
 
 test('two-way relations read symmetrically', () => {
@@ -45,7 +45,7 @@ test('fallacy nodes are definitions and arrows to them are examples', () => {
   assert.equal(itemText(m, e.id), "'It rained' is an example of a Straw man fallacy");
   const inf = addEdge(m, 'support', a.id, b.id);
   const e2 = addEdge(m, 'support', inf.id, f.id);
-  assert.equal(itemText(m, e2.id), "['The sidewalk is wet' supports 'It rained'] is an example of a Straw man fallacy");
+  assert.equal(itemText(m, e2.id), "['It rained' is supported by 'The sidewalk is wet'] is an example of a Straw man fallacy");
   assert.throws(() => flipEdge(m, e.id));
   assert.throws(() => setEdgeType(m, e.id, 'support'));
   assert.throws(() => addEdge(m, 'example', a.id, b.id));
@@ -58,14 +58,14 @@ test('the library has 17 fallacies that all read as definitions', () => {
 
 test('unsupported claims carry a standing contention; axioms keep theirs', () => {
   const { m, a, b } = twoClaims();
-  assert.equal(standingContention(m, a.id), 'No support has been given for this claim.');
+  assert.equal(standingContention(m, a.id), "'It rained' is not yet supported.");
   addEdge(m, 'contention', a.id, b.id);
   assert.ok(standingContention(m, a.id), 'a contention is not support');
   addEdge(m, 'support', a.id, b.id);
   assert.equal(standingContention(m, a.id), null);
   const ax = addNode(m, { type: 'axiom', text: 'A thing is itself' });
   addEdge(m, 'support', ax.id, b.id);
-  assert.equal(standingContention(m, ax.id), 'Held as an axiom: no support is claimed.');
+  assert.equal(standingContention(m, ax.id), "'A thing is itself' is held as an axiom, with no support claimed.");
   const q = addNode(m, { type: 'question', text: 'Why?' });
   assert.equal(standingContention(m, q.id), null);
 });
@@ -136,7 +136,7 @@ test('the outline starts from conclusions and indents their reasons', () => {
   assert.match(text, /^# Did it rain last night\?/);
   assert.match(text, /'It rained last night\.'\n  - Support: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contention: 'The sprinklers soak the sidewalk every night\.'/);
   assert.match(text, /- Premise 1: 'The street is wet too\.'/);
-  assert.match(text, /Example of: 'An Ad hominem fallacy is when an argument attacks/);
+  assert.match(text, /Fallacy: 'An Ad hominem fallacy is when an argument attacks/);
 });
 
 test('every post in the example map is a single statement', () => {
@@ -160,7 +160,7 @@ test('compound posts are spotted and can be split into combined premises', () =>
   assert.equal(made.length, 2);
   assert.equal(m.items[both.id].type, 'combiner');
   assert.equal(m.items[e.id].to, both.id, 'arrows stay attached');
-  assert.equal(itemText(m, e.id), "'These premises, taken together' supports 'It rained'");
+  assert.equal(itemText(m, e.id), "'It rained' is supported by 'These premises, taken together'");
   assert.deepEqual(made.map((id) => m.items[id].text), ['The street is wet too.', 'The sprinklers do not reach it.']);
   assert.throws(() => splitIntoPremises(m, claim.id, ['one']));
 });

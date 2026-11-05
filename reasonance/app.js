@@ -15,13 +15,18 @@ const NODE_W = 240, CHARS = 30, LINE = 18;
 
 const EDGE_COLORS = {
   support: '#2fe3e6', contention: '#e04dff', question: '#ffe94d', clarification: '#6f93ff',
-  suggestion: '#a5afc6', premise: '#d9def0', example: '#ff9b4d', same: '#7dffb0',
+  suggestion: '#a5afc6', premise: '#d9def0', example: '#b026ff', same: '#7dffb0',
   contradicts: '#ff5c7a', exclusive: '#ff5c7a', necessary: '#7dffb0',
 };
 const NODE_COLORS = {
   statement: '#2fe3e6', question: '#ffe94d', clarification: '#6f93ff', combiner: '#d9def0',
-  axiom: '#ffe94d', fallacy: '#ff9b4d',
+  axiom: '#ffe94d', fallacy: '#b026ff',
 };
+// The automatic "not yet supported" posts: a loud pink, to show they're not a real argument.
+const GHOST = '#ff2fb4';
+const GHOST_PREFIX = 'ghost:';
+const isGhost = (id) => typeof id === 'string' && id.startsWith(GHOST_PREFIX);
+const ghostOwner = (id) => id.slice(GHOST_PREFIX.length);
 const STANCE_COLORS = { agree: '#7dffb0', disagree: '#ff5c7a', unknown: '#ffe94d', incomprehensible: '#a5afc6' };
 
 const $ = (id) => document.getElementById(id);
@@ -54,9 +59,55 @@ function load() {
 let saveTimer = 0;
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify(store)); } catch { toast('This browser is not letting the page save. Use File → Download map file to keep your work.'); }
-  }, 250);
+  saveTimer = setTimeout(flushSave, 250);
+}
+function flushSave() {
+  clearTimeout(saveTimer);
+  record();
+  try { localStorage.setItem(STORE, JSON.stringify(store)); } catch { toast('This browser is not letting the page save. Use File → Download map file to keep your work.'); }
+}
+
+// ---------- undo and redo ----------
+// Each save that changed the map becomes one undo step. Steps are kept per
+// map while the page is open.
+const history = { undo: [], redo: [], last: null, mapId: null };
+const snap = () => JSON.stringify({ title: map.title, items: map.items });
+function resetHistory() { history.undo = []; history.redo = []; history.last = snap(); history.mapId = map.id; updateUndoButtons(); }
+function record() {
+  if (history.mapId !== map.id) { resetHistory(); return; }
+  const now = snap();
+  if (now === history.last) return;
+  history.undo.push(history.last);
+  if (history.undo.length > 200) history.undo.shift();
+  history.redo = [];
+  history.last = now;
+  updateUndoButtons();
+}
+function restore(json) {
+  const { title, items } = JSON.parse(json);
+  map.title = title; map.items = items; map.updated = Date.now();
+  history.last = json;
+  if (selected && !map.items[selected] && !isGhost(selected)) selected = null;
+  if (isGhost(selected) && !map.items[ghostOwner(selected)]) selected = null;
+  refreshMapList(); render(); updateUndoButtons();
+  try { localStorage.setItem(STORE, JSON.stringify(store)); } catch { /* shown on the next save */ }
+}
+function undo() {
+  flushSave();
+  if (!history.undo.length) { toast('Nothing to undo.'); return; }
+  history.redo.push(history.last);
+  restore(history.undo.pop());
+}
+function redo() {
+  flushSave();
+  if (!history.redo.length) { toast('Nothing to redo.'); return; }
+  history.undo.push(history.last);
+  restore(history.redo.pop());
+}
+function updateUndoButtons() {
+  const u = document.getElementById('undo'), r = document.getElementById('redo');
+  if (u) u.disabled = !history.undo.length;
+  if (r) r.disabled = !history.redo.length;
 }
 function changed() { render(); save(); }
 
@@ -102,12 +153,20 @@ function wrap(text, chars = CHARS) {
 // edge's is its label pill, sitting halfway between its two ends.
 function nodeLayout(n) {
   const lines = wrap(nodeText(n));
-  const standing = standingContention(map, n.id);
-  const sLines = standing ? wrap(standing, CHARS + 4) : [];
+  const sLines = [];
   const parts = compoundParts(n);
   if (parts && parts.length > 1) sLines.push({ compound: true, text: `This holds ${parts.length} statements. Split it?` });
   const h = 28 + lines.length * LINE + (sLines.length ? 8 + sLines.length * 16 : 0) + 10;
   return { lines, sLines, w: NODE_W, h };
+}
+// The automatic post sits just to the right of its claim, where reasons go,
+// and stays clear of the next column that Arrange uses.
+const GHOST_GAP = 110, GHOST_W = 190;
+function ghostLayout(id) {
+  const text = standingContention(map, id);
+  if (!text) return null;
+  const lines = wrap(text, 24);
+  return { text, lines, w: GHOST_W, h: 26 + lines.length * 16 + 12 };
 }
 function pillLabel(e) {
   return e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
@@ -116,6 +175,12 @@ function computeBoxes() {
   const boxes = new Map();
   for (const it of Object.values(map.items)) {
     if (isNode(it)) { const L = nodeLayout(it); boxes.set(it.id, { cx: it.x, cy: it.y, w: L.w, h: L.h, L }); }
+  }
+  for (const n of Object.values(map.items).filter(isNode)) {
+    const G = ghostLayout(n.id);
+    if (!G) continue;
+    const b = boxes.get(n.id);
+    boxes.set(GHOST_PREFIX + n.id, { cx: b.cx + b.w / 2 + GHOST_GAP + G.w / 2, cy: b.cy, w: G.w, h: G.h, G, ghost: true });
   }
   const pending = Object.values(map.items).filter(isEdge);
   for (let pass = 0; pass < 8 && pending.length; pass++) {
@@ -176,6 +241,29 @@ function render() {
     const title = s('title', {}, pg); title.textContent = itemText(map, e.id);
   }
 
+  for (const [gid, gb] of boxes) {
+    if (!gb.ghost) continue;
+    const owner = boxes.get(ghostOwner(gid)), off = lit && !lit.has(ghostOwner(gid)) ? ' dim' : '';
+    const color = EDGE_COLORS.contention;
+    const eg = s('g', { class: `edge${off}` }, layers.edges);
+    const start = exitPoint(owner, gb.cx, gb.cy), end = exitPoint(gb, owner.cx, owner.cy);
+    const lineEnd = head(end, start, color, eg);
+    s('line', { x1: start.x, y1: start.y, x2: lineEnd.x, y2: lineEnd.y, stroke: color, 'stroke-dasharray': '6 4' }, eg);
+    // The label rides just above the short dashed arrow, leaving it visible.
+    const label = 'Contention', pw = label.length * 7 + 22, px = (start.x + lineEnd.x) / 2, py = (start.y + lineEnd.y) / 2 - 20;
+    const pg = s('g', { class: `pill${off}`, 'data-id': gid }, layers.pills);
+    s('rect', { x: px - pw / 2, y: py - 12, width: pw, height: 24, rx: 12, stroke: color }, pg);
+    const pt = s('text', { x: px, y: py + 4, 'text-anchor': 'middle', fill: color }, pg); pt.textContent = label;
+
+    const g = s('g', { class: `node ghost${selected === gid ? ' sel' : ''}${off}`, 'data-id': gid }, layers.nodes);
+    const x0 = gb.cx - gb.w / 2, y0 = gb.cy - gb.h / 2;
+    s('rect', { class: 'box', x: x0, y: y0, width: gb.w, height: gb.h, rx: 14, stroke: GHOST }, g);
+    const kind = s('text', { class: 'kind', x: x0 + 12, y: y0 + 16, fill: GHOST }, g);
+    kind.textContent = map.items[ghostOwner(gid)]?.type === 'axiom' ? 'Automatic · axiom' : 'Automatic · goes away with a support';
+    const t = s('text', { class: 'ghost-text', x: x0 + 12, y: y0 + 20 }, g);
+    gb.G.lines.forEach((line, i) => { const ts = s('tspan', { x: x0 + 12, dy: i ? 16 : 18 }, t); ts.textContent = line; });
+  }
+
   for (const n of Object.values(map.items).filter(isNode)) {
     const b = boxes.get(n.id), L = b.L, color = NODE_COLORS[n.type];
     const g = s('g', { class: `node t-${n.type}${selected === n.id ? ' sel' : ''}${lit && !lit.has(n.id) ? ' dim' : ''}${connecting && canConnect(n.id) ? ' target-ok' : ''}`, 'data-id': n.id }, layers.nodes);
@@ -230,9 +318,24 @@ let renderPanelSuppressed = false;
 function renderPanel() {
   if (renderPanelSuppressed) return;
   const panel = $('panel');
+  if (isGhost(selected) && boxes.get(selected)) { panel.replaceChildren(...ghostPanel(ghostOwner(selected))); return; }
   const it = selected && map.items[selected];
   if (!it) { panel.replaceChildren(...overviewPanel()); return; }
   panel.replaceChildren(...(isNode(it) ? nodePanel(it) : edgePanel(it)));
+}
+
+function ghostPanel(ownerId) {
+  const owner = map.items[ownerId], axiom = owner.type === 'axiom';
+  return [
+    h('h2', {}, axiom ? 'Held as an axiom' : 'Not yet supported'),
+    h('p', { class: 'full ghost-full' }, standingContention(map, ownerId)),
+    h('p', { class: 'muted' }, axiom
+      ? 'Axioms are claims held without support, so this contention stays. People can still agree or disagree with the axiom.'
+      : 'Added automatically to every claim that has nothing supporting it, like "citation needed". It goes away as soon as the claim gets a Support arrow.'),
+    h('div', { class: 'row' },
+      axiom ? null : h('button', { class: 'accent', onclick: () => addReason(ownerId, 'support') }, 'Support the claim'),
+      h('button', { onclick: () => select(ownerId) }, 'Go to the claim')),
+  ];
 }
 
 function overviewPanel() {
@@ -285,8 +388,6 @@ function nodePanel(n) {
     els.push(compoundWarning(n));
   }
   els.push(copyButton(n.id));
-  const sc = standingContention(map, n.id);
-  if (sc) els.push(h('p', { class: 'standing' }, sc));
   els.push(...reasonButtons(n), ...ratingBlock(n), h('div', { class: 'row' }, h('button', { class: 'danger', onclick: () => del(n.id) }, 'Delete post')));
   return els;
 }
@@ -317,7 +418,7 @@ function compoundWarning(n) {
       } }, 'Split into combined premises'),
     );
   } else {
-    box.append(h('p', {}, 'Words like "and", "but" or "because" can hide two statements in one post. If this is two claims, give each its own post. Join premises with ', h('em', {}, 'Combined premises'), ', or use a Supports arrow for "because".'));
+    box.append(h('p', {}, 'Words like "and", "but" or "because" can hide two statements in one post. If this is two claims, give each its own post. Join premises with ', h('em', {}, 'Combined premises'), ', or use a Support arrow for "because".'));
   }
   return box;
 }
@@ -373,8 +474,8 @@ function ratingBlock(it) {
 function renderCaption() {
   const c = $('caption');
   const id = document.body.classList.contains('present') ? spotlight : null;
-  c.hidden = !id || !map.items[id];
-  if (!c.hidden) c.textContent = itemText(map, id);
+  c.hidden = !id || !(map.items[id] || isGhost(id));
+  if (!c.hidden) c.textContent = isGhost(id) ? standingContention(map, ghostOwner(id)) : itemText(map, id);
 }
 
 // ---------- actions ----------
@@ -424,7 +525,7 @@ function callFallacy(fromId, name) {
 }
 
 function canConnect(id) {
-  if (!connecting || id === connecting.from) return false;
+  if (!connecting || id === connecting.from || isGhost(id)) return false;
   const it = map.items[id];
   if (isEdge(it) && (it.from === connecting.from || it.to === connecting.from)) return false;
   return true;
@@ -500,7 +601,7 @@ function arrange() {
   const place = (n, depth) => {
     n.x = depth * COL;
     const k = kids.get(n);
-    const hgt = nodeLayout(n).h;
+    const G = ghostLayout(n.id), hgt = Math.max(nodeLayout(n).h, G ? G.h : 0);
     if (!k.length) { n.y = cursor + hgt / 2; cursor += hgt + GAP; return; }
     const start = cursor;
     for (const c of k) place(c, depth + 1);
@@ -592,7 +693,7 @@ function endPointer(ev) {
   const present = document.body.classList.contains('present');
   if (d.id) {
     if (connecting) { if (canConnect(d.id)) finishConnect(d.id); else toast('Pick a different post or arrow.'); return; }
-    if (present) { spotlight = spotlight === d.id ? null : d.id; render(); return; }
+    if (present) { const sid = isGhost(d.id) ? ghostOwner(d.id) : d.id; spotlight = spotlight === sid ? null : sid; render(); return; }
     select(d.id);
   } else {
     if (connecting) { cancelConnect(); return; }
@@ -622,8 +723,12 @@ document.addEventListener('keydown', (ev) => {
     if (connecting) cancelConnect();
     else if (document.body.classList.contains('present')) togglePresent();
     else if (!typing) select(null);
-  } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && !typing && selected) {
+  } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && !typing && selected && map.items[selected]) {
     ev.preventDefault(); del(selected);
+  } else if ((ev.ctrlKey || ev.metaKey) && !typing && ev.key.toLowerCase() === 'z') {
+    ev.preventDefault(); ev.shiftKey ? redo() : undo();
+  } else if ((ev.ctrlKey || ev.metaKey) && !typing && ev.key.toLowerCase() === 'y') {
+    ev.preventDefault(); redo();
   }
 });
 
@@ -635,9 +740,18 @@ function refreshMapList() {
   $('map-title').value = map.title;
 }
 function openMap(id) {
+  flushSave();
   store.current = id; map = store.maps[id]; selected = null; spotlight = null; connecting = null;
-  refreshMapList(); save(); fit();
+  resetHistory(); refreshMapList(); save(); fit();
 }
+$('undo').addEventListener('click', undo);
+$('redo').addEventListener('click', redo);
+$('clear').addEventListener('click', () => {
+  if (!Object.keys(map.items).length) { toast('The map is already empty.'); return; }
+  map.items = {}; selected = null; spotlight = null; connecting = null;
+  changed(); flushSave();
+  toast('Map cleared. Undo brings it back.');
+});
 $('map-select').addEventListener('change', (ev) => openMap(ev.target.value));
 $('map-title').addEventListener('input', (ev) => { map.title = ev.target.value.slice(0, 200); refreshMapList(); renderPanel(); save(); });
 $('new-map').addEventListener('click', () => {
@@ -718,5 +832,6 @@ $('import-file').addEventListener('change', async (ev) => {
 });
 
 addEventListener('resize', () => render());
+resetHistory();
 refreshMapList();
 fit();
