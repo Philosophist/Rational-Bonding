@@ -3,7 +3,8 @@
 // three.js loads only when the home page first opens; without it, the feed
 // still works over a plain background.
 import * as cloud from './cloud.js';
-import { STANCES } from './model.js';
+import { STANCES, EDGE_TYPES } from './model.js';
+import { stanceButtons } from './stances.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 const NODE_COLORS = {
@@ -20,6 +21,9 @@ export function initHome(d) {
   deps = d;
   $('home-sandbox').addEventListener('click', () => closeHome());
   $('feed-search').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') loadFeed(ev.target.value); });
+  $('float-close').addEventListener('click', closeFloat);
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('float').hidden) closeFloat(); });
+  new ResizeObserver(() => { if (floatState) drawFloat(); }).observe($('home'));
 }
 export const homeOpen = () => !$('home').hidden;
 
@@ -30,6 +34,7 @@ export async function openHome() {
   await loadFeed();
 }
 export function closeHome() {
+  closeFloat();
   document.body.classList.remove('home');
   $('home').hidden = true;
   if (sea) cancelAnimationFrame(sea.frame), (sea.running = false);
@@ -58,24 +63,29 @@ function renderFeed() {
   }
   feed.replaceChildren(...feedRows.map(card));
 }
+const postText = (r) => r.type === 'fallacy' ? `A ${r.fallacy} fallacy is when an argument ${r.text}` : r.text;
+function countsLine(st) {
+  return st ? Object.entries(STANCES).filter(([k]) => st[k]).map(([k, label]) => `${st[k]} ${label.toLowerCase()}`) : [];
+}
 function card(r) {
   const { h } = deps;
   const st = stats[r.id], ab = about[r.id], my = mine[r.id];
-  const counts = st ? Object.entries(STANCES).filter(([k]) => st[k]).map(([k, label]) => `${st[k]} ${label.toLowerCase()}`) : [];
+  const counts = countsLine(st);
   const by = ab?.by ? `@${ab.by}` : 'anonymous';
-  return h('article', { class: 'post-card', 'data-id': r.id,
-    onmouseenter: () => glow(r.id), onfocusin: () => glow(r.id) },
-  h('p', { class: `text ${r.type}` }, r.type === 'fallacy' ? `A ${r.fallacy} fallacy is when an argument ${r.text}` : r.text),
+  // Clicking the post (anywhere but its buttons) opens it in the floating sandbox.
+  return h('article', { class: 'post-card', 'data-id': r.id, tabindex: 0, title: 'Open it over the sea',
+    onmouseenter: () => glow(r.id), onfocusin: () => glow(r.id),
+    onclick: (ev) => { if (!ev.target.closest('button')) openFloat(r.id); },
+    onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openFloat(r.id); } },
+  h('p', { class: `text ${r.type}` }, postText(r)),
   h('div', { class: 'meta' }, [by, counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-  h('div', { class: 'row stances' }, Object.entries(STANCES).map(([k, label]) =>
-    h('button', { class: my?.stance === k ? 'on' : '', 'aria-pressed': my?.stance === k ? 'true' : 'false', onclick: () => rateFromFeed(r.id, k) }, label))),
-  h('div', { class: 'row' },
-    h('button', { onclick: () => { closeHome(); deps.openInMap(r.id); } }, 'Open in my map'),
-    h('span', { class: 'muted' }, my?.stance ? (my.public ? 'Your view is shared.' : 'Your view is private.') : '')));
+  stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(r.id, k)),
+  my?.stance ? h('div', { class: 'muted' }, my.public ? 'Your view is shared.' : 'Your view is private.') : null);
 }
 async function rateFromFeed(pid, stance) {
   const my = mine[pid] ?? {};
-  const next = { stance: my.stance === stance ? null : stance, confidence: my.confidence ?? null, relevance: my.relevance ?? null };
+  const next = { stance, confidence: my.confidence ?? null, relevance: my.relevance ?? null };
+  if (stance === 'dontcare' && next.relevance == null) next.relevance = 1; // not caring: one star
   const share = my.stance ? !!my.public : cloud.settings.share_views;
   try {
     await cloud.rate(pid, next, share);
@@ -85,6 +95,7 @@ async function rateFromFeed(pid, stance) {
     const el = document.querySelector(`.post-card[data-id="${pid}"]`);
     const row = feedRows.find((r) => r.id === pid);
     if (el && row) el.replaceWith(card(row));
+    if (floatState?.pid === pid) drawFloat();
   } catch (err) { deps.toast(`Your view wasn't saved: ${err.message}`); }
 }
 
@@ -222,4 +233,117 @@ async function pick(ev) {
     renderFeed();
     $('feed').scrollTop = 0;
   } catch { /* fine */ }
+}
+
+// ---------------------------------------------------------------- floating sandbox
+// A post floats over the sea with its questions, clarifications and
+// definitions around it (up to MAX_NEAR). Its other inferences, and any past
+// that limit, reach off to the edge of the screen; hover one to see the post
+// at its far end, click it to go there.
+const MAX_NEAR = 4;
+const NEAR_TYPES = ['question', 'clarification', 'same', 'example'];
+const LINE_COLORS = { support: '#4dff88', contention: '#ff4d5e', question: '#ffe94d', clarification: '#6f93ff', same: '#7dffb0', example: '#b026ff', premise: '#d9def0', contradicts: '#ff4d5e', exclusive: '#ff4d5e', necessary: '#7dffb0' };
+const OUT_LABEL = { support: 'Supported by', contention: 'Contended by', question: 'Questioned by', clarification: 'Clarified by', same: 'Means the same as', example: 'An example of', premise: 'Premise', contradicts: 'Contradicts', exclusive: 'Mutually exclusive with', necessary: 'Mutually necessary with' };
+const IN_LABEL = { support: 'It supports', contention: 'It contends', question: 'It questions', clarification: 'It clarifies', same: 'Means the same as', example: 'Called a fallacy:', premise: 'A premise of', contradicts: 'Contradicts', exclusive: 'Mutually exclusive with', necessary: 'Mutually necessary with' };
+let floatState = null; // { pid, post, links }
+export async function openFloat(pid) {
+  const box = $('float');
+  box.hidden = false;
+  document.body.classList.add('floating');
+  glow(pid);
+  floatState = { pid, post: null, links: null };
+  drawFloat();
+  try {
+    const [post, links] = await Promise.all([cloud.getPost(pid), cloud.links(pid)]);
+    if (floatState?.pid !== pid) return;
+    if (!post) { closeFloat(); deps.toast('That post is gone.'); return; }
+    const ids = [pid, ...Object.keys(links.ends)];
+    const [m, st, ab] = await Promise.all([cloud.myRatings([pid]), cloud.stats(ids), cloud.about([pid])]);
+    Object.assign(mine, m); Object.assign(stats, st); Object.assign(about, ab);
+    floatState = { pid, post, links };
+    drawFloat();
+  } catch (err) { deps.toast(`Couldn't open it: ${err.message}`); }
+}
+export function closeFloat() {
+  floatState = null;
+  if (!$('float')) return;
+  $('float').hidden = true;
+  document.body.classList.remove('floating');
+  $('float-tip').hidden = true;
+}
+function drawFloat() {
+  const { h } = deps;
+  const box = $('float'), svg = $('float-lines'), nodes = $('float-nodes');
+  const st = floatState;
+  if (!st) return;
+  const W = box.clientWidth, H = box.clientHeight, cx = W / 2, cy = H * 0.42;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.replaceChildren(); nodes.replaceChildren();
+  if (!st.post) { nodes.append(h('div', { class: 'fnode center', style: `left:${cx}px;top:${cy}px` }, 'Loading…')); return; }
+  const { post, links } = st;
+  // The post itself, with your view of it.
+  const my = mine[post.id], s0 = stats[post.id], ab = about[post.id];
+  const counts = countsLine(s0);
+  nodes.append(h('div', { class: `fnode center ${post.type}`, style: `left:${cx}px;top:${cy}px` },
+    h('p', { class: 'text' }, postText(post)),
+    h('div', { class: 'meta' }, [ab?.by ? `@${ab.by}` : 'anonymous', counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
+    stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(post.id, k))));
+  // Near: questions, clarifications, rewordings and fallacies it's called.
+  const near = links.out.filter((e) => NEAR_TYPES.includes(e.type) && links.ends[e.to_post]?.kind === 'node').slice(0, MAX_NEAR);
+  const nearIds = new Set(near.map((e) => e.id));
+  const R = Math.min(W, H) * 0.36;
+  near.forEach((e, i) => {
+    const a = (Math.PI * (0.2 + 0.6 * (near.length === 1 ? 0.5 : i / (near.length - 1))));
+    const x = cx + Math.cos(a) * R * 1.25, y = cy + Math.sin(a) * R;
+    line(svg, cx, cy, x, y, LINE_COLORS[e.type], e.type === 'question' || e.type === 'clarification');
+    const end = links.ends[e.to_post];
+    nodes.append(h('button', { class: `fnode near ${end.type}`, style: `left:${x}px;top:${y}px`, onclick: () => openFloat(end.id) },
+      h('span', { class: 'kind', style: `color:${LINE_COLORS[e.type]}` }, EDGE_TYPES[e.type]?.label ?? e.type), postText(end)));
+  });
+  // Everything else reaches off the screen, back into the sea.
+  const far = [
+    ...links.out.filter((e) => !nearIds.has(e.id)).map((e) => ({ e, other: links.ends[e.to_post], out: true })),
+    ...links.inn.map((e) => ({ e, other: links.ends[e.from_post], out: false })),
+  ].filter((f) => f.other?.kind === 'node');
+  far.forEach((f, i) => {
+    const a = -Math.PI * (0.08 + 0.84 * (far.length === 1 ? 0.5 : i / (far.length - 1)));
+    const len = Math.hypot(W, H);
+    const x = cx + Math.cos(a) * len, y = cy + Math.sin(a) * len;
+    const color = LINE_COLORS[f.e.type] ?? '#d9def0';
+    const g = s('g', { class: 'stub' }, svg);
+    s('line', { x1: cx, y1: cy, x2: x, y2: y, stroke: color, 'stroke-width': 2.5, opacity: 0.8 }, g);
+    // Arrowheads point the way the inference runs: from the claim out to its reason.
+    const hx = f.out ? cx + Math.cos(a) * R * 0.9 : cx + Math.cos(a) * R * 0.55, hy = f.out ? cy + Math.sin(a) * R * 0.9 : cy + Math.sin(a) * R * 0.55;
+    const dir = f.out ? a : a + Math.PI;
+    const p = (r, t) => `${hx + Math.cos(dir + t) * r},${hy + Math.sin(dir + t) * r}`;
+    s('polygon', { points: `${p(9, 0)} ${p(9, 2.5)} ${p(9, -2.5)}`, fill: color }, g);
+    const hit = s('line', { x1: cx, y1: cy, x2: x, y2: y, stroke: 'transparent', 'stroke-width': 18, class: 'hit' }, g);
+    const label = (f.out ? OUT_LABEL : IN_LABEL)[f.e.type] ?? EDGE_TYPES[f.e.type]?.label ?? f.e.type;
+    hit.addEventListener('pointerenter', (ev) => tip(ev, label, postText(f.other), f.e.type));
+    hit.addEventListener('pointermove', (ev) => tip(ev));
+    hit.addEventListener('pointerleave', () => { $('float-tip').hidden = true; });
+    hit.addEventListener('click', () => openFloat(f.other.id));
+  });
+  if (!near.length && !far.length) nodes.append(h('p', { class: 'float-empty', style: `left:${cx}px;top:${cy + 140}px` }, 'Nobody has posted reasons for it yet.'));
+}
+function s(tag, attrs, parent) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  parent.append(el);
+  return el;
+}
+function line(svg, x1, y1, x2, y2, color, dashed) {
+  s('line', { x1, y1, x2, y2, stroke: color, 'stroke-width': 2, opacity: 0.85, ...(dashed ? { 'stroke-dasharray': '6 5' } : {}) }, svg);
+}
+function tip(ev, label, text, type) {
+  const t = $('float-tip');
+  if (label !== undefined) {
+    const good = ['support', 'same', 'necessary'].includes(type), bad = ['contention', 'contradicts', 'exclusive'].includes(type);
+    t.className = `float-tip ${good ? 'good' : bad ? 'bad' : ''}`;
+    t.replaceChildren(deps.h('div', { class: 'kind' }, label), deps.h('div', {}, text));
+  }
+  const r = $('float').getBoundingClientRect();
+  t.style.left = `${Math.min(ev.clientX - r.left + 14, r.width - 300)}px`;
+  t.style.top = `${ev.clientY - r.top + 14}px`;
+  t.hidden = false;
 }

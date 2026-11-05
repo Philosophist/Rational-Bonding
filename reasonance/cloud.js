@@ -270,3 +270,12 @@ export async function myRatings(pids) {
     .eq('user_id', userId()).in('post_id', pids));
   return Object.fromEntries(rows.map((r) => [r.post_id, r]));
 }
+// Every arrow touching a post (out to its reasons, in from the claims it
+// backs), with the posts at their other ends.
+export async function links(pid, limit = 60) {
+  const out = check(await db().from('rs_posts').select(COLS).eq('from_post', pid).limit(limit));
+  const inn = check(await db().from('rs_posts').select(COLS).eq('to_post', pid).limit(limit));
+  const ends = [...new Set([...out.map((e) => e.to_post), ...inn.map((e) => e.from_post)])];
+  const others = ends.length ? check(await db().from('rs_posts').select(COLS).in('id', ends)) : [];
+  return { out, inn, ends: Object.fromEntries(others.map((r) => [r.id, r])) };
+}

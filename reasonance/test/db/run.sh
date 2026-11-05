@@ -15,6 +15,9 @@ $PSQL -q -d rs_test -c "create publication supabase_realtime" 2>/dev/null
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/20261102120000_cube_chess.sql >/dev/null
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/20261105120000_reasonance.sql >/dev/null
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/20261105120000_reasonance.sql >/dev/null # safe to run twice
+for f in 20261105230000_reasonance_neither.sql 20261105230000_reasonance_neither.sql; do
+  $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/$f >/dev/null
+done
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f database.test.sql | grep -q 'ALL PASSED'
 # The example posts, on a fresh copy (twice, to show it's safe to rerun).
 $PSQL -q -c "drop database if exists rs_test2" -c "create database rs_test2 template rs_test" >/dev/null

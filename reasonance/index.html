@@ -52,6 +52,7 @@
         <option value="import">Open a map file</option>
         <option value="post-all">Post everything on this map</option>
         <option value="outline">Copy as text outline</option>
+        <option value="print">Print this map</option>
         <option value="delete">Delete this map</option>
       </select>
       <input id="import-file" type="file" accept=".json,application/json" hidden />
@@ -91,6 +92,12 @@
         <input id="feed-search" type="search" placeholder="Find a statement, then press Enter" aria-label="Find a statement" />
         <div id="feed" class="feed" aria-live="polite"></div>
       </div>
+      <div id="float" class="float" hidden>
+        <svg id="float-lines" aria-hidden="true"></svg>
+        <div id="float-nodes"></div>
+        <button id="float-close" class="float-close" aria-label="Back to the sea" title="Back to the sea (Esc)">×</button>
+        <div id="float-tip" class="float-tip" hidden></div>
+      </div>
       <p class="sea-hint">Every orb is a post, and every line an inference. Drag to turn the sea, click an orb to find its post.</p>
     </section>
   </main>
@@ -99,12 +106,13 @@
     <div class="card" role="dialog" aria-labelledby="welcome-title">
       <img src="../images/rational-bonding-logo.png" alt="" width="64" height="58" />
       <h1 id="welcome-title">Reasonance</h1>
-      <p class="lead">Map what you think, and why. Then see where people really agree.</p>
+      <p class="lead">An argumentation map allows you to map what you think and why. Keep track of your values and compare them to what others think in this nuanced social app.</p>
       <ul>
-        <li><strong>Every statement and every inference is a post.</strong> Arrows run from a claim to the reasons for and against it.</li>
-        <li><strong>Argue about the reasoning itself,</strong> not just the facts: an arrow can be supported or contended too.</li>
-        <li><strong>Say how much you agree and how sure you are.</strong> Your views stay private unless you share them.</li>
-        <li><strong>Each statement is posted once,</strong> so everyone builds on the same map instead of talking past each other.</li>
+        <li>Parse out the strongest arguments for and against conclusions.</li>
+        <li>Consider ideas you've never heard before.</li>
+        <li>Record your confidence and how significant a claim is to you.</li>
+        <li>Share or remain as private as you want.</li>
+        <li>Print out maps of your arguments to present.</li>
       </ul>
       <div class="actions">
         <button id="welcome-signup" class="accent">Sign up or sign in</button>

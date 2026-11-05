@@ -22,9 +22,18 @@ feed come in later steps.
   it, support it, contend it and give a view (`TUTORIAL` in `app.js`).
 - **Signed-in home** (`home.js`): the sea of orbs (three.js 0.160.0, loaded
   only here) where every public post is an orb and every arrow a line, behind
-  a feed of the newest statements. Give a view straight from the feed, find a
-  statement, or "Open in my map". Click an orb to find its post. "Open my maps"
-  goes to the editor, and "Home" comes back.
+  a feed of the newest statements. Give a view straight from the feed, or find
+  a statement. Click an orb to find its post. "Open my maps" goes to the
+  editor, and "Home" comes back.
+- **Floating sandbox:** clicking a feed post floats it over the sea, with its
+  questions, clarifications, rewordings and fallacy calls around it (up to
+  `MAX_NEAR`, 4). Its other inferences, and any past the limit, reach off the
+  edge of the screen; hovering one shows the post at the far end (green for
+  support, red for contention), and clicking goes there. × or Esc goes back.
+- **Views:** Agree (green), Disagree (red), and Neither: I don't know,
+  Incomprehensible, or I don't care (which gives one star unless you've set
+  how much it matters).
+- **Print this map** (File menu) prints just the board, in colour.
 
 ## Posting
 - A draft lives only in your map. "Post it" publishes it under your username

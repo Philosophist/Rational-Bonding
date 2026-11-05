@@ -199,3 +199,59 @@ body.home #home-btn { display: none; }
   .home-feed { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; height: 62%; }
   .sea-hint { display: none; }
 }
+
+/* Views: Agree is green, Disagree red, the rest are "Neither". */
+:root { --agree: #4dff88; --disagree: #ff4d5e; }
+.stance-buttons { display: flex; flex-direction: column; gap: 6px; }
+.stance-buttons .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.stance-buttons button.agree { color: var(--agree); border-color: rgba(77, 255, 136, 0.55); }
+.stance-buttons button.disagree { color: var(--disagree); border-color: rgba(255, 77, 94, 0.55); }
+.stance-buttons button.agree.on { background: var(--agree); color: #04130a; border-color: var(--agree); }
+.stance-buttons button.disagree.on { background: var(--disagree); color: #1a0306; border-color: var(--disagree); }
+.stance-buttons button.neither.on { color: var(--yellow); border-color: var(--yellow); }
+.stance-buttons .neither-row[hidden] { display: none; }
+
+/* A post floating over the sea, with its inferences reaching off the screen. */
+.float { position: absolute; inset: 0; z-index: 3; background: rgba(7, 9, 15, 0.35); }
+.float[hidden] { display: none; }
+body.floating .home-feed, body.floating .sea-hint { display: none; }
+.float svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.float .stub .hit { cursor: pointer; pointer-events: stroke; }
+.float .stub:hover line:not(.hit) { stroke-width: 4; opacity: 1; }
+.fnode {
+  position: absolute; transform: translate(-50%, -50%); background: rgba(18, 23, 37, 0.96);
+  border: 1px solid var(--cyan); border-radius: 12px; padding: 10px 12px; color: var(--text); text-align: left; font: inherit;
+}
+.fnode.center { width: min(360px, 86vw); display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 30px rgba(47, 227, 230, 0.25); }
+.fnode.center .text { margin: 0; font-size: 17px; user-select: text; }
+.fnode.center .meta { color: var(--muted); font-size: 13px; }
+.fnode.near { width: min(220px, 40vw); font-size: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.fnode.near:hover { border-color: var(--yellow); }
+.fnode .kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.fnode.question { border-color: var(--yellow); }
+.fnode.fallacy { border-color: #b026ff; }
+.fnode.clarification { border-color: #6f93ff; }
+.float-empty { position: absolute; transform: translateX(-50%); color: var(--muted); margin: 0; }
+.float-close {
+  position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; border-radius: 50%;
+  font-size: 26px; line-height: 1; padding: 0; z-index: 2;
+}
+.float-tip {
+  position: absolute; z-index: 3; max-width: 290px; padding: 8px 10px; border-radius: 10px; pointer-events: none;
+  background: rgba(11, 15, 25, 0.97); border: 1px solid #36405c; display: flex; flex-direction: column; gap: 4px;
+}
+.float-tip[hidden] { display: none; }
+.float-tip .kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.float-tip.good { border-color: var(--agree); color: var(--agree); }
+.float-tip.bad { border-color: var(--disagree); color: var(--disagree); }
+.post-card { cursor: pointer; }
+.post-card:hover { border-color: #3f4b70; }
+.welcome ul { color: var(--text); }
+
+/* Printing a map: just the board, colours kept. */
+@media print {
+  @page { size: landscape; margin: 10mm; }
+  .bar, .panel, .toast, .hint, .tutorial, .home, .welcome { display: none !important; }
+  html, body, .stage, #board { background: #07090f !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .stage { position: static; height: 180mm; }
+}

@@ -193,3 +193,15 @@ test('posting choices (anonymous, share) survive saving and loading', () => {
   assert.equal(back.items[a.id].anonymous, true);
   assert.equal(back.items[a.id].share, false);
 });
+
+test("I don't care is a Neither view that gives one star by default", async () => {
+  const { NEITHER } = await import('../model.js');
+  assert.ok(NEITHER.includes('dontcare'));
+  const m = createMap('t', 1);
+  const a = addNode(m, { text: 'A.' });
+  rate(m, a.id, { stance: 'dontcare' });
+  assert.equal(m.items[a.id].rating.relevance, 1);
+  rate(m, a.id, { relevance: 4 });
+  rate(m, a.id, { stance: 'dontcare' });
+  assert.equal(m.items[a.id].rating.relevance, 4);
+});

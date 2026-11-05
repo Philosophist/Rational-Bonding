@@ -11,6 +11,7 @@ import { FALLACIES } from './fallacies.js';
 import * as cloud from './cloud.js';
 import { openSignIn, openUsername, readLinkError } from '../accounts/signin.js';
 import { initHome, openHome, closeHome } from './home.js';
+import { stanceButtons } from './stances.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const STORE = 'reasonance.maps.v1';
@@ -30,7 +31,7 @@ const GHOST = '#ff2fb4';
 const GHOST_PREFIX = 'ghost:';
 const isGhost = (id) => typeof id === 'string' && id.startsWith(GHOST_PREFIX);
 const ghostOwner = (id) => id.slice(GHOST_PREFIX.length);
-const STANCE_COLORS = { agree: '#7dffb0', disagree: '#ff5c7a', unknown: '#ffe94d', incomprehensible: '#a5afc6' };
+const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
 
 const $ = (id) => document.getElementById(id);
 const board = $('board'), world = $('world');
@@ -569,8 +570,7 @@ function shareToggle(it) {
 }
 function ratingBlock(it) {
   const r = it.rating ?? {};
-  const stance = h('div', { class: 'row' }, Object.entries(STANCES).map(([k, label]) =>
-    h('button', { class: r.stance === k ? 'on' : '', onclick: () => doRate(it.id, { stance: r.stance === k ? null : k }) }, label)));
+  const stance = stanceButtons(h, r.stance, (k) => doRate(it.id, { stance: k }));
   const conf = r.confidence ?? 50;
   const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', value: r.confidence ?? '', placeholder: '–', 'aria-label': 'Confidence percent',
     onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : Number(ev.target.value) }) });
@@ -1360,6 +1360,9 @@ $('file-menu').addEventListener('change', async (ev) => {
     const drafts = Object.keys(map.items).filter((id) => !map.posts?.[id]);
     if (!drafts.length) { toast('Everything on this map is already posted.'); return; }
     postNow(drafts);
+  } else if (what === 'print') {
+    selected = null; second = null; render(); fit();
+    setTimeout(() => window.print(), 100);
   } else if (what === 'outline') {
     const text = outline(map);
     try { await navigator.clipboard.writeText(text); toast('Outline copied. Paste it into an email or a post.'); }
