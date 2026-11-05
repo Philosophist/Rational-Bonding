@@ -77,6 +77,10 @@ body.present .edit-only { display: none !important; }
 .pill text { font-size: 12px; font-weight: 600; }
 .pill.sel rect { stroke-width: 3; filter: drop-shadow(0 0 6px rgba(255, 233, 77, 0.7)); }
 .pill .hit { fill: transparent; stroke: none; }
+.pill .long { display: none; }
+.pill:hover .long, .pill.sel .long { display: inline; }
+.pill:hover .short, .pill.sel .short { display: none; }
+.pill .short text { font-size: 16px; }
 
 .dim { opacity: 0.13; }
 .target-ok .box, .target-ok rect { stroke: var(--yellow) !important; }

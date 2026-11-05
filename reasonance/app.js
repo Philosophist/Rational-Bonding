@@ -166,11 +166,13 @@ function ghostLayout(id) {
   const text = standingContention(map, id);
   if (!text) return null;
   const lines = wrap(text, 24);
-  return { text, lines, w: GHOST_W, h: 26 + lines.length * 16 + 12 };
+  return { text, lines, w: GHOST_W, h: 18 + lines.length * 16 };
 }
+// Premise arrows show just a plus sign; hovering or selecting one spells it out.
 function pillLabel(e) {
-  return e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
+  return e.type === 'premise' ? '+' : EDGE_TYPES[e.type].label;
 }
+const pillWidth = (label) => (label === '+' ? 24 : label.length * 7 + 22);
 function computeBoxes() {
   const boxes = new Map();
   for (const it of Object.values(map.items)) {
@@ -191,7 +193,7 @@ function computeBoxes() {
       // The pill sits halfway along the visible part of the line, so it
       // never covers an arrowhead.
       const p = exitPoint(a, b.cx, b.cy), q = exitPoint(b, a.cx, a.cy);
-      const w = label.length * 7 + 22, len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      const w = pillWidth(label), len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
       const along = Math.min(len / 2, Math.max(len - (w / 2 + 20), len * 0.3)) / len;
       boxes.set(e.id, { cx: p.x + (q.x - p.x) * along, cy: p.y + (q.y - p.y) * along, w, h: 24, label });
       pending.splice(i, 1);
@@ -234,9 +236,17 @@ function render() {
 
     const pg = s('g', { class: `pill${selected === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
     s('rect', { class: 'hit', x: p.cx - p.w / 2 - 8, y: p.cy - p.h / 2 - 8, width: p.w + 16, height: p.h + 16 }, pg);
-    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, pg);
-    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, pg);
+    const short = s('g', { class: e.type === 'premise' ? 'short' : '' }, pg);
+    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, short);
+    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, short);
     t.textContent = p.label;
+    if (e.type === 'premise') {
+      const full = `Premise ${e.premise}`, fw = pillWidth(full);
+      const long = s('g', { class: 'long' }, pg);
+      s('rect', { x: p.cx - fw / 2, y: p.cy - p.h / 2, width: fw, height: p.h, rx: 12, stroke: color }, long);
+      const lt = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, long);
+      lt.textContent = full;
+    }
     if (e.rating?.stance) stanceDot(pg, p.cx + p.w / 2 - 2, p.cy - p.h / 2 + 2, e.rating.stance);
     const title = s('title', {}, pg); title.textContent = itemText(map, e.id);
   }
@@ -258,9 +268,7 @@ function render() {
     const g = s('g', { class: `node ghost${selected === gid ? ' sel' : ''}${off}`, 'data-id': gid }, layers.nodes);
     const x0 = gb.cx - gb.w / 2, y0 = gb.cy - gb.h / 2;
     s('rect', { class: 'box', x: x0, y: y0, width: gb.w, height: gb.h, rx: 14, stroke: GHOST }, g);
-    const kind = s('text', { class: 'kind', x: x0 + 12, y: y0 + 16, fill: GHOST }, g);
-    kind.textContent = map.items[ghostOwner(gid)]?.type === 'axiom' ? 'Automatic · axiom' : 'Automatic · goes away with a support';
-    const t = s('text', { class: 'ghost-text', x: x0 + 12, y: y0 + 20 }, g);
+    const t = s('text', { class: 'ghost-text', x: x0 + 12, y: y0 + 4 }, g);
     gb.G.lines.forEach((line, i) => { const ts = s('tspan', { x: x0 + 12, dy: i ? 16 : 18 }, t); ts.textContent = line; });
   }
 
@@ -342,7 +350,7 @@ function overviewPanel() {
   const counts = Object.values(map.items).reduce((c, it) => (c[it.kind]++, c), { node: 0, edge: 0 });
   return [
     h('h2', {}, map.title),
-    h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows. Saved in this browser.`),
+    h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
     h('p', {}, h('strong', {}, 'One post, one statement.'), ' If a thought has several parts, give each its own post and join them with Combined premises, so people can agree with one part and disagree with another.'),
     h('p', {}, 'Start with a conclusion. Arrows point from a claim out to the reasons that support or contend it, so you can follow them to see what a belief rests on.'),
     h('p', {}, 'Click the label on any arrow to argue about the inference itself, for example "the wet sidewalk doesn\'t show it rained, because the sprinklers ran".'),
@@ -350,7 +358,7 @@ function overviewPanel() {
     h('div', { class: 'legend more' }, Object.entries(EDGE_TYPES).map(([k, t]) =>
       h('span', {}, h('span', { class: 'swatch', style: `background:${EDGE_COLORS[k]}` }), t.label))),
     h('h3', { class: 'more' }, 'Moving around'),
-    h('p', { class: 'muted more' }, 'Drag posts to move them. Drag the background to pan, and scroll or pinch to zoom. Double-click the background to add a statement there. Delete removes the selected post.'),
+    h('p', { class: 'muted more' }, 'Drag posts to move them. Drag the background to pan, and scroll or pinch to zoom. The arrow keys slide the view, and Page Up and Page Down zoom. Double-click the background to add a statement there. Delete removes the selected post.'),
   ];
 }
 
@@ -717,8 +725,51 @@ board.addEventListener('wheel', (ev) => {
   world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
 }, { passive: false });
 
+// Keyboard moves, like Cube Chess: arrow keys slide the view, Page Up and
+// Page Down (or + and -) zoom. Held keys move smoothly, a little each frame.
+const VIEW_KEYS = {
+  ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
+  PageUp: 'in', '+': 'in', '=': 'in', PageDown: 'out', '-': 'out', _: 'out',
+};
+const heldKeys = new Set();
+let keyFrame = 0, keyTime = 0;
+function zoomView(f) {
+  const mx = board.clientWidth / 2, my = board.clientHeight / 2;
+  const k = Math.min(3, Math.max(0.15, view.k * f));
+  view.x = mx - (mx - view.x) * (k / view.k); view.y = my - (my - view.y) * (k / view.k); view.k = k;
+}
+function keyStep(now) {
+  const dt = Math.min(0.05, (now - (keyTime || now)) / 1000); keyTime = now;
+  const pan = 700 * dt, held = new Set([...heldKeys].map((k) => VIEW_KEYS[k]));
+  if (held.has('left')) view.x += pan;
+  if (held.has('right')) view.x -= pan;
+  if (held.has('up')) view.y += pan;
+  if (held.has('down')) view.y -= pan;
+  if (held.has('in')) zoomView(Math.exp(1.6 * dt));
+  if (held.has('out')) zoomView(Math.exp(-1.6 * dt));
+  world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+  keyFrame = heldKeys.size ? requestAnimationFrame(keyStep) : 0;
+  if (!keyFrame) keyTime = 0;
+}
+document.addEventListener('keyup', (ev) => heldKeys.delete(ev.key));
+window.addEventListener('blur', () => heldKeys.clear());
+
 document.addEventListener('keydown', (ev) => {
-  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+  if (VIEW_KEYS[ev.key] && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+    ev.preventDefault();
+    if (!ev.repeat && !heldKeys.has(ev.key)) {
+      // A quick tap still moves a little.
+      const dir = VIEW_KEYS[ev.key], nudge = 60;
+      if (dir === 'left') view.x += nudge; else if (dir === 'right') view.x -= nudge;
+      else if (dir === 'up') view.y += nudge; else if (dir === 'down') view.y -= nudge;
+      else zoomView(dir === 'in' ? 1.15 : 1 / 1.15);
+      world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+    }
+    heldKeys.add(ev.key);
+    if (!keyFrame) keyFrame = requestAnimationFrame(keyStep);
+    return;
+  }
   if (ev.key === 'Escape') {
     if (connecting) cancelConnect();
     else if (document.body.classList.contains('present')) togglePresent();
