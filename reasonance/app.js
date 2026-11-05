@@ -350,7 +350,7 @@ function overviewPanel() {
   const counts = Object.values(map.items).reduce((c, it) => (c[it.kind]++, c), { node: 0, edge: 0 });
   return [
     h('h2', {}, map.title),
-    h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows. Saved in this browser.`),
+    h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
     h('p', {}, h('strong', {}, 'One post, one statement.'), ' If a thought has several parts, give each its own post and join them with Combined premises, so people can agree with one part and disagree with another.'),
     h('p', {}, 'Start with a conclusion. Arrows point from a claim out to the reasons that support or contend it, so you can follow them to see what a belief rests on.'),
     h('p', {}, 'Click the label on any arrow to argue about the inference itself, for example "the wet sidewalk doesn\'t show it rained, because the sprinklers ran".'),
