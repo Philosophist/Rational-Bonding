@@ -90,6 +90,7 @@ body.present .edit-only { display: none !important; }
   overflow: auto; background: rgba(18, 23, 37, 0.96); border: 1px solid #222b42; border-radius: 14px;
   padding: 14px; display: flex; flex-direction: column; gap: 12px; z-index: 2;
 }
+.panel.compact { bottom: auto; }
 body.present .panel { display: none; }
 .panel h2 { margin: 0; font-size: 17px; }
 .panel h3 { margin: 4px 0 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -103,6 +104,7 @@ body.present .panel { display: none; }
 .panel .standing { color: #ff9fe9; font-style: italic; }
 .panel .stars button { padding: 4px 8px; }
 .panel .stars button.on { color: var(--yellow); border-color: var(--yellow); }
+.panel .tips { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .panel .history { font-size: 13px; color: var(--muted); margin: 0; padding-left: 18px; }
 .panel label { display: flex; gap: 6px; align-items: center; font-size: 14px; }
 .panel input[type=range] { flex: 1; padding: 0; }
@@ -122,6 +124,7 @@ body:not(.present) .toast { left: calc(50% - 180px); }
 
 @media (max-width: 720px) {
   .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 42%; }
+  .panel.compact { bottom: 8px; }
   #map-title, .bar .name { display: none; }
   .bar { gap: 6px; padding: 6px 8px; }
   .bar button, .bar select { padding: 5px 10px; font-size: 14px; }
