@@ -50,10 +50,19 @@
         <option value="">File…</option>
         <option value="download">Download map file</option>
         <option value="import">Open a map file</option>
+        <option value="post-all">Post everything on this map</option>
         <option value="outline">Copy as text outline</option>
         <option value="delete">Delete this map</option>
       </select>
       <input id="import-file" type="file" accept=".json,application/json" hidden />
+    </div>
+    <div id="account-box" class="group account" hidden>
+      <button id="sign-in">Sign in</button>
+      <select id="account-menu" aria-label="Your account" hidden>
+        <option value="">@you</option>
+        <option value="username">Change username</option>
+        <option value="signout">Sign out</option>
+      </select>
     </div>
   </header>
 

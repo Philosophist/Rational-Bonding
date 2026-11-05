@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
-  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES,
+  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -174,4 +174,13 @@ test('compound posts are spotted and can be split into combined premises', () =>
   assert.equal(itemText(m, e.id), "'It rained' is supported by 'These premises, taken together'");
   assert.deepEqual(made.map((id) => m.items[id].text), ['The street is wet too.', 'The sprinklers do not reach it.']);
   assert.throws(() => splitIntoPremises(m, claim.id, ['one']));
+});
+
+test('posted items keep their server ids only in a map\'s own saved copy', () => {
+  const { m, a, b } = twoClaims();
+  const e = addEdge(m, 'support', a.id, b.id);
+  m.posts = { [a.id]: '11111111-2222-4333-8444-555555555555', [e.id]: 'not-a-uuid', nope: '11111111-2222-4333-8444-555555555555' };
+  assert.deepEqual(parseMap(serialize(m), 1, { keepPosts: true }).posts, { [a.id]: '11111111-2222-4333-8444-555555555555' });
+  assert.equal(parseMap(serialize(m)).posts, undefined, 'an opened file starts as drafts');
+  assert.deepEqual(postOrder(m, [e.id]), [a.id, b.id, e.id], 'ends are posted before their arrow');
 });

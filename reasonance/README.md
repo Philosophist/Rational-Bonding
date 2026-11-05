@@ -4,9 +4,24 @@ An argument-mapping app: every statement (node) and every inference (arrow) is
 a post, and an arrow can point at another arrow, so people can support or
 contend the reasoning itself, not just the facts.
 
-Step 1 of the plan: the map editor. It runs as a guest and saves maps in the
-browser (`localStorage`). Accounts, shared posts, the 3D sea of posts and the
+Steps 1 and 2 of the plan: the map editor and accounts. As a guest it saves
+maps in the browser (`localStorage`). Signed in with the shared Rational
+Bonding account, maps are also saved to the account (`rs_maps`), any item can
+be posted publicly (`rs_posts`), and ratings of posted items are saved
+privately with their dated history (`rs_ratings`, `rs_rating_history`). Only
+the totals per post are public (`rs_post_stats`). The 3D sea of posts and the
 feed come in later steps.
+
+## Posting
+- A draft lives only in your map. "Post it" publishes it under your username;
+  posting an arrow also posts any draft ends it needs.
+- You can edit a post's words until someone else rates it. Then they freeze
+  (the database refuses the change), so nobody can change what people agreed
+  with. Flipping an arrow is always allowed.
+- Deleting: "Remove from map" keeps the post; "Delete the post itself" works
+  only while nobody else has rated it and no arrow points at it.
+- Undo never un-posts: `map.posts` (item id to post id) sits outside the undo
+  snapshots.
 
 ## Rules of the map
 - **One post, one statement.** A post that reads like several statements gets a
@@ -38,7 +53,9 @@ feed come in later steps.
 |---|---|
 | `model.js` | The map rules, with no DOM code |
 | `fallacies.js` | The built-in fallacy library |
-| `app.js` | SVG board, panel, saving, import/export |
+| `app.js` | SVG board, panel, saving, import/export, the account and posting |
+| `cloud.js` | Supabase calls: saved maps, posts, ratings, totals |
+| `test/db/` | Database tests for the `rs_*` migration on a plain Postgres |
 | `index.html`, `style.css` | The page |
 
 Arrowheads are drawn as plain triangles, not SVG `<marker>` references, so
@@ -47,4 +64,6 @@ they show wherever the page is hosted.
 ## Testing
 ```
 cd reasonance && npm test
+# database rules, on any Postgres 15+ (a stub stands in for Supabase's auth):
+PSQL="psql -h <socket dir> -p <port> -U postgres" sh test/db/run.sh
 ```

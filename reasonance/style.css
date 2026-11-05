@@ -45,6 +45,7 @@ input:focus, textarea:focus, button:focus-visible, select:focus-visible { outlin
 .bar .name { letter-spacing: 0.03em; background: linear-gradient(90deg, var(--cyan), var(--magenta)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .bar .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #map-title { width: 14em; max-width: 40vw; }
+.bar .account { margin-left: auto; }
 body.present .edit-only { display: none !important; }
 
 .stage { position: relative; flex: 1; min-height: 0; }

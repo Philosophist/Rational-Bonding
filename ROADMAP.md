@@ -94,9 +94,11 @@ in [CLAUDE.md](CLAUDE.md).
 
 - **Reasonance** (argument-mapping app, `reasonance/`). Plan:
   https://claude.ai/artifact/KYaEnrF5TgaUmroiHLhaRf
-  1. Map editor, guest-only, saving in the browser (this PR).
-  2. Accounts and posts: `rs_*` tables by migration, shared sign-in, axioms,
-     fallacies and dated belief history saved to the account.
+  1. Map editor, guest-only, saving in the browser (done).
+  2. Accounts and posts (done): `rs_*` tables by migration, shared sign-in
+     (`accounts/auth.js`, `accounts/signin.js`), posting, private ratings with
+     dated history, public totals, maps saved to the account. Later, Cube
+     Chess could switch from its own `chess3d/account.js` to `accounts/auth.js`.
   3. The 3D sea of posts (three.js), clicking a post brings it into the map.
   4. Feed and search, belief sharing, "wants to know what you think" asks.
   5. Curation settings (sliders, following someone's curation).
