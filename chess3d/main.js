@@ -7,7 +7,7 @@ import {
   N, SIZE, LEVELS, FILES, coords, idx, sqName, other,
   initialState, legalMovesFrom, applyMove, replay, resign, findKing, pawnAttacks, RULES_VERSION,
   DEFAULT_RULES, normalizeRules, facingChoices, facingLabel, frameUp, pawnFrame, playOnBoard, usesFacing, timeout, canMate,
-  isCornerFacing, hexDirs,
+  isCornerFacing, hexDirs, frameDirs, ROOK_DIRS,
 } from './rules.js';
 import { Link, randomCode } from './net.js';
 import { newClock, punch, timeLeft, flagged, formatTime, tcKey, parseTcKey, tcLabel } from './clock.js';
@@ -407,8 +407,51 @@ function addLines(positions, mat, sq) {
   m.renderOrder = 3;
   markerGroup.add(m);
 }
+// Knights jump, so instead of touching cubes they get: a solid line straight
+// to each landing square, and a dotted "L" that explains it: two squares along
+// one of the knight's own axes, then a turn at right angles for the last one.
+const KNIGHT_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.85, depthWrite: false });
+const KNIGHT_DASH_MAT = new THREE.LineDashedMaterial({ color: 0xffe94d, dashSize: 0.12, gapSize: 0.09, transparent: true, opacity: 0.95, depthWrite: false });
+function addKnightPaths(from, piece) {
+  const relative = app.game.rules.mode === 'relative' && piece.o && app.game.rules.knightFacing;
+  const axes = relative ? frameDirs(piece.o) : ROOK_DIRS;
+  const o = coords(from);
+  const solid = [], dashed = [];
+  const cells = new Set();
+  const a = worldPos(from);
+  for (const m of app.targets) {
+    const d = coords(m.to).map((v, k) => v - o[k]);
+    let leg = null;
+    for (const u of axes) {
+      const v = d.map((x, k) => x - 2 * u[k]);
+      if (u[0] * v[0] + u[1] * v[1] + u[2] * v[2] === 0 && axes.some((w) => w.every((x, k) => x === v[k]))) {
+        leg = u;
+        break;
+      }
+    }
+    const b = worldPos(m.to);
+    solid.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    cells.add(m.to);
+    if (!leg) continue;
+    // The cubes the L passes through: one and two along the axis, then the landing.
+    for (const k of [1, 2]) {
+      const q = o.map((v, j) => v + k * leg[j]);
+      if (q.every((v) => v >= 0 && v < N)) cells.add(idx(...q));
+    }
+    const c = a.clone().add(g2w(leg).multiplyScalar(2));
+    dashed.push(a.x, a.y, a.z, c.x, c.y, c.z, c.x, c.y, c.z, b.x, b.y, b.z);
+  }
+  if (cells.size) addLines(cellEdges([...cells]), PATH_CELL_MAT, from);
+  if (solid.length) addLines(new Float32Array(solid), KNIGHT_LINE_MAT, from);
+  if (dashed.length) {
+    addLines(new Float32Array(dashed), KNIGHT_DASH_MAT, from);
+    markerGroup.children.at(-1).computeLineDistances();
+  }
+}
+
 function addPaths(from, piece) {
-  if (!piece || piece.t === 'N') return;
+  if (!piece) return;
+  if (piece.t === 'N') return addKnightPaths(from, piece);
   const o = coords(from);
   const cells = new Set();
   const line = [];
