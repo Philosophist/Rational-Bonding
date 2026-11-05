@@ -358,7 +358,7 @@ function overviewPanel() {
     h('div', { class: 'legend more' }, Object.entries(EDGE_TYPES).map(([k, t]) =>
       h('span', {}, h('span', { class: 'swatch', style: `background:${EDGE_COLORS[k]}` }), t.label))),
     h('h3', { class: 'more' }, 'Moving around'),
-    h('p', { class: 'muted more' }, 'Drag posts to move them. Drag the background to pan, and scroll or pinch to zoom. Double-click the background to add a statement there. Delete removes the selected post.'),
+    h('p', { class: 'muted more' }, 'Drag posts to move them. Drag the background to pan, and scroll or pinch to zoom. The arrow keys slide the view, and Page Up and Page Down zoom. Double-click the background to add a statement there. Delete removes the selected post.'),
   ];
 }
 
@@ -725,8 +725,51 @@ board.addEventListener('wheel', (ev) => {
   world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
 }, { passive: false });
 
+// Keyboard moves, like Cube Chess: arrow keys slide the view, Page Up and
+// Page Down (or + and -) zoom. Held keys move smoothly, a little each frame.
+const VIEW_KEYS = {
+  ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
+  PageUp: 'in', '+': 'in', '=': 'in', PageDown: 'out', '-': 'out', _: 'out',
+};
+const heldKeys = new Set();
+let keyFrame = 0, keyTime = 0;
+function zoomView(f) {
+  const mx = board.clientWidth / 2, my = board.clientHeight / 2;
+  const k = Math.min(3, Math.max(0.15, view.k * f));
+  view.x = mx - (mx - view.x) * (k / view.k); view.y = my - (my - view.y) * (k / view.k); view.k = k;
+}
+function keyStep(now) {
+  const dt = Math.min(0.05, (now - (keyTime || now)) / 1000); keyTime = now;
+  const pan = 700 * dt, held = new Set([...heldKeys].map((k) => VIEW_KEYS[k]));
+  if (held.has('left')) view.x += pan;
+  if (held.has('right')) view.x -= pan;
+  if (held.has('up')) view.y += pan;
+  if (held.has('down')) view.y -= pan;
+  if (held.has('in')) zoomView(Math.exp(1.6 * dt));
+  if (held.has('out')) zoomView(Math.exp(-1.6 * dt));
+  world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+  keyFrame = heldKeys.size ? requestAnimationFrame(keyStep) : 0;
+  if (!keyFrame) keyTime = 0;
+}
+document.addEventListener('keyup', (ev) => heldKeys.delete(ev.key));
+window.addEventListener('blur', () => heldKeys.clear());
+
 document.addEventListener('keydown', (ev) => {
-  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+  if (VIEW_KEYS[ev.key] && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+    ev.preventDefault();
+    if (!ev.repeat && !heldKeys.has(ev.key)) {
+      // A quick tap still moves a little.
+      const dir = VIEW_KEYS[ev.key], nudge = 60;
+      if (dir === 'left') view.x += nudge; else if (dir === 'right') view.x -= nudge;
+      else if (dir === 'up') view.y += nudge; else if (dir === 'down') view.y -= nudge;
+      else zoomView(dir === 'in' ? 1.15 : 1 / 1.15);
+      world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+    }
+    heldKeys.add(ev.key);
+    if (!keyFrame) keyFrame = requestAnimationFrame(keyStep);
+    return;
+  }
   if (ev.key === 'Escape') {
     if (connecting) cancelConnect();
     else if (document.body.classList.contains('present')) togglePresent();
