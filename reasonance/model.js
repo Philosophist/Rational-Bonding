@@ -26,10 +26,10 @@ export const EDGE_TYPES = {
   contention: { label: 'Contention', phrase: 'is contended by' },
   question: { label: 'Question', phrase: 'is questioned by' },
   clarification: { label: 'Clarification', phrase: 'is clarified by' },
-  suggestion: { label: 'Suggests', phrase: 'prompts the suggestion' },
   premise: { label: 'Premise', phrase: 'has the premise' },
   example: { label: 'Fallacy', phrase: 'is an example of' },
-  same: { label: 'Same as', phrase: 'means the same as', twoWay: true },
+  // note: a line of flavour text shown wherever the type is explained.
+  same: { label: 'Means the same', phrase: 'means the same thing as', twoWay: true, note: 'IOW = translation = means the same thing.' },
   contradicts: { label: 'Contradicts', phrase: 'contradicts', twoWay: true },
   exclusive: { label: 'Mutually exclusive', twoWay: true },
   necessary: { label: 'Mutually necessary', twoWay: true },
@@ -240,7 +240,10 @@ export function standingContention(map, id) {
   const said = n.text?.trim() || '(empty)';
   if (n.type === 'axiom') return `'${said}' is held as an axiom, with no support claimed.`;
   if (n.type !== 'statement') return null;
-  const supported = edgesFrom(map, id).some((e) => e.type === 'support');
+  // A rewording or translation shares the support of what it means the same as.
+  const hasSupport = (nid) => edgesFrom(map, nid).some((e) => e.type === 'support');
+  const same = [...edgesFrom(map, id), ...edgesTo(map, id)].filter((e) => e.type === 'same').map((e) => (e.from === id ? e.to : e.from));
+  const supported = hasSupport(id) || same.some(hasSupport);
   return supported ? null : `'${said}' is not yet supported.`;
 }
 
@@ -356,8 +359,10 @@ export function parseMap(text, now = Date.now()) {
   }
   for (const it of items) {
     if (it.kind !== 'edge') continue;
-    if (!EDGE_TYPES[it.type]) throw new Error(`Unknown arrow type: ${it.type}`);
-    const e = { id: it.id, kind: 'edge', type: it.type, from: String(it.from), to: String(it.to) };
+    // "Suggests" arrows were dropped (Steve, 2026-11-05); older maps keep them as questions.
+    const type = it.type === 'suggestion' ? 'question' : it.type;
+    if (!EDGE_TYPES[type]) throw new Error(`Unknown arrow type: ${it.type}`);
+    const e = { id: it.id, kind: 'edge', type, from: String(it.from), to: String(it.to) };
     if (it.premise !== undefined) e.premise = String(it.premise).slice(0, 12);
     if (it.rating) e.rating = cleanRating(it.rating);
     map.items[e.id] = e;
@@ -387,7 +392,16 @@ function touch(map, now = Date.now()) { map.updated = now; }
 
 // The example map: a claim, its reason, and a debate about the inference
 // itself rather than the facts.
-export function exampleMap(now = Date.now()) {
+// Ready-made example arguments. Every post is a single statement.
+// Positions are rough; the editor tidies them with Arrange on load.
+export const EXAMPLES = [
+  { key: 'rain', title: 'Did it rain last night?' },
+  { key: 'bikes', title: 'Should Main Street get bike lanes?' },
+  { key: 'earth', title: 'Is the Earth round?' },
+];
+export function exampleMap(now = Date.now(), key = 'rain') {
+  if (key === 'bikes') return bikesExample(now);
+  if (key === 'earth') return earthExample(now);
   const m = createMap('Did it rain last night?', now);
   const rain = addNode(m, { text: 'It rained last night.', x: -200, y: 0 });
   const wet = addNode(m, { text: 'The sidewalk is wet this morning.', x: 260, y: 0 });
@@ -404,6 +418,47 @@ export function exampleMap(now = Date.now()) {
   addEdge(m, 'premise', neighbour.id, addNode(m, { text: 'My neighbour is wrong about everything.', x: 220, y: 580 }).id);
   const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 170 });
   addEdge(m, 'example', hom.id, fal.id);
+  m.updated = now;
+  return m;
+}
+
+function bikesExample(now) {
+  const m = createMap('Should Main Street get bike lanes?', now);
+  const at = (text, x, y, type) => addNode(m, { text, x, y, ...(type ? { type } : {}) });
+  const claim = at('Our town should add bike lanes on Main Street.', 0, 0);
+  const safety = addNode(m, { type: 'combiner', x: 540, y: -200 });
+  addEdge(m, 'support', claim.id, safety.id);
+  addEdge(m, 'premise', safety.id, at('Bike lanes reduce crashes involving cyclists.', 1080, -260).id);
+  addEdge(m, 'premise', safety.id, at('Main Street has more cyclist crashes than any other street in town.', 1080, -140).id);
+  const parking = at('Bike lanes would remove parking spaces on Main Street.', 540, 0);
+  const lost = addEdge(m, 'contention', claim.id, parking.id);
+  addEdge(m, 'contention', lost.id, at('The garage two blocks away is rarely more than half full.', 1080, 40).id);
+  addEdge(m, 'question', claim.id, at('How much would the bike lanes cost?', 540, 180, 'question').id);
+  const slope = at('If we add bike lanes, cars will soon be banned from downtown.', 540, 340);
+  const slide = addEdge(m, 'contention', claim.id, slope.id);
+  const fal = addNode(m, { type: 'fallacy', fallacy: 'Slippery slope', x: 1080, y: 380 });
+  addEdge(m, 'example', slide.id, fal.id);
+  m.updated = now;
+  return m;
+}
+
+function earthExample(now) {
+  const m = createMap('Is the Earth round?', now);
+  const at = (text, x, y, type) => addNode(m, { text, x, y, ...(type ? { type } : {}) });
+  const claim = at('The Earth is roughly a sphere.', 0, 0);
+  addEdge(m, 'same', claim.id, at('La Terre est à peu près une sphère.', 540, -300).id);
+  const ships = at('Ships disappear hull first as they sail over the horizon.', 540, -140);
+  const sail = addEdge(m, 'support', claim.id, ships.id);
+  addEdge(m, 'support', sail.id, at('Careful observation tells us how the world is.', 1080, -100, 'axiom').id);
+  const shadow = at("The Earth's shadow on the Moon is always round during a lunar eclipse.", 540, 20);
+  addEdge(m, 'support', claim.id, shadow.id);
+  addEdge(m, 'clarification', shadow.id, at('A lunar eclipse happens when the Earth blocks sunlight from reaching the Moon.', 1080, 40).id);
+  const flat = at('The ground looks flat where I stand.', 540, 200);
+  const looks = addEdge(m, 'contention', claim.id, flat.id);
+  addEdge(m, 'contention', looks.id, at('A small patch of a very large sphere looks flat.', 1080, 220).id);
+  const crowd = at('Most people believe the Earth is round.', 540, 360);
+  const pop = addEdge(m, 'support', claim.id, crowd.id);
+  addEdge(m, 'example', pop.id, addNode(m, { type: 'fallacy', fallacy: 'Appeal to popularity', x: 1080, y: 400 }).id);
   m.updated = now;
   return m;
 }

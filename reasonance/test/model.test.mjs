@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
-  splitStatements, compoundParts, splitIntoPremises, isNode,
+  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -33,7 +33,7 @@ test('an inference can itself be supported or contended', () => {
 test('two-way relations read symmetrically', () => {
   const { m, a, b } = twoClaims();
   assert.equal(itemText(m, addEdge(m, 'exclusive', a.id, b.id).id), "'It rained' and 'The sidewalk is wet' are mutually exclusive");
-  assert.equal(itemText(m, addEdge(m, 'same', a.id, b.id).id), "'It rained' means the same as 'The sidewalk is wet'");
+  assert.equal(itemText(m, addEdge(m, 'same', a.id, b.id).id), "'It rained' means the same thing as 'The sidewalk is wet'");
 });
 
 test('fallacy nodes are definitions and arrows to them are examples', () => {
@@ -129,6 +129,11 @@ test('maps round-trip through export, and bad data is refused', () => {
     e2: { id: 'e2', kind: 'edge', type: 'support', from: 'a', to: 'e1' },
   } };
   assert.throws(() => parseMap(JSON.stringify(loop)), /itself/);
+  const old = parseMap(JSON.stringify({ items: {
+    a: { id: 'a', kind: 'node', type: 'statement', text: 'a' }, b: { id: 'b', kind: 'node', type: 'statement', text: 'b' },
+    e1: { id: 'e1', kind: 'edge', type: 'suggestion', from: 'a', to: 'b' },
+  } }));
+  assert.equal(old.items.e1.type, 'question', 'old "Suggests" arrows load as questions');
 });
 
 test('the outline starts from conclusions and indents their reasons', () => {
@@ -139,9 +144,15 @@ test('the outline starts from conclusions and indents their reasons', () => {
   assert.match(text, /Fallacy: 'An Ad hominem fallacy is when an argument attacks/);
 });
 
-test('every post in the example map is a single statement', () => {
-  const m = exampleMap();
-  for (const n of Object.values(m.items).filter(isNode)) assert.equal(compoundParts(n), null, n.text);
+test('every post in every example is a single statement', () => {
+  assert.ok(EXAMPLES.length >= 3);
+  for (const ex of EXAMPLES) {
+    const m = exampleMap(1, ex.key);
+    assert.equal(m.title, ex.title);
+    for (const n of Object.values(m.items).filter(isNode)) assert.equal(compoundParts(n), null, n.text);
+    const back = parseMap(serialize(m));
+    for (const id of Object.keys(m.items)) assert.equal(itemText(back, id), itemText(m, id));
+  }
 });
 
 test('compound posts are spotted and can be split into combined premises', () => {

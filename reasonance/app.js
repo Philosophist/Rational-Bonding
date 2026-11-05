@@ -3,7 +3,7 @@
 // <marker> references), so they show up wherever the page is hosted.
 import {
   NODE_TYPES, EDGE_TYPES, STANCES, RELEVANCE, createMap, addNode, addEdge, removeItem, flipEdge,
-  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap,
+  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES,
   isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider,
   compoundParts, splitIntoPremises,
 } from './model.js';
@@ -15,7 +15,7 @@ const NODE_W = 240, CHARS = 30, LINE = 18;
 
 const EDGE_COLORS = {
   support: '#2fe3e6', contention: '#e04dff', question: '#ffe94d', clarification: '#6f93ff',
-  suggestion: '#a5afc6', premise: '#d9def0', example: '#b026ff', same: '#7dffb0',
+  premise: '#d9def0', example: '#b026ff', same: '#7dffb0',
   contradicts: '#ff5c7a', exclusive: '#ff5c7a', necessary: '#7dffb0',
 };
 const NODE_COLORS = {
@@ -37,6 +37,8 @@ const layers = { edges: $('layer-edges'), nodes: $('layer-nodes'), pills: $('lay
 let store = load();
 let map = store.maps[store.current];
 let selected = null;      // item id
+const YELLOW = '#ffe94d';
+let second = null;        // a second item picked with Shift or Ctrl, to join the two with an arrow
 let connecting = null;    // { from, type } while picking an arrow's far end
 let spotlight = null;     // item id in present mode
 let logScale = false;
@@ -151,7 +153,11 @@ function wrap(text, chars = CHARS) {
 // ---------- geometry ----------
 // Every item has a box {cx, cy, w, h}. A node's comes from its text; an
 // edge's is its label pill, sitting halfway between its two ends.
+// A combined-premises node is a small round plus sign. Its words show on
+// hover, and in the panel when it is selected.
+const COMBINER_D = 44;
 function nodeLayout(n) {
+  if (n.type === 'combiner') return { lines: [], sLines: [], w: COMBINER_D, h: COMBINER_D, plus: true };
   const lines = wrap(nodeText(n));
   const sLines = [];
   const parts = compoundParts(n);
@@ -161,18 +167,18 @@ function nodeLayout(n) {
 }
 // The automatic post sits just to the right of its claim, where reasons go,
 // and stays clear of the next column that Arrange uses.
-const GHOST_GAP = 110, GHOST_W = 190;
+const GHOST_GAP = 110, GHOST_W = 190, GHOST_DROP = 44;
+const ghostBelow = (id) => edgesFrom(map, id).length > 0;
 function ghostLayout(id) {
   const text = standingContention(map, id);
   if (!text) return null;
   const lines = wrap(text, 24);
   return { text, lines, w: GHOST_W, h: 18 + lines.length * 16 };
 }
-// Premise arrows show just a plus sign; hovering or selecting one spells it out.
 function pillLabel(e) {
-  return e.type === 'premise' ? '+' : EDGE_TYPES[e.type].label;
+  return e.type === 'premise' ? `Premise ${e.premise}` : EDGE_TYPES[e.type].label;
 }
-const pillWidth = (label) => (label === '+' ? 24 : label.length * 7 + 22);
+const pillWidth = (label) => label.length * 7 + 22;
 function computeBoxes() {
   const boxes = new Map();
   for (const it of Object.values(map.items)) {
@@ -182,7 +188,12 @@ function computeBoxes() {
     const G = ghostLayout(n.id);
     if (!G) continue;
     const b = boxes.get(n.id);
-    boxes.set(GHOST_PREFIX + n.id, { cx: b.cx + b.w / 2 + GHOST_GAP + G.w / 2, cy: b.cy, w: G.w, h: G.h, G, ghost: true });
+    // A claim with reasons of its own keeps its automatic post just below it,
+    // out of the way of its arrows; otherwise it sits to the right.
+    const below = ghostBelow(n.id);
+    boxes.set(GHOST_PREFIX + n.id, below
+      ? { cx: b.cx - b.w / 2 + 24 + G.w / 2, cy: b.cy + b.h / 2 + GHOST_DROP + G.h / 2, w: G.w, h: G.h, G, ghost: true, below }
+      : { cx: b.cx + b.w / 2 + GHOST_GAP + G.w / 2, cy: b.cy, w: G.w, h: G.h, G, ghost: true });
   }
   const pending = Object.values(map.items).filter(isEdge);
   for (let pass = 0; pass < 8 && pending.length; pass++) {
@@ -234,19 +245,11 @@ function render() {
     const lineStart = EDGE_TYPES[e.type].twoWay ? head(start, end, color, g) : start;
     s('line', { x1: lineStart.x, y1: lineStart.y, x2: lineEnd.x, y2: lineEnd.y, stroke: color }, g);
 
-    const pg = s('g', { class: `pill${selected === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
+    const pg = s('g', { class: `pill${selected === e.id || second === e.id ? ' sel' : ''}${lit && !lit.has(e.id) ? ' dim' : ''}${connecting && canConnect(e.id) ? ' target-ok' : ''}`, 'data-id': e.id }, layers.pills);
     s('rect', { class: 'hit', x: p.cx - p.w / 2 - 8, y: p.cy - p.h / 2 - 8, width: p.w + 16, height: p.h + 16 }, pg);
-    const short = s('g', { class: e.type === 'premise' ? 'short' : '' }, pg);
-    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, short);
-    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, short);
+    s('rect', { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h, rx: 12, stroke: color }, pg);
+    const t = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, pg);
     t.textContent = p.label;
-    if (e.type === 'premise') {
-      const full = `Premise ${e.premise}`, fw = pillWidth(full);
-      const long = s('g', { class: 'long' }, pg);
-      s('rect', { x: p.cx - fw / 2, y: p.cy - p.h / 2, width: fw, height: p.h, rx: 12, stroke: color }, long);
-      const lt = s('text', { x: p.cx, y: p.cy + 4, 'text-anchor': 'middle', fill: color }, long);
-      lt.textContent = full;
-    }
     if (e.rating?.stance) stanceDot(pg, p.cx + p.w / 2 - 2, p.cy - p.h / 2 + 2, e.rating.stance);
     const title = s('title', {}, pg); title.textContent = itemText(map, e.id);
   }
@@ -260,7 +263,8 @@ function render() {
     const lineEnd = head(end, start, color, eg);
     s('line', { x1: start.x, y1: start.y, x2: lineEnd.x, y2: lineEnd.y, stroke: color, 'stroke-dasharray': '6 4' }, eg);
     // The label rides just above the short dashed arrow, leaving it visible.
-    const label = 'Contention', pw = label.length * 7 + 22, px = (start.x + lineEnd.x) / 2, py = (start.y + lineEnd.y) / 2 - 20;
+    const label = 'Contention', pw = label.length * 7 + 22;
+    const px = (start.x + lineEnd.x) / 2 + (gb.below ? pw / 2 + 10 : 0), py = (start.y + lineEnd.y) / 2 - (gb.below ? 0 : 20);
     const pg = s('g', { class: `pill${off}`, 'data-id': gid }, layers.pills);
     s('rect', { x: px - pw / 2, y: py - 12, width: pw, height: 24, rx: 12, stroke: color }, pg);
     const pt = s('text', { x: px, y: py + 4, 'text-anchor': 'middle', fill: color }, pg); pt.textContent = label;
@@ -274,8 +278,15 @@ function render() {
 
   for (const n of Object.values(map.items).filter(isNode)) {
     const b = boxes.get(n.id), L = b.L, color = NODE_COLORS[n.type];
-    const g = s('g', { class: `node t-${n.type}${selected === n.id ? ' sel' : ''}${lit && !lit.has(n.id) ? ' dim' : ''}${connecting && canConnect(n.id) ? ' target-ok' : ''}`, 'data-id': n.id }, layers.nodes);
+    const g = s('g', { class: `node t-${n.type}${selected === n.id || second === n.id ? ' sel' : ''}${lit && !lit.has(n.id) ? ' dim' : ''}${connecting && canConnect(n.id) ? ' target-ok' : ''}`, 'data-id': n.id }, layers.nodes);
     const x0 = b.cx - b.w / 2, y0 = b.cy - b.h / 2;
+    if (L.plus) {
+      s('rect', { class: 'box', x: x0, y: y0, width: b.w, height: b.h, rx: b.w / 2, stroke: color }, g);
+      const plus = s('text', { class: 'plus', x: b.cx, y: b.cy + 9, 'text-anchor': 'middle', fill: color }, g); plus.textContent = '+';
+      const tip = s('title', {}, g); tip.textContent = `Combined premises: ${nodeText(n)}`;
+      if (n.rating?.stance) stanceDot(g, x0 + b.w - 4, y0 + 4, n.rating.stance);
+      continue;
+    }
     s('rect', { class: 'box', x: x0, y: y0, width: b.w, height: b.h, rx: 14, stroke: color }, g);
     const kind = s('text', { class: 'kind', x: x0 + 12, y: y0 + 18 }, g);
     kind.textContent = n.type === 'fallacy' ? `Fallacy · ${n.fallacy}` : NODE_TYPES[n.type].label;
@@ -290,6 +301,12 @@ function render() {
     }
     if (n.rating?.stance) stanceDot(g, x0 + b.w - 12, y0 + 12, n.rating.stance, true);
     if (!n.text && n.type !== 'fallacy' && n.type !== 'combiner') t.querySelector('tspan').textContent = 'Click to write…';
+  }
+  const A = second && boxes.get(selected), B = second && boxes.get(second);
+  if (A && B) {
+    const p = exitPoint(A, B.cx, B.cy), q = exitPoint(B, A.cx, A.cy), g = s('g', { class: 'link-preview' }, layers.edges);
+    const end = head(q, p, YELLOW, g);
+    s('line', { x1: p.x, y1: p.y, x2: end.x, y2: end.y, stroke: YELLOW, 'stroke-dasharray': '6 5' }, g);
   }
   world.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
   board.classList.toggle('connecting', !!connecting);
@@ -327,6 +344,7 @@ function renderPanel() {
   if (renderPanelSuppressed) return;
   const panel = $('panel');
   panel.classList.toggle('compact', !(selected && (map.items[selected] || isGhost(selected))));
+  if (second && map.items[second] && map.items[selected]) { panel.replaceChildren(...linkPanel()); return; }
   if (isGhost(selected) && boxes.get(selected)) { panel.replaceChildren(...ghostPanel(ghostOwner(selected))); return; }
   const it = selected && map.items[selected];
   if (!it) { panel.replaceChildren(...overviewPanel()); return; }
@@ -353,16 +371,17 @@ function overviewPanel() {
     h('h2', {}, map.title),
     h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
     h('ul', { class: 'tips' },
-      h('li', {}, 'One statement per post.'),
-      h('li', {}, 'Arrows point from a claim to its reasons.'),
+      h('li', {}, 'One statement per node or edge.'),
+      h('li', {}, 'Arrows point from a claim to its supports and contentions.'),
       h('li', {}, 'Click a post or arrow label to respond.'),
+      h('li', { class: 'more' }, 'Shift-click a second node to connect the two.'),
       h('li', { class: 'more' }, 'Double-click to add. Drag or arrow keys to move.')),
   ];
 }
 
 const REASONS = [
   ['support', 'Support it'], ['contention', 'Contend it'], ['question', 'Question it'],
-  ['clarification', 'Clarify it'], ['suggestion', 'Suggest'],
+  ['clarification', 'Clarify it'], ['same', 'Say it another way'],
 ];
 function reasonButtons(it) {
   const fallacyPick = h('select', { 'aria-label': 'Call a fallacy', onchange: (ev) => { if (ev.target.value) callFallacy(it.id, ev.target.value); } },
@@ -370,7 +389,7 @@ function reasonButtons(it) {
   const linkPick = h('select', { 'aria-label': 'Connect to a post already on the map', onchange: (ev) => { if (ev.target.value) startConnect(it.id, ev.target.value); } },
     h('option', { value: '' }, 'Connect to an existing post…'),
     Object.entries(EDGE_TYPES).filter(([k]) => k !== 'example' && (k !== 'premise' || it.type === 'combiner')).map(([k, t]) => h('option', { value: k }, t.label)));
-  const row = h('div', { class: 'row' }, REASONS.map(([type, label]) => h('button', { onclick: () => addReason(it.id, type) }, label)));
+  const row = h('div', { class: 'row' }, REASONS.map(([type, label]) => h('button', { title: EDGE_TYPES[type].note ?? '', onclick: () => addReason(it.id, type) }, label)));
   if (it.type === 'combiner') row.prepend(h('button', { class: 'accent', onclick: () => addReason(it.id, 'premise') }, 'Add premise'));
   return [h('h3', {}, isEdge(it) ? 'Respond to this inference' : 'Add a reason'), row, h('div', { class: 'row' }, fallacyPick, linkPick)];
 }
@@ -440,7 +459,9 @@ function copyButton(id) {
 }
 
 function edgePanel(e) {
-  const els = [h('h2', {}, 'Inference'), h('p', { class: 'full' }, itemText(map, e.id)), copyButton(e.id)];
+  const els = [h('h2', {}, 'Inference'), h('p', { class: 'full' }, itemText(map, e.id))];
+  if (EDGE_TYPES[e.type].note) els.push(h('p', { class: 'muted' }, EDGE_TYPES[e.type].note));
+  els.push(copyButton(e.id));
   const fixed = e.type === 'example' || e.type === 'premise';
   if (!fixed) {
     els.push(h('div', { class: 'row' },
@@ -499,7 +520,48 @@ function quietChange() {
   }, 120);
 }
 
-function select(id) { selected = id; spotlight = null; render(); }
+function select(id) { selected = id; second = null; spotlight = null; render(); }
+// Shift- or Ctrl-click a second post (or arrow label) to connect it to the
+// selected one. The first pick is the claim; the second is its reason.
+function canLink(from, to) {
+  if (!from || !to || from === to || isGhost(from) || isGhost(to) || !map.items[from] || !map.items[to]) return false;
+  const it = map.items[to];
+  return !(isEdge(it) && (it.from === from || it.to === from));
+}
+function pickSecond(id) {
+  if (!selected || !map.items[selected]) { select(id); return; }
+  if (id === selected) { select(null); return; }
+  if (!canLink(selected, id)) { toast("Those two can't be joined: pick a different post or arrow."); return; }
+  second = second === id ? null : id; spotlight = null; render();
+}
+function linkTypes(from, to) {
+  const a = map.items[from], b = map.items[to];
+  if (isNode(b) && b.type === 'fallacy') return ['example'];
+  return Object.keys(EDGE_TYPES).filter((k) => k !== 'example' && (k !== 'premise' || (isNode(a) && a.type === 'combiner')));
+}
+function link(type) {
+  const from = selected, to = second;
+  try { const e = addEdge(map, type, from, to); selected = e.id; second = null; } catch (err) { toast(err.message); return; }
+  changed();
+}
+function swapLink() {
+  if (!canLink(second, selected)) { toast("They can't be joined the other way round."); return; }
+  [selected, second] = [second, selected]; render();
+}
+function linkPanel() {
+  const short = (id) => { const t = itemText(map, id); return t.length > 90 ? t.slice(0, 87) + '…' : t; };
+  const types = linkTypes(selected, second);
+  return [
+    h('h2', {}, 'Connect these two'),
+    h('p', { class: 'muted' }, 'The arrow points from the first to the second.'),
+    h('p', { class: 'full' }, h('strong', {}, '1. '), short(selected)),
+    h('p', { class: 'full' }, h('strong', {}, '2. '), short(second)),
+    h('div', { class: 'row' }, types.map((k) => h('button', { class: k === types[0] ? 'accent' : '', title: EDGE_TYPES[k].note ?? '', onclick: () => link(k) }, EDGE_TYPES[k].label))),
+    h('div', { class: 'row' },
+      h('button', { onclick: swapLink }, 'Swap order'),
+      h('button', { onclick: () => { second = null; render(); } }, 'Cancel')),
+  ];
+}
 
 function placeNear(id, dx = 330, dy = 0) {
   const b = boxes.get(id) ?? { cx: 0, cy: 0 };
@@ -607,12 +669,15 @@ function arrange() {
   const place = (n, depth) => {
     n.x = depth * COL;
     const k = kids.get(n);
-    const G = ghostLayout(n.id), hgt = Math.max(nodeLayout(n).h, G ? G.h : 0);
-    if (!k.length) { n.y = cursor + hgt / 2; cursor += hgt + GAP; return; }
+    const G = ghostLayout(n.id), h = nodeLayout(n).h;
+    // How far the post (and its automatic post, if any) reaches above and below its centre.
+    const up = G && !ghostBelow(n.id) ? Math.max(h, G.h) / 2 : h / 2;
+    const down = G ? (ghostBelow(n.id) ? h / 2 + GHOST_DROP + G.h : Math.max(h, G.h) / 2) : h / 2;
+    if (!k.length) { n.y = cursor + up; cursor += up + down + GAP; return; }
     const start = cursor;
     for (const c of k) place(c, depth + 1);
-    n.y = Math.max(start + hgt / 2, (k[0].y + k.at(-1).y) / 2);
-    cursor = Math.max(cursor, n.y + hgt / 2 + GAP);
+    n.y = Math.max(start + up, (k[0].y + k.at(-1).y) / 2);
+    cursor = Math.max(cursor, n.y + down + GAP);
   };
   for (const r of nodes.filter((n) => !parent.has(n))) { place(r, 0); cursor += GAP * 2; }
   for (const n of nodes) { n.x = Math.round(n.x); n.y = Math.round(n.y); }
@@ -659,7 +724,7 @@ board.addEventListener('pointerdown', (ev) => {
   const w = toWorld(ev.clientX, ev.clientY);
   if (id) {
     const it = map.items[id];
-    drag = { id, ox: isNode(it) ? w.x - it.x : 0, oy: isNode(it) ? w.y - it.y : 0, sx: ev.clientX, sy: ev.clientY, moved: false };
+    drag = { id, multi: ev.shiftKey || ev.ctrlKey || ev.metaKey, ox: isNode(it) ? w.x - it.x : 0, oy: isNode(it) ? w.y - it.y : 0, sx: ev.clientX, sy: ev.clientY, moved: false };
   } else {
     drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y, moved: false };
     board.classList.add('panning');
@@ -700,7 +765,7 @@ function endPointer(ev) {
   if (d.id) {
     if (connecting) { if (canConnect(d.id)) finishConnect(d.id); else toast('Pick a different post or arrow.'); return; }
     if (present) { const sid = isGhost(d.id) ? ghostOwner(d.id) : d.id; spotlight = spotlight === sid ? null : sid; render(); return; }
-    select(d.id);
+    if (d.multi && !isGhost(d.id)) pickSecond(d.id); else select(d.id);
   } else {
     if (connecting) { cancelConnect(); return; }
     if (present) { spotlight = null; render(); return; }
@@ -771,6 +836,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     if (connecting) cancelConnect();
     else if (document.body.classList.contains('present')) togglePresent();
+    else if (!typing && second) { second = null; render(); }
     else if (!typing) select(null);
   } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && !typing && selected && map.items[selected]) {
     ev.preventDefault(); del(selected);
@@ -784,8 +850,10 @@ document.addEventListener('keydown', (ev) => {
 // ---------- toolbar ----------
 function refreshMapList() {
   const sel = $('map-select');
-  sel.replaceChildren(...Object.values(store.maps).sort((a, b) => b.updated - a.updated)
-    .map((m) => h('option', { value: m.id, selected: m.id === map.id }, m.title || 'Untitled map')));
+  sel.replaceChildren(
+    h('optgroup', { label: 'Your maps' }, Object.values(store.maps).sort((a, b) => b.updated - a.updated)
+      .map((m) => h('option', { value: m.id, selected: m.id === map.id }, m.title || 'Untitled map'))),
+    h('optgroup', { label: 'Load an example here' }, EXAMPLES.map((ex) => h('option', { value: `example:${ex.key}` }, ex.title))));
   $('map-title').value = map.title;
 }
 function openMap(id) {
@@ -801,7 +869,20 @@ $('clear').addEventListener('click', () => {
   changed(); flushSave();
   toast('Map cleared. Undo brings it back.');
 });
-$('map-select').addEventListener('change', (ev) => openMap(ev.target.value));
+// Loading an example replaces this map's posts; Undo brings them back.
+function loadExample(key) {
+  const ex = exampleMap(Date.now(), key);
+  flushSave();
+  map.title = ex.title; map.items = ex.items;
+  selected = null; second = null; spotlight = null; connecting = null;
+  refreshMapList();
+  arrange(); flushSave();
+  toast('Example loaded. Undo brings back what was here.');
+}
+$('map-select').addEventListener('change', (ev) => {
+  const v = ev.target.value;
+  if (v.startsWith('example:')) { loadExample(v.slice(8)); refreshMapList(); } else openMap(v);
+});
 $('map-title').addEventListener('input', (ev) => { map.title = ev.target.value.slice(0, 200); refreshMapList(); renderPanel(); save(); });
 $('new-map').addEventListener('click', () => {
   const m = createMap('Untitled map');

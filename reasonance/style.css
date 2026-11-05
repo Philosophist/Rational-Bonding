@@ -69,6 +69,7 @@ body.present .edit-only { display: none !important; }
 .panel .ghost-full { border-left-color: #ff2fb4; color: #ff7fd0; }
 .node.t-axiom rect.box { stroke-dasharray: 8 3; }
 .node.t-combiner rect.box { stroke-dasharray: 3 3; }
+.node text.plus { font-size: 26px; font-weight: 700; }
 
 .edge line { stroke-width: 2; }
 .edge polygon { stroke: none; }
@@ -77,10 +78,6 @@ body.present .edit-only { display: none !important; }
 .pill text { font-size: 12px; font-weight: 600; }
 .pill.sel rect { stroke-width: 3; filter: drop-shadow(0 0 6px rgba(255, 233, 77, 0.7)); }
 .pill .hit { fill: transparent; stroke: none; }
-.pill .long { display: none; }
-.pill:hover .long, .pill.sel .long { display: inline; }
-.pill:hover .short, .pill.sel .short { display: none; }
-.pill .short text { font-size: 16px; }
 
 .dim { opacity: 0.13; }
 .target-ok .box, .target-ok rect { stroke: var(--yellow) !important; }
@@ -133,3 +130,4 @@ body:not(.present) .toast { left: calc(50% - 180px); }
   body:not(.present) .toast { left: 50%; bottom: calc(46% + 20px); }
 }
 body.present .toast { top: 12px; bottom: auto; }
+.link-preview line { stroke-width: 2.5; }
