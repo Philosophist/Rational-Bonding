@@ -383,8 +383,8 @@ function addMarker(geo, mat, sq, clickable) {
 // Move paths: every straight move is a chain of cubes that touch (by a face,
 // an edge or just a corner). Draw each chain's cube outlines and a line through
 // their centres, so you can see nothing is skipped. Knights jump, so they have none.
-const PATH_CELL_MAT = new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 0.4, depthWrite: false });
-const PATH_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.8, depthWrite: false });
+const PATH_CELL_MAT = new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 0.2, depthWrite: false });
+const PATH_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.4, depthWrite: false });
 const EDGE_PTS = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.9, 0.9, 0.9)).attributes.position.array;
 function cellEdges(cells) {
   const out = new Float32Array(cells.length * EDGE_PTS.length);
@@ -410,8 +410,8 @@ function addLines(positions, mat, sq) {
 // Knights jump, so instead of touching cubes they get: a solid line straight
 // to each landing square, and a dotted "L" that explains it: two squares along
 // one of the knight's own axes, then a turn at right angles for the last one.
-const KNIGHT_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.85, depthWrite: false });
-const KNIGHT_DASH_MAT = new THREE.LineDashedMaterial({ color: 0xffe94d, dashSize: 0.12, gapSize: 0.09, transparent: true, opacity: 0.95, depthWrite: false });
+const KNIGHT_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.4, depthWrite: false });
+const KNIGHT_DASH_MAT = new THREE.LineDashedMaterial({ color: 0xffe94d, dashSize: 0.12, gapSize: 0.09, transparent: true, opacity: 0.55, depthWrite: false });
 function addKnightPaths(from, piece) {
   const relative = app.game.rules.mode === 'relative' && piece.o && app.game.rules.knightFacing;
   const axes = relative ? frameDirs(piece.o) : ROOK_DIRS;
@@ -470,8 +470,8 @@ function addPaths(from, piece) {
 
 // Corner facings: the six directions square to the facing form a hexagon.
 // Highlight those six touching cubes and the hexagon through their centres.
-const HEX_CELL_MAT = new THREE.MeshBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.22, depthWrite: false });
-const HEX_LINE_MAT = new THREE.LineBasicMaterial({ color: 0xffe94d, transparent: true, opacity: 0.95, depthWrite: false });
+const HEX_CELL_MAT = new THREE.MeshBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.12, depthWrite: false });
+const HEX_LINE_MAT = new THREE.LineBasicMaterial({ color: 0xffe94d, transparent: true, opacity: 0.45, depthWrite: false });
 function addHexagon(from, o) {
   const f = g2w(o).normalize();
   const dirs = hexDirs(o);
@@ -1025,9 +1025,9 @@ function setGame(game, anim = null) {
   maybeSaveLocal(game);
 }
 
-// Bright white lines for the board a piece stands on in Relative mode: the
+// Faint white lines for the board a piece stands on in Relative mode: the
 // plane of its facing and its left/right, through its square. Facing a flat
-// diagonal, that board is tilted through the cube.
+// diagonal or a corner, that board is tilted through the cube.
 // Thin 1 px lines, the same thickness as the original board lines.
 const pieceBoardMat = new LineMaterial({ color: THEME.bright, linewidth: 1, transparent: true, opacity: 0.95, depthWrite: false });
 const pieceBoard = new LineSegments2(new LineSegmentsGeometry(), pieceBoardMat);
@@ -1060,32 +1060,11 @@ function showPieceBoard(sq, o, color) {
   const c = coords(sq);
   const pts = [];
   const toWorld = (p) => [p[0] - 3.5, p[2], 3.5 - p[1]];
-  if (isCornerFacing(o)) {
-    // Facing a corner, its "board" is the flat sheet of cubes square to the
-    // facing: a triangle grid through the cube centres, with the hexagon of
-    // touching neighbours around the piece. Shown when "hexagons" is on.
-    if (!view.hex) {
-      pieceBoard.visible = false;
-      return;
-    }
-    const [a, b] = hexDirs(o).filter((d, i, all) => all.findIndex((e) => e.every((v, k) => v === -d[k])) > i);
-    const ab = a.map((v, k) => v + b[k]);
-    const third = hexDirs(o).some((d) => d.every((v, k) => v === ab[k])) ? ab : a.map((v, k) => v - b[k]);
-    for (const [step, along] of [[b, a], [a, b], [a, third]])
-      for (let j = -2 * N; j <= 2 * N; j++) {
-        const p = c.map((v, k) => v + j * step[k]);
-        const t = clipToCube(p, along);
-        if (!t) continue;
-        pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
-      }
-    pieceBoard.geometry.dispose();
-    pieceBoard.geometry = new LineSegmentsGeometry().setPositions(pts);
-    renderer.getSize(pieceBoardMat.resolution);
-    pieceBoard.visible = true;
-    lattice.material.opacity = 0.06;
-    return;
-  }
-  const { side } = pawnFrame(o, color);
+  // Facing a corner, the board is the one the piece looks straight along: its
+  // corner line forward, and sideways the level (flat) step of the hexagon
+  // around it. It is the ordinary board tipped up toward the corner, so every
+  // cube on it is a square of that board (rectangles, sqrt 3 long by sqrt 2 wide).
+  const side = isCornerFacing(o) ? [fwd[0], -fwd[1], 0] : pawnFrame(o, color).side;
   for (const [step, along] of [[side, fwd], [fwd, side]])
     for (let j = -2 * N; j <= 2 * N; j++) {
       const p = c.map((v, k) => v + (j + 0.5) * step[k]);
@@ -1105,11 +1084,11 @@ function refreshHighlights() {
   // board the side to move's king stands on (the starting diagonal), a bit dimmer.
   const sel = app.selected >= 0 ? viewBoard()[app.selected] : null;
   if (sel?.o) {
-    pieceBoardMat.opacity = 0.95;
+    pieceBoardMat.opacity = 0.35;
     showPieceBoard(app.selected, sel.o, sel.c);
   } else {
     const k = findKing(viewBoard(), app.game.turn);
-    pieceBoardMat.opacity = 0.5;
+    pieceBoardMat.opacity = 0.2;
     showPieceBoard(k, k >= 0 ? viewBoard()[k].o : null, app.game.turn);
   }
   rebuildMarkers();
