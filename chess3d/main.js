@@ -417,6 +417,7 @@ function addKnightPaths(from, piece) {
   const axes = relative ? frameDirs(piece.o) : ROOK_DIRS;
   const o = coords(from);
   const solid = [], dashed = [];
+  const cells = new Set();
   const a = worldPos(from);
   for (const m of app.targets) {
     const d = coords(m.to).map((v, k) => v - o[k]);
@@ -430,10 +431,17 @@ function addKnightPaths(from, piece) {
     }
     const b = worldPos(m.to);
     solid.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    cells.add(m.to);
     if (!leg) continue;
+    // The cubes the L passes through: one and two along the axis, then the landing.
+    for (const k of [1, 2]) {
+      const q = o.map((v, j) => v + k * leg[j]);
+      if (q.every((v) => v >= 0 && v < N)) cells.add(idx(...q));
+    }
     const c = a.clone().add(g2w(leg).multiplyScalar(2));
     dashed.push(a.x, a.y, a.z, c.x, c.y, c.z, c.x, c.y, c.z, b.x, b.y, b.z);
   }
+  if (cells.size) addLines(cellEdges([...cells]), PATH_CELL_MAT, from);
   if (solid.length) addLines(new Float32Array(solid), KNIGHT_LINE_MAT, from);
   if (dashed.length) {
     addLines(new Float32Array(dashed), KNIGHT_DASH_MAT, from);
