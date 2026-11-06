@@ -158,6 +158,12 @@ body.present .toast { top: 12px; bottom: auto; }
 .welcome .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .welcome .actions button { font-size: 16px; padding: 10px 18px; }
 .welcome .small { color: var(--muted); font-size: 14px; }
+.welcome .signup { align-self: stretch; font-size: 19px; padding: 14px 18px; font-weight: 700; }
+.welcome .signin-note { margin: -6px 0 0; color: var(--muted); font-size: 14px; }
+.welcome .quiet { align-self: center; color: var(--muted); opacity: 0.65; font-size: 12px; }
+.welcome .quiet:hover { opacity: 1; }
+.starter p { margin: 0 0 8px; }
+.starter .row { flex-wrap: wrap; }
 
 /* The tutorial's coach card, out of the way of the board and the panel. */
 .tutorial {
