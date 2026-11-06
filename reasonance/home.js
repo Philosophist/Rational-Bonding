@@ -3,8 +3,8 @@
 // three.js loads only when the home page first opens; without it, the feed
 // still works over a plain background.
 import * as cloud from './cloud.js';
-import { STANCES, EDGE_TYPES } from './model.js';
-import { stanceButtons } from './stances.js';
+import { STANCES, EDGE_TYPES, RELEVANCE } from './model.js';
+import { stanceButtons, oddsLine } from './stances.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 const NODE_COLORS = {
@@ -21,7 +21,6 @@ export function initHome(d) {
   deps = d;
   $('home-sandbox').addEventListener('click', () => closeHome());
   $('feed-search').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') loadFeed(ev.target.value); });
-  $('float-close').addEventListener('click', closeFloat);
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('float').hidden) closeFloat(); });
   new ResizeObserver(() => { if (floatState) drawFloat(); }).observe($('home'));
 }
@@ -82,10 +81,13 @@ function card(r) {
   stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(r.id, k)),
   my?.stance ? h('div', { class: 'muted' }, my.public ? 'Your view is shared.' : 'Your view is private.') : null);
 }
-async function rateFromFeed(pid, stance) {
+// A view from the feed or the floating post: a stance, or { confidence } or
+// { relevance } on their own.
+async function rateFromFeed(pid, change) {
   const my = mine[pid] ?? {};
-  const next = { stance, confidence: my.confidence ?? null, relevance: my.relevance ?? null };
-  if (stance === 'dontcare' && next.relevance == null) next.relevance = 1; // not caring: one star
+  const patch = typeof change === 'object' && change ? change : { stance: change };
+  const next = { stance: my.stance ?? null, confidence: my.confidence ?? null, relevance: my.relevance ?? null, ...patch };
+  if (patch.stance === 'dontcare' && next.relevance == null) next.relevance = 1; // not caring: one star
   const share = my.stance ? !!my.public : cloud.settings.share_views;
   try {
     await cloud.rate(pid, next, share);
@@ -222,6 +224,7 @@ async function pick(ev) {
   if (!hit) return;
   const pid = nodeIds[hit.index];
   glow(pid);
+  openFloat(pid);
   const el = document.querySelector(`.post-card[data-id="${pid}"]`);
   if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('picked'); setTimeout(() => el.classList.remove('picked'), 1600); return; }
   // Not in the feed yet: put it at the top.
@@ -258,6 +261,8 @@ export async function openFloat(pid, { keepCompose = false } = {}) {
     const [post, links] = await Promise.all([cloud.getPost(pid), cloud.links(pid)]);
     if (floatState?.pid !== pid) return;
     if (!post) { closeFloat(); deps.toast('That post is gone.'); return; }
+    // It joins your current map too, with its posted reasons.
+    if (post.kind === 'node') deps.openInMap(pid);
     const ids = [pid, ...Object.keys(links.ends)];
     const [m, st, ab] = await Promise.all([cloud.myRatings([pid]), cloud.stats(ids), cloud.about([pid])]);
     Object.assign(mine, m); Object.assign(stats, st); Object.assign(about, ab);
@@ -286,10 +291,12 @@ function drawFloat() {
   const my = mine[post.id], s0 = stats[post.id], ab = about[post.id];
   const counts = countsLine(s0);
   nodes.append(h('div', { class: `fnode center ${post.type}`, style: `left:${cx}px;top:${cy}px` },
+    h('button', { class: 'fclose', 'aria-label': 'Back to the sea', title: 'Back to the sea (Esc)', onclick: closeFloat }, '×'),
     h('p', { class: 'text' }, postText(post)),
     h('div', { class: 'meta' }, [ab?.by ? `@${ab.by}` : 'anonymous', counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
     stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(post.id, k)),
-    composeBox(post)));
+    composeBox(post),
+    ...viewDetails(post.id, my)));
   // Near: questions, clarifications, rewordings and fallacies it's called.
   const near = links.out.filter((e) => NEAR_TYPES.includes(e.type) && links.ends[e.to_post]?.kind === 'node').slice(0, MAX_NEAR);
   const nearIds = new Set(near.map((e) => e.id));
@@ -327,6 +334,34 @@ function drawFloat() {
     hit.addEventListener('click', () => openFloat(f.other.id));
   });
   if (!near.length && !far.length) nodes.append(h('p', { class: 'float-empty', style: `left:${cx}px;top:${cy + 140}px` }, 'Nobody has posted reasons for it yet.'));
+}
+// Under the post: the parts of your view you haven't given yet (scroll down
+// to them), then a summary of the parts you have, at the bottom left.
+function viewDetails(pid, my = {}) {
+  const { h } = deps;
+  const out = [];
+  const conf = my?.confidence ?? null, stars = my?.relevance ?? null;
+  const starRow = () => h('div', { class: 'row stars' }, [1, 2, 3, 4, 5].map((v) =>
+    h('button', { class: stars >= v ? 'on' : '', title: RELEVANCE[v].text, onclick: () => rateFromFeed(pid, { relevance: stars === v ? null : v }) }, '★')));
+  if (conf == null || stars == null) {
+    const todo = [h('div', { class: 'kind' }, 'Add to your view')];
+    if (conf == null) {
+      const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', placeholder: '–', 'aria-label': 'Confidence percent',
+        onchange: (ev) => ev.target.value !== '' && rateFromFeed(pid, { confidence: Math.min(100, Math.max(0, Number(ev.target.value))) }) });
+      const odds = oddsLine(h, null, (v) => rateFromFeed(pid, { confidence: v }));
+      num.addEventListener('input', () => odds.update(num.value === '' ? null : Number(num.value)));
+      todo.push(h('label', {}, 'Confidence', num, '%'), odds.el);
+    }
+    if (stars == null) todo.push(h('p', { class: 'muted' }, 'How much would it matter to you if the opposite were proven?'), starRow());
+    out.push(h('div', { class: 'todo' }, ...todo));
+  }
+  if (conf != null || stars != null) {
+    out.push(h('div', { class: 'given' },
+      conf != null ? h('div', {}, `${+conf.toFixed(conf >= 99 ? 4 : 1)}% · `, oddsLine(h, conf, (v) => rateFromFeed(pid, { confidence: v })).el) : null,
+      stars != null ? h('div', { class: 'stars-given', title: RELEVANCE[stars].text },
+        h('button', { class: 'plain', title: 'Change how much it matters', onclick: (ev) => ev.currentTarget.replaceWith(starRow()) }, '★'.repeat(stars) + '☆'.repeat(5 - stars))) : null));
+  }
+  return out;
 }
 function s(tag, attrs, parent) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);

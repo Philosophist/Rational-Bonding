@@ -14,8 +14,9 @@ feed come in later steps.
 
 ## First visit and home
 - **First visit** (signed out): a welcome card explains the idea, with a large
-  "Sign up free" button (it signs people in too), "Start tutorial", and a faint
-  link to the offline sandbox. It
+  "Sign up free" button (it signs people in too) and a faint link to the
+  offline sandbox. The tutorial is started from inside the app ("Start
+  tutorial" in the map overview). It
   shows once per browser ("What is Ourgument?" in the overview brings it back).
 - Every visit opens on a **blank** map (an empty one already saved, or a new
   one). Earlier maps stay in the map menu, and the empty map offers the

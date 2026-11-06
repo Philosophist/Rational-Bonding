@@ -115,6 +115,35 @@ test('log confidence scale separates 99% from 99.999%', () => {
   assert.ok(Math.abs(confidenceToLogSlider(99.9) - 3) < 1e-9);
 });
 
+test('confidence reads as a 1 in n chance of being wrong', async () => {
+  const { confidenceToOdds, oddsToConfidence } = await import('../model.js');
+  assert.equal(confidenceToOdds(90), 10);
+  assert.equal(confidenceToOdds(50), 2);
+  assert.equal(confidenceToOdds(99.9), 1000);
+  assert.equal(confidenceToOdds(75), 4);
+  assert.equal(confidenceToOdds(100), Infinity);
+  assert.equal(confidenceToOdds(0), 1);
+  assert.equal(confidenceToOdds(null), null);
+  assert.equal(oddsToConfidence(10), 90);
+  assert.equal(oddsToConfidence(1000), 99.9);
+  assert.equal(oddsToConfidence(1), 0);
+  assert.equal(oddsToConfidence('x'), null);
+});
+
+test('below 50% the odds read as a chance of being right', async () => {
+  const { oddsPhrase, phraseToConfidence } = await import('../model.js');
+  assert.deepEqual(oddsPhrase(90), { n: 10, side: 'wrong' });
+  assert.deepEqual(oddsPhrase(50), { n: 2, side: 'wrong' });
+  assert.deepEqual(oddsPhrase(25), { n: 4, side: 'right' });
+  assert.deepEqual(oddsPhrase(0), { n: Infinity, side: 'right' });
+  assert.equal(oddsPhrase(null), null);
+  // someone types 1.5 as their chance of being wrong: that's 33%, shown as right
+  const c = phraseToConfidence(1.5, 'wrong');
+  assert.ok(Math.abs(c - 33.333333) < 1e-4);
+  assert.deepEqual(oddsPhrase(c), { n: 3, side: 'right' });
+  assert.equal(phraseToConfidence(4, 'right'), 25);
+});
+
 test('maps round-trip through export, and bad data is refused', () => {
   const m = exampleMap(5);
   const back = parseMap(serialize(m));

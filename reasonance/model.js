@@ -295,6 +295,42 @@ export function flavor(prev, next) {
   return out;
 }
 
+// Confidence as odds of being wrong: 90% is a 1 in 10 chance, 99.9% is 1 in
+// 1,000. n is Infinity at 100% (never wrong) and 1 at 0%.
+export function confidenceToOdds(c) {
+  if (c == null) return null;
+  if (c >= 100) return Infinity;
+  const n = 100 / (100 - Math.max(0, c));
+  return n < 10 ? Math.round(n * 10) / 10 : Math.round(n);
+}
+export function oddsToConfidence(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return v === Infinity ? 100 : null;
+  if (v <= 1) return 0;
+  return +(100 - 100 / v).toPrecision(8);
+}
+
+// How a confidence reads in words. From 50% up it is the chance of being
+// wrong ("1 / 10 chance that I'm wrong" at 90%). Below 50% being wrong is the
+// likelier outcome, so it flips to the chance of being right ("1 / 4 chance
+// that I'm right" at 25%).
+const roundOdds = (n) => (n === Infinity ? n : n < 10 ? Math.round(n * 10) / 10 : Math.round(n));
+export function oddsPhrase(c) {
+  if (c == null) return null;
+  if (c >= 50) return { n: confidenceToOdds(c), side: 'wrong' };
+  return { n: c <= 0 ? Infinity : roundOdds(100 / c), side: 'right' };
+}
+// Turns a typed n back into a confidence, read on the side being shown.
+export function phraseToConfidence(n, side = 'wrong') {
+  const v = Number(n);
+  if (side === 'right') {
+    if (v === Infinity) return 0;
+    if (!Number.isFinite(v)) return null;
+    return v <= 1 ? 100 : +(100 / v).toPrecision(8);
+  }
+  return oddsToConfidence(n);
+}
+
 // Confidence slider in log mode tells 99% from 99.999% apart.
 // Position p runs 0..6: confidence = 100 - 10^(2 - p); p = 6 snaps to 100.
 export function logSliderToConfidence(p) {
