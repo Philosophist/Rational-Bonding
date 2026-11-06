@@ -298,7 +298,8 @@ atoms).
 The goal is open: **10 or more H₂ in the sphere at once, held for 10 seconds**.
 Atoms drift and collide on their own. The player learns that two atoms bumping
 into each other *almost never* stick, and has to find a way to make them stick.
-The tutor gives hints only if the player is stuck (after 60 s, 120 s, 180 s).
+The tutor gives hints only if the player is stuck, revealing one route at a
+time (after 60 s, 120 s, 180 s and 240 s).
 
 **Why two atoms bump and bounce (the catch).** When two H atoms meet with
 their electron spins opposite, they fall into a bond and release 4.5 eV. That
@@ -516,13 +517,13 @@ tool, so the export button is testable from Level 1.
 - **Grain surface chemistry is simplified** to "stick, wander, meet, leave",
   with real binding energies for hydrogen on ice or carbon grains.
 
-## 8. Open questions for Steve
+## 8. Steve's decisions (2026-11-06)
 
-1. **The wall.** Should a later level make the wall itself a player tool
-   (a cold wall that atoms stick to, which really does make H₂, or a shell
-   that traps light)? Recommended: yes, as in §2a.
-2. **Hints.** Should the tutor reveal the four H₂ routes one at a time when the
-   player is stuck (recommended), or list them up front?
-3. **Level 2.** Is "Heavy Hydrogen" the right second level, or should the
-   light-and-orbitals levels (`GAME_DESIGN.md` Act I) come first and isotopes
-   later, as some courses do?
+| Question | Decision |
+|---|---|
+| Where does the level take place? | A sealed **system sphere** (§2a): matter stays in, light escapes. |
+| How are free charges drawn? | As the glow of their electric field (§2b). |
+| Does aim matter for electron capture? | **Yes:** most passes miss, as in reality; slow and close passes are caught more often (beat 2). |
+| Should the wall become a tool in later levels? | **Yes:** a cold wall atoms stick to, or a shell that catches light. |
+| Hints for making H₂? | **One route at a time**, only when the player is stuck. |
+| Level 2? | **Heavy Hydrogen** (isotopes and the neutron gun), before the light-and-orbitals levels. |
