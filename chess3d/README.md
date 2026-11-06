@@ -52,6 +52,8 @@ Some strict corporate or mobile networks block peer-to-peer connections; if join
 - Drag to orbit, scroll (or pinch on a trackpad) to zoom toward the pointer, right-drag to pan.
 - Keyboard: <kbd>+</kbd> / <kbd>−</kbd> (or Page Up / Page Down) zoom, arrow keys or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>Q</kbd> / <kbd>E</kbd> turn around the cube. Hold a key to keep moving. In a replay, ← and → still step through the moves.
 - The **+** and **−** buttons at the top right of the view zoom too.
+- The **⌖** button under them (or <kbd>R</kbd> / Home) glides back to the starting view.
+- Selecting a piece turns the camera to frame it and every square it can reach. Turn this off with "Turn the camera to a piece when you select it" in the game options.
 - **Focus level** (or <kbd>[</kbd> <kbd>]</kbd>, <kbd>0</kbd> for all) fades the other levels so one layer is easy to read.
 - The **Level map** button at the bottom left opens all 8 levels as flat boards (hidden by default; the page remembers if you leave it open). A selected piece's moves are filled in there too: green moves and red captures for your piece, blue for a preview. You can click squares there too.
 
