@@ -1,5 +1,5 @@
 // Hydrogen wavefunctions for the orbital renderer.
-// Ported unchanged from prototype/index.html on the Alchem Fighter rebuild branch
+// Ported unchanged from prototype/index.html on the Alchemfighter rebuild branch
 // (claude/atomic-space-fighter-game-ihpb71), so the two stay in step.
 
 export const fact = n => { let f = 1; for (let i = 2; i <= n; i++) f *= i; return f; };

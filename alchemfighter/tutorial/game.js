@@ -1,9 +1,11 @@
-// Alchem Fighter, Level 1 "A Lone Proton": beats 1 and 2 of docs/levels/01-hydrogen-tutorial.md.
+// Alchemfighter, Level 1 "Electromagnetic Stardust": beats 1 and 2 of docs/levels/01-hydrogen-tutorial.md.
+// Plays in the browser window or in a PC VR headset (WebXR); the VR button works from the start.
 // Beat 1: meet the proton (its field glow, a stray electron swinging past).
 // Beat 2: catch an electron with the electron gun, then watch the cascade of light down to 1s.
 import * as P from './physics.js';
 import { waveDesc, extentBohr } from './orbitals.js';
 import { createRenderer, Lines } from './render.js';
+import * as M from './mat4.js';
 
 const $ = id => document.getElementById(id);
 const v3 = {
@@ -25,7 +27,7 @@ const FS_PER_S = 40;
 const NS_PER_S = 50;
 const LIGHT_SPEED = 28;          // nm per screen second: light is drawn slowed down so you can see it
 const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
-const PROTON_SMEAR = 0.05;       // nm, keeps the glow's centre finite (log scale, capped)
+const PROTON_SMEAR = 0.01;       // nm, keeps the glow's centre finite (log scale, capped)
 // Missed electrons stay in the sphere (matter can't leave), so the gun allows a few loose at once.
 // Fly close to a loose electron and the ship scoops it back into the gun.
 const MAX_LOOSE = 3, SCOOP_R = 3;
@@ -40,12 +42,17 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], photons: [], flashes: [], spectrum: [],
-    shots: 0, passes: [], fieldView: false, dial: 1, cooldown: 0, cascade: null, autoCam: null,
-    b1: { start: null, maxAngle: 0, toggled: false, moved: false, strayAt: 3, stray: null, strayPassed: false },
+    shots: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null,
+    b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false, strayAt: 3, stray: null, strayPassed: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false }, ended: false, said: '',
   };
 }
+// The player's eye: the flat camera, or the VR headset placed in the ship.
 function camBasis() {
+  if (xr.session && xr.head) return xr.head;
+  return flatBasis();
+}
+function flatBasis() {
   const cp = Math.cos(cam.pitch);
   const f = [Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), Math.cos(cam.yaw) * cp];
   const r = v3.norm(v3.cross(f, [0, 1, 0])), u = v3.cross(r, f);
@@ -61,7 +68,7 @@ const looseShots = () => freeElectrons().filter(e => !e.stray);
 const BEATS = {
   1: {
     title: 'Meet the proton',
-    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field. Turn on Field view to see it.',
+    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field: the lines show it. If the lines feel busy, press V for the calmer Glow view.',
   },
   2: {
     title: 'First capture',
@@ -77,7 +84,7 @@ function goals() {
     return [
       ['Fly around the proton (W A S D)', S.b1.moved],
       ['Look at it from two sides', S.b1.maxAngle > 1.3],
-      ['Toggle Field view (V)', S.b1.toggled],
+      ['Try Glow view and back (V)', S.b1.toggled],
     ];
   }
   return [
@@ -119,8 +126,13 @@ function launchStray() {
 }
 
 // Where the crosshair points, and what the gun would do from here.
+function getAim() {
+  if (xr.session && xr.aim) return { eye: xr.aim.o, f: xr.aim.d, muzzle: xr.aim.o };
+  const B = flatBasis();
+  return { eye: B.p, f: B.f, muzzle: v3.add(B.p, v3.add(v3.scale(B.u, -0.45), v3.scale(B.r, 0.3))) };
+}
 function aimInfo() {
-  const B = camBasis(), muzzle = v3.add(B.p, v3.add(v3.scale(B.u, -0.45), v3.scale(B.r, 0.3)));
+  const g = getAim(), B = { p: g.eye, f: g.f }, muzzle = g.muzzle;
   const targets = [...bareProtons(), ...S.atoms.map(a => a.p)];
   let best = null;
   for (const p of targets) {
@@ -133,7 +145,7 @@ function aimInfo() {
   const aimPoint = v3.add(B.p, v3.scale(B.f, D));
   const E = DIAL[S.dial];
   const cone = P.coneWidth(E, v3.len(v3.sub(aimPoint, muzzle)));
-  const info = { B, muzzle, aimPoint, cone, E, target: best && best.miss < 6 ? best : null };
+  const info = { muzzle, aimPoint, cone, E, target: best && best.miss < 6 ? best : null };
   if (info.target && info.target.p.q === 1) {
     // Two-body prediction of the closest approach, from the launch point's angular momentum.
     const rel = v3.sub(muzzle, info.target.p.pos), dir = v3.norm(v3.sub(aimPoint, muzzle));
@@ -259,7 +271,6 @@ function showDone() {
   const photons = a.steps.flatMap(s => [].concat(s.lam));
   $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'}. The atom gave off ${photons.length} photon${photons.length === 1 ? '' : 's'} on the way down: ${photons.map(l => `${l.toFixed(1)} nm`).join(', ')}.`;
   $('doneBox').hidden = false;
-  if (document.pointerLockElement) document.exitPointerLock();
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +317,7 @@ function step(dt) {
     // The ship scoops up loose electrons that come close (not ones it has only just fired).
     for (const e of freeElectrons()) {
       if (e.born !== undefined && S.time - e.born < 1.5) continue;
-      if (v3.len(v3.sub(e.pos, cam.p)) < SCOOP_R) {
+      if (v3.len(v3.sub(e.pos, camBasis().p)) < SCOOP_R) {
         e.active = false;
         S.flashes.push({ pos: [...e.pos], col: [0.3, 0.5, 1], t: 0, life: 0.5, size: 0.8 });
         log(`Scooped ${e.stray ? 'the stray electron' : `shot ${e.shot}'s electron`} back into the gun.`);
@@ -331,7 +342,7 @@ function step(dt) {
   // Beat 1 goals
   if (S.beat === 1) {
     const p = S.ps[0];
-    const d = v3.norm(v3.sub(cam.p, p.pos));
+    const d = v3.norm(v3.sub(camBasis().p, p.pos));
     if (!S.b1.start) S.b1.start = d;
     S.b1.maxAngle = Math.max(S.b1.maxAngle, Math.acos(Math.max(-1, Math.min(1, v3.dot(d, S.b1.start)))));
     if (S.b1.moved && S.b1.maxAngle > 1.3 && S.b1.toggled) {
@@ -372,22 +383,28 @@ const look = (dx, dy) => {
   cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch - dy * 0.0025));
   if (S.autoCam) S.autoCam = null;
 };
+// Drag to look; a click that doesn't drag fires. (No mouse lock: it drifted in some browsers.)
 canvas.addEventListener('pointerdown', e => {
   if (!$('startBox').hidden || !$('doneBox').hidden) return;
-  if (e.pointerType === 'mouse') {
-    if (document.pointerLockElement === canvas) { fire(); return; }
-    if (canvas.requestPointerLock) { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); }
-    dragging = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId };
-  } else dragging = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId };
+  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  dragging = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId, t: performance.now() };
 });
-addEventListener('pointermove', e => {
-  if (document.pointerLockElement === canvas) { look(e.movementX, e.movementY); return; }
+canvas.addEventListener('pointermove', e => {
   if (!dragging || e.pointerId !== dragging.id) return;
   const dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
   dragging.x = e.clientX; dragging.y = e.clientY; dragging.moved += Math.abs(dx) + Math.abs(dy);
-  look(dx * 1.6, dy * 1.6);
+  const lim = v => Math.max(-80, Math.min(80, v));
+  look(lim(dx) * 1.6, lim(dy) * 1.6);
 });
-addEventListener('pointerup', e => { if (dragging && e.pointerId === dragging.id) dragging = null; });
+const endDrag = e => {
+  if (!dragging || e.pointerId !== dragging.id) return;
+  const click = dragging.moved < 6 && performance.now() - dragging.t < 400;
+  dragging = null;
+  if (click && e.type === 'pointerup' && e.pointerType === 'mouse') fire();
+};
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('lostpointercapture', endDrag);
 canvas.addEventListener('wheel', e => { e.preventDefault(); setDial(S.dial + (e.deltaY > 0 ? -1 : 1)); }, { passive: false });
 const hold = (btn, code) => {
   btn.addEventListener('pointerdown', () => keys.add(code));
@@ -396,7 +413,7 @@ const hold = (btn, code) => {
 hold($('fwdBtn'), 'KeyW'); hold($('backBtn'), 'KeyS');
 
 function fly(dt) {
-  const B = camBasis(), sp = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 24 : 8) * dt;
+  const B = flatBasis(), sp = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 24 : 8) * dt;
   let m = [0, 0, 0];
   if (keys.has('KeyW') || keys.has('ArrowUp')) m = v3.add(m, B.f);
   if (keys.has('KeyS') || keys.has('ArrowDown')) m = v3.sub(m, B.f);
@@ -411,7 +428,7 @@ function fly(dt) {
   const r = v3.len(cam.p);
   if (r > P.SPHERE_R - 1) cam.p = v3.scale(cam.p, (P.SPHERE_R - 1) / r);
   // On a capture, glide in to watch the cascade (any flying or looking hands control back).
-  if (S.autoCam) {
+  if (S.autoCam && !xr.session) {
     const c = S.autoCam.atom.p.pos, off = v3.sub(cam.p, c), d = v3.len(off);
     const want = 6, k = 1 - Math.exp(-dt * 1.8);
     if (d > want) cam.p = v3.add(c, v3.scale(off, (d + (want - d) * k) / d));
@@ -422,10 +439,13 @@ function fly(dt) {
   }
 }
 
+// Field view (lines, the default) or Glow view (calmer: no lines).
 function toggleField() {
   S.fieldView = !S.fieldView;
-  $('fieldBtn').setAttribute('aria-pressed', String(S.fieldView));
-  if (S.fieldView) S.b1.toggled = true;
+  $('fieldBtn').setAttribute('aria-pressed', String(!S.fieldView));
+  if (!S.fieldView) S.b1.glowTried = true;
+  if (S.fieldView && S.b1.glowTried) S.b1.toggled = true;
+  panelDirty();
 }
 function setDial(i) {
   S.dial = Math.max(0, Math.min(DIAL.length - 1, i));
@@ -449,6 +469,7 @@ function restart() {
   logLines.length = 0; $('logBox').innerHTML = '';
   renderPasses(); setDial(1); startBeat(1);
   $('fieldBtn').setAttribute('aria-pressed', 'false');
+  panelDirty();
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +568,7 @@ const fib = n => Array.from({ length: n }, (_, i) => {
   const y = 1 - 2 * (i + 0.5) / n, rr = Math.sqrt(1 - y * y), th = i * 2.399963;
   return [rr * Math.cos(th), y, rr * Math.sin(th)];
 });
-const SEEDS_P = fib(40), SEEDS_E = fib(14);
+const SEEDS_P = fib(30), SEEDS_E = fib(10);
 function fieldLines() {
   for (const p of S.ps) {
     if (!p.active || !p.q) continue;
@@ -563,7 +584,7 @@ function fieldLines() {
         const r = v3.len(v3.sub(x, p.pos)), ds = 0.04 + 0.12 * r;
         x = v3.add(x, v3.scale(F, ds));
         if (v3.len(x) > P.SPHERE_R) break;
-        const a = 0.55 * strength / (1 + 0.08 * r);
+        const a = 0.55 * strength / (1 + 0.08 * r) * Math.min(1, 0.25 + r / 0.8);   // thinner near the charge, where lines crowd
         lines.seg(prev, x, pos ? [1, 0.62, 0.18] : [0.3, 0.5, 1], a);
         prev = x;
         // stop at an opposite charge
@@ -574,17 +595,40 @@ function fieldLines() {
     }
   }
 }
+// Magnetic field of a moving electron: circles around its path, B = v × E / c². At these speeds
+// it is about v/c ≈ 1/1000 of the electric field, so it is drawn far brighter than its true share.
+const B_BOOST = 400;
+function magneticRings(e) {
+  const v = v3.len(e.vel), beta = v / P.C;
+  if (beta <= 0) return;
+  const d = v3.scale(e.vel, 1 / v);
+  const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(d, e1);
+  for (const [R, off] of [[0.35, 0], [0.7, -0.5], [0.7, 0.5], [1.2, 0]]) {
+    const a = Math.min(0.7, B_BOOST * beta / (R * R)) * 0.6;
+    const c = v3.add(e.pos, v3.scale(d, off));
+    let prev = null;
+    for (let i = 0; i <= 24; i++) {
+      const t = 2 * Math.PI * i / 24, pt = v3.add(c, v3.add(v3.scale(e1, Math.cos(t) * R), v3.scale(e2, Math.sin(t) * R)));
+      if (prev) lines.seg(prev, pt, [0.36, 0.95, 0.6], a);
+      prev = pt;
+    }
+  }
+}
 const drawnWavelength = lam => 0.25 + 1.2 * Math.log(lam / LMIN) / Math.log(LMAX / LMIN);
 function photonLines(ph) {
   const lw = drawnWavelength(ph.lam), L = 8 * lw, N = 96, A = 0.35, d = ph.dir;
-  const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]));
+  const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(d, e1);
   const k = Math.min(1, ph.age * 5);
-  let prev = null;
+  // Light is an electric wave (photon colour) and a magnetic wave (green) at 90° to it and to the
+  // direction of travel, rising and falling together.
+  let prev = null, prevB = null;
   for (let i = 0; i <= N; i++) {
-    const s = -L / 2 + L * i / N, env = Math.cos(Math.PI * s / L) ** 2 * A;
-    const pt = v3.add(v3.add(ph.pos, v3.scale(d, s - L / 2)), v3.scale(e1, Math.cos(2 * Math.PI * s / lw) * env));
-    if (prev) lines.seg(prev, pt, ph.col, k);
-    prev = pt;
+    const s = -L / 2 + L * i / N, env = Math.cos(Math.PI * s / L) ** 2 * A, w = Math.cos(2 * Math.PI * s / lw) * env;
+    const base = v3.add(ph.pos, v3.scale(d, s - L / 2));
+    const pt = v3.add(base, v3.scale(e1, w)), pb = v3.add(base, v3.scale(e2, w * 0.8));
+    if (prev) { lines.seg(prev, pt, ph.col, k); if (S.fieldView) lines.seg(prevB, pb, [0.36, 0.95, 0.6], 0.45 * k); }
+    if (S.fieldView && i % 4 === 0) lines.seg(base, pt, ph.col, 0.25 * k);
+    prev = pt; prevB = pb;
   }
 }
 function coneLines(a) {
@@ -600,12 +644,16 @@ function coneLines(a) {
   }
 }
 
-function draw() {
-  if (!renderer) return;
+function flatViews() {
   const dpr = Math.min(devicePixelRatio || 1, 1.5);
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-  const B = camBasis();
+  const B = flatBasis();
+  const VP = M.multiply(M.perspective(cam.fov, w / h, 0.01, 500), M.viewFromBasis(B.p, B.r, B.u, B.f));
+  return [{ viewport: [0, 0, w, h], camPos: B.p, VP, invVP: M.invert(VP) }];
+}
+function draw(views, panel) {
+  if (!renderer) return;
   const charges = [];
   for (const p of S.ps) {
     if (!p.active) continue;
@@ -624,23 +672,24 @@ function draw() {
   });
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
-  for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.03, col: [0.45, 0.65, 1] });
+  for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
   for (const f of S.flashes) {
     const x = f.t / f.life;
     glows.push({ pos: f.pos, size: f.size * (0.3 + Math.sqrt(x)) * 0.4, col: f.col.map(c => c * (1 - x) * 1.4) });
   }
   for (const ph of S.photons) glows.push({ pos: v3.add(ph.pos, v3.scale(ph.dir, 0)), size: 0.08, col: ph.col.map(c => c * 0.9) });
 
-  lines.begin(B);
-  if (S.fieldView) fieldLines();
+  lines.begin();
+  if (S.fieldView) { fieldLines(); for (const e of freeElectrons()) magneticRings(e); }
   for (const e of freeElectrons()) {
     for (let i = 1; i < e.trail.length; i++) lines.seg(e.trail[i - 1], e.trail[i], [0.3, 0.5, 1], 0.08 + 0.4 * i / e.trail.length);
     if (e.trail.length) lines.seg(e.trail[e.trail.length - 1], e.pos, [0.3, 0.5, 1], 0.5);
   }
   for (const ph of S.photons) photonLines(ph);
   if (S.beat >= 2 && !S.cascade) coneLines(aimInfo());
+  if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
-  renderer.draw({ cam: B, time: S.time, sphereR: P.SPHERE_R, steps: 72, bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
+  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: 72, bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
 }
 
 // ---------------------------------------------------------------------------
@@ -648,17 +697,172 @@ function draw() {
 // ---------------------------------------------------------------------------
 let last = performance.now();
 function frame(now) {
+  if (xr.session) return;   // the headset drives the loop while in VR
   const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
   const paused = !$('startBox').hidden || !$('doneBox').hidden;
   fly(paused ? 0 : dt);
   if (!paused) step(dt);
   updateHud(); drawSpectro(); drawLadder();
-  draw();
+  draw(flatViews(), null);
   requestAnimationFrame(frame);
 }
+
+// ---------------------------------------------------------------------------
+// VR (WebXR). In the headset, 1 metre is drawn as 1 nanometre, so the sphere is 80 m across.
+// Left stick: fly where you look. Right stick: turn (left/right) and rise or sink (up/down).
+// Trigger: fire along the right controller. A/B: faster/slower electrons. X: Field/Glow view.
+// ---------------------------------------------------------------------------
+const xr = { session: null, ref: null, head: null, aim: null, buttons: {}, panelCanvas: document.createElement('canvas'), panelVersion: 0, panelT: 0 };
+xr.panelCanvas.width = 1024; xr.panelCanvas.height = 640;
+function panelDirty() { xr.panelT = 0; }
+async function vrSupported() {
+  try { return !!(navigator.xr && await navigator.xr.isSessionSupported('immersive-vr')); } catch { return false; }
+}
+async function toggleVR() {
+  if (xr.session) { xr.session.end(); return; }
+  if (!(await vrSupported())) {
+    $('vrNote').hidden = false;
+    return;
+  }
+  try {
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+    await renderer.gl.makeXRCompatible();
+    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, renderer.gl) });
+    xr.ref = await session.requestReferenceSpace('local');
+    xr.session = session;
+    $('startBox').hidden = true; $('doneBox').hidden = true;
+    $('vrBtn').textContent = 'Exit VR'; $('vrBtn2').textContent = 'Exit VR';
+    session.addEventListener('select', ev => { if (ev.inputSource.handedness !== 'left') fire(); });
+    session.addEventListener('end', () => {
+      xr.session = null; xr.head = null; xr.aim = null;
+      $('vrBtn').textContent = 'Enter VR'; $('vrBtn2').textContent = 'Enter VR';
+      last = performance.now(); requestAnimationFrame(frame);
+    });
+    last = performance.now();
+    session.requestAnimationFrame(xrFrame);
+  } catch (err) {
+    console.error(err);
+    $('vrNote').textContent = `Couldn't start VR: ${err.message}`;
+    $('vrNote').hidden = false;
+  }
+}
+const shipMatrix = () => M.translateRotY(cam.p, cam.yaw + Math.PI);
+function poseToWorld(ship, t) {
+  const m = t.matrix;
+  return { o: M.transformPoint(ship, [t.position.x, t.position.y, t.position.z]), d: v3.norm(M.transformDir(ship, [-m[8], -m[9], -m[10]])),
+    u: v3.norm(M.transformDir(ship, [m[4], m[5], m[6]])), r: v3.norm(M.transformDir(ship, [m[0], m[1], m[2]])) };
+}
+function xrInput(frame, dt) {
+  let move = [0, 0, 0];
+  xr.aim = null;
+  const ship = shipMatrix();
+  for (const src of xr.session.inputSources) {
+    const gp = src.gamepad, hand = src.handedness;
+    if (hand === 'right' || (!xr.aim && hand !== 'left')) {
+      const pose = frame.getPose(src.targetRaySpace, xr.ref);
+      if (pose) { const w = poseToWorld(ship, pose.transform); xr.aim = { o: w.o, d: w.d }; }
+    }
+    if (hand === 'left' && xr.session.inputSources.length > 0) {
+      const pose = src.gripSpace && frame.getPose(src.gripSpace, xr.ref);
+      xr.leftGrip = pose ? poseToWorld(ship, pose.transform) : null;
+    }
+    if (!gp) continue;
+    const ax = gp.axes.length >= 4 ? [gp.axes[2], gp.axes[3]] : [gp.axes[0] || 0, gp.axes[1] || 0];
+    const dz = v => (Math.abs(v) < 0.15 ? 0 : v);
+    const pressed = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+    const edge = (key, i) => { const p = pressed(i), was = xr.buttons[key]; xr.buttons[key] = p; return p && !was; };
+    if (hand === 'left') {
+      if (xr.head) move = v3.add(move, v3.add(v3.scale(xr.head.f, -dz(ax[1])), v3.scale(xr.head.r, dz(ax[0]))));
+      if (edge('X', 4)) toggleField();
+    } else {
+      cam.yaw -= dz(ax[0]) * 1.5 * dt;
+      move = v3.add(move, [0, -dz(ax[1]), 0]);
+      if (edge('A', 4)) setDial(S.dial + 1);
+      if (edge('B', 5)) setDial(S.dial - 1);
+    }
+  }
+  if (v3.len(move) > 0.01) {
+    cam.p = v3.add(cam.p, v3.scale(move, 8 * dt));
+    S.b1.moved = true;
+  }
+  const r = v3.len(cam.p);
+  if (r > P.SPHERE_R - 2) cam.p = v3.scale(cam.p, (P.SPHERE_R - 2) / r);
+}
+function xrFrame(t, frame) {
+  const session = frame.session;
+  if (xr.session !== session) return;
+  session.requestAnimationFrame(xrFrame);
+  const dt = Math.min(0.05, Math.max(0, (t - last) / 1000)); last = t;
+  const pose = frame.getViewerPose(xr.ref);
+  if (!pose) return;
+  xrInput(frame, dt);
+  const ship = shipMatrix(), invShip = M.invert(ship);
+  const h = poseToWorld(ship, pose.transform);
+  xr.head = { p: h.o, f: h.d, r: h.r, u: h.u, fovT: 1 };
+  step(dt);
+  updateHud();
+  const layer = session.renderState.baseLayer;
+  renderer.gl.bindFramebuffer(renderer.gl.FRAMEBUFFER, layer.framebuffer);
+  renderer.gl.clear(renderer.gl.COLOR_BUFFER_BIT | renderer.gl.DEPTH_BUFFER_BIT);
+  const views = pose.views.map(v => {
+    const vp = layer.getViewport(v);
+    const VP = M.multiply(v.projectionMatrix, M.multiply(v.transform.inverse.matrix, invShip));
+    const p = v.transform.position;
+    return { viewport: [vp.x, vp.y, vp.width, vp.height], camPos: M.transformPoint(ship, [p.x, p.y, p.z]), VP, invVP: M.invert(VP) };
+  });
+  draw(views, vrPanel(dt));
+}
+// The VR heads-up panel: above the left hand, or floating low in front of you.
+function vrPanel(dt) {
+  xr.panelT -= dt;
+  if (xr.panelT <= 0) { drawPanelCanvas(); xr.panelT = 0.25; xr.panelVersion++; }
+  const W = 0.42, H = W * xr.panelCanvas.height / xr.panelCanvas.width;
+  let c, r, u;
+  if (xr.leftGrip) {
+    const g = xr.leftGrip;
+    const toHead = v3.norm(v3.sub(xr.head.p, g.o));
+    r = v3.norm(v3.cross([0, 1, 0], toHead)); u = v3.cross(toHead, r);
+    c = v3.add(g.o, v3.scale(u, 0.22));
+  } else {
+    const f = xr.head.f; r = xr.head.r; u = v3.norm(v3.cross(r, f));
+    c = v3.add(xr.head.p, v3.add(v3.scale(f, 0.9), v3.scale(u, -0.35)));
+  }
+  const o = v3.sub(c, v3.add(v3.scale(r, W / 2), v3.scale(u, H / 2)));
+  return { canvas: xr.panelCanvas, version: xr.panelVersion, o, x: v3.scale(r, W), y: v3.scale(u, H) };
+}
+function wrap(ctx, text, x, y, maxW, lh, maxLines = 99) {
+  const words = text.split(' ');
+  let line = '', n = 0;
+  for (const w of words) {
+    const t = line ? `${line} ${w}` : w;
+    if (ctx.measureText(t).width > maxW && line) { ctx.fillText(line, x, y); y += lh; line = w; if (++n >= maxLines) return y; }
+    else line = t;
+  }
+  if (line) { ctx.fillText(line, x, y); y += lh; }
+  return y;
+}
+function drawPanelCanvas() {
+  const c = xr.panelCanvas, g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = 'rgba(8,14,26,0.86)'; g.strokeStyle = 'rgba(47,227,230,0.5)'; g.lineWidth = 3;
+  g.beginPath(); g.roundRect ? g.roundRect(2, 2, W - 4, H - 4, 18) : g.rect(2, 2, W - 4, H - 4); g.fill(); g.stroke();
+  g.fillStyle = '#2fe3e6'; g.font = '700 26px system-ui, sans-serif';
+  g.fillText(`ALCHEMFIGHTER · LEVEL 1 · BEAT ${S.beat}`, 28, 46);
+  g.fillStyle = '#ffffff'; g.font = '700 36px system-ui, sans-serif';
+  g.fillText($('beatTitle').textContent, 28, 92);
+  g.fillStyle = '#d6e2ee'; g.font = '26px system-ui, sans-serif';
+  let y = wrap(g, $('tutorText').textContent, 28, 136, W - 56, 33, 7);
+  g.font = '24px ui-monospace, monospace'; g.fillStyle = '#ffe94d';
+  y = wrap(g, `Electron gun ${$('dialOut').textContent} · ${$('aimOut').textContent}`, 28, y + 12, W - 56, 30, 2);
+  g.fillStyle = '#8a9db1';
+  for (const p of S.passes.slice(0, 2)) y = wrap(g, `${p.who}: ${fmtNm(p.rp)} · ${fmtChance(p.chance)} · ${p.caught ? 'CAUGHT' : 'missed'}`, 28, y + 4, W - 56, 28, 1);
+  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.fieldView ? 'Field view' : 'Glow view'} (X)   ·   A/B speed`, 28, H - 28);
+}
+for (const id of ['vrBtn', 'vrBtn2']) $(id).addEventListener('click', toggleVR);
+vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).title = 'No VR headset found in this browser'; });
 
 $('rateTag').textContent = `rates ×${P.RATE_BOOST.toLocaleString('en-US')}`;
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, cam, fire, startBeat, setDial, toggleField, step, capture };
+window.__alchem = { get state() { return S; }, cam, fire, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);

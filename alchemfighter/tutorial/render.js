@@ -10,7 +10,7 @@ in vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const FRAG = `#version 300 es
 precision highp float; precision highp int;
 out vec4 outColor;
-uniform vec2 uRes; uniform vec3 uCamPos; uniform mat3 uCamRot; uniform float uFovT; uniform float uTime;
+uniform vec4 uViewport; uniform vec3 uCamPos; uniform mat4 uInvVP; uniform float uTime;
 uniform float uSphereR; uniform int uSteps;
 uniform vec4 uQ[${MAX_CHARGES}]; uniform float uQs[${MAX_CHARGES}]; uniform int uQN; uniform float uFieldGain;
 uniform int uNA; uniform vec3 uAP[${MAX_CLOUDS}]; uniform float uAR[${MAX_CLOUDS}]; uniform float uAS;
@@ -90,8 +90,9 @@ vec3 stars(vec3 d){
   return vec3(0.55, 0.65, 0.8) * s * (h - 0.982) * 40.0;
 }
 void main(){
-  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
-  vec3 rd = normalize(uCamRot * vec3(uv * uFovT, -1.0));
+  vec2 ndc = (gl_FragCoord.xy - uViewport.xy) / uViewport.zw * 2.0 - 1.0;
+  vec4 far = uInvVP * vec4(ndc, 1.0, 1.0);
+  vec3 rd = normalize(far.xyz / far.w - uCamPos);
   vec3 ro = uCamPos;
   vec3 col = vec3(0.0015, 0.0025, 0.006) + stars(rd) * 0.8;
 
@@ -122,7 +123,8 @@ void main(){
   }
   float L = log(1.0 + 40.0 * uFieldGain);
   float fp = clamp(log(1.0 + Sp * uFieldGain) / L, 0.0, 1.0), fn = clamp(log(1.0 + Sn * uFieldGain) / L, 0.0, 1.0);
-  col += vec3(1.0, 0.62, 0.18) * 0.85 * pow(fp, 2.2) + vec3(0.3, 0.5, 1.0) * 1.0 * pow(fn, 2.6);
+  // A steep curve keeps the bright part of each glow well inside a 1s atom (about 0.1 nm).
+  col += vec3(1.0, 0.62, 0.18) * 1.1 * pow(fp, 5.0) + vec3(0.3, 0.5, 1.0) * 1.3 * pow(fn, 5.0);
 
   // Electron clouds, front to back (at most two here).
   float T = 1.0; vec3 acc = vec3(0.0);
@@ -143,18 +145,21 @@ void main(){
 
 const LINE_VERT = `#version 300 es
 in vec3 aP; in vec4 aC; out vec4 vC;
-uniform vec3 uCamPos, uR, uU, uF; uniform float uFovT, uAspect;
-void main(){
-  vec3 v = aP - uCamPos; float z = dot(v, uF);
-  vec2 s = vec2(dot(v, uR), dot(v, uU)) / max(z, 1e-4) / uFovT;
-  gl_Position = vec4(s.x / uAspect, s.y, 0.0, 1.0);
-  vC = aC;
-}`;
+uniform mat4 uVP;
+void main(){ gl_Position = uVP * vec4(aP, 1.0); vC = aC; }`;
+
+// A textured panel floating in the world (the VR heads-up display).
+const PANEL_VERT = `#version 300 es
+in vec2 aPos; out vec2 vUV; uniform mat4 uVP; uniform vec3 uO, uX, uY;
+void main(){ vUV = vec2(aPos.x, 1.0 - aPos.y); gl_Position = uVP * vec4(uO + uX * aPos.x + uY * aPos.y, 1.0); }`;
+const PANEL_FRAG = `#version 300 es
+precision mediump float; in vec2 vUV; out vec4 o; uniform sampler2D uTex;
+void main(){ o = texture(uTex, vUV); }`;
 const LINE_FRAG = `#version 300 es
 precision mediump float; in vec4 vC; out vec4 o; void main(){ o = vec4(vC.rgb * vC.a, 1.0); }`;
 
 export function createRenderer(canvas) {
-  const gl = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance' });
+  const gl = canvas.getContext('webgl2', { antialias: true, powerPreference: 'high-performance', xrCompatible: true });
   if (!gl) return null;
   const sh = (type, src) => {
     const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -171,7 +176,7 @@ export function createRenderer(canvas) {
   };
   const prog = link(VERT, FRAG, ['aPos']);
   const U = {};
-  for (const n of ['uRes', 'uCamPos', 'uCamRot', 'uFovT', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
+  for (const n of ['uViewport', 'uCamPos', 'uInvVP', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
     'uNA', 'uAP', 'uAR', 'uAS', 'uQA', 'uModeA', 'uNormA', 'uCA', 'uQB', 'uModeB', 'uNormB', 'uCB', 'uInvMax', 'uIso', 'uFade',
     'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(prog, n);
   const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
@@ -181,11 +186,24 @@ export function createRenderer(canvas) {
 
   const lineProg = link(LINE_VERT, LINE_FRAG, ['aP', 'aC']);
   const LU = {};
-  for (const n of ['uCamPos', 'uR', 'uU', 'uF', 'uFovT', 'uAspect']) LU[n] = gl.getUniformLocation(lineProg, n);
+  LU.uVP = gl.getUniformLocation(lineProg, 'uVP');
   const lineVao = gl.createVertexArray(); gl.bindVertexArray(lineVao);
   const lineBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
   gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 28, 12);
+
+  const panelProg = link(PANEL_VERT, PANEL_FRAG, ['aPos']);
+  const PU = {};
+  for (const n of ['uVP', 'uO', 'uX', 'uY', 'uTex']) PU[n] = gl.getUniformLocation(panelProg, n);
+  const panelVao = gl.createVertexArray(); gl.bindVertexArray(panelVao);
+  const pb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const panelTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, panelTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let panelVersion = -1;
 
   const qArr = new Float32Array(MAX_CHARGES * 4), qsArr = new Float32Array(MAX_CHARGES);
   const gArr = new Float32Array(MAX_GLOWS * 4), gcArr = new Float32Array(MAX_GLOWS * 3);
@@ -196,17 +214,13 @@ export function createRenderer(canvas) {
     inv: new Float32Array(MAX_CLOUDS), iso: new Float32Array(MAX_CLOUDS), fade: new Float32Array(MAX_CLOUDS),
   };
 
-  // scene: { cam:{p,r,u,f,fovT}, time, sphereR, steps, scale, charges:[{pos,q,smear}], clouds:[...], glows:[{pos,size,col}], lines:Float32Array }
+  // scene: { views:[{viewport:[x,y,w,h], camPos, VP, invVP}], time, sphereR, steps, bohrPerUnit,
+  //          charges:[{pos,q,smear}], clouds:[...], glows:[{pos,size,col}], lines:Float32Array,
+  //          panel?: { canvas, version, o, x, y } }  (panel: a world-space quad, used in VR)
   function draw(scene) {
-    const w = canvas.width, h = canvas.height, { cam } = scene;
-    gl.viewport(0, 0, w, h);
     gl.useProgram(prog);
-    gl.uniform2f(U.uRes, w, h);
-    gl.uniform3f(U.uCamPos, ...cam.p);
-    gl.uniformMatrix3fv(U.uCamRot, false, new Float32Array([...cam.r, ...cam.u, -cam.f[0], -cam.f[1], -cam.f[2]]));
-    gl.uniform1f(U.uFovT, cam.fovT); gl.uniform1f(U.uTime, scene.time);
+    gl.uniform1f(U.uTime, scene.time);
     gl.uniform1f(U.uSphereR, scene.sphereR); gl.uniform1i(U.uSteps, scene.steps);
-
     const nq = Math.min(MAX_CHARGES, scene.charges.length);
     qArr.fill(0); qsArr.fill(0);
     for (let i = 0; i < nq; i++) { const c = scene.charges[i]; qArr.set([...c.pos, c.q], i * 4); qsArr[i] = c.smear; }
@@ -231,37 +245,53 @@ export function createRenderer(canvas) {
     for (let i = 0; i < ng; i++) { const g = scene.glows[i]; gArr.set([...g.pos, g.size], i * 4); gcArr.set(g.col, i * 3); }
     gl.uniform4fv(U.uG, gArr); gl.uniform3fv(U.uGC, gcArr); gl.uniform1i(U.uGN, ng);
 
-    gl.bindVertexArray(quadVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     if (scene.lines && scene.lines.length) {
-      gl.useProgram(lineProg);
-      gl.uniform3f(LU.uCamPos, ...cam.p); gl.uniform3f(LU.uR, ...cam.r); gl.uniform3f(LU.uU, ...cam.u); gl.uniform3f(LU.uF, ...cam.f);
-      gl.uniform1f(LU.uFovT, cam.fovT); gl.uniform1f(LU.uAspect, w / h);
-      gl.bindVertexArray(lineVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf);
       gl.bufferData(gl.ARRAY_BUFFER, scene.lines, gl.DYNAMIC_DRAW);
-      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-      gl.drawArrays(gl.LINES, 0, scene.lines.length / 7);
-      gl.disable(gl.BLEND);
+    }
+    if (scene.panel && scene.panel.version !== panelVersion) {
+      gl.bindTexture(gl.TEXTURE_2D, panelTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, scene.panel.canvas);
+      panelVersion = scene.panel.version;
+    }
+    for (const v of scene.views) {
+      const [x, y, w, h] = v.viewport;
+      gl.viewport(x, y, w, h);
+      gl.useProgram(prog);
+      gl.uniform4f(U.uViewport, x, y, w, h);
+      gl.uniform3f(U.uCamPos, ...v.camPos);
+      gl.uniformMatrix4fv(U.uInvVP, false, v.invVP);
+      gl.bindVertexArray(quadVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (scene.lines && scene.lines.length) {
+        gl.useProgram(lineProg);
+        gl.uniformMatrix4fv(LU.uVP, false, v.VP);
+        gl.bindVertexArray(lineVao);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+        gl.drawArrays(gl.LINES, 0, scene.lines.length / 7);
+        gl.disable(gl.BLEND);
+      }
+      if (scene.panel) {
+        gl.useProgram(panelProg);
+        gl.uniformMatrix4fv(PU.uVP, false, v.VP);
+        gl.uniform3f(PU.uO, ...scene.panel.o); gl.uniform3f(PU.uX, ...scene.panel.x); gl.uniform3f(PU.uY, ...scene.panel.y);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, panelTex); gl.uniform1i(PU.uTex, 0);
+        gl.bindVertexArray(panelVao);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.disable(gl.BLEND);
+      }
     }
   }
   return { gl, draw };
 }
 
-// Line builder with near-plane clipping, so segments that pass behind the camera don't smear.
+// Line builder: pairs of points with colour and alpha (the GPU clips them at the near plane).
 export class Lines {
   constructor() { this.a = []; }
-  begin(cam) { this.a.length = 0; this.cam = cam; }
+  begin() { this.a.length = 0; }
   seg(p, q, col, alpha = 1) {
-    const { p: o, f } = this.cam, near = 0.02;
-    let za = (p[0] - o[0]) * f[0] + (p[1] - o[1]) * f[1] + (p[2] - o[2]) * f[2];
-    let zb = (q[0] - o[0]) * f[0] + (q[1] - o[1]) * f[1] + (q[2] - o[2]) * f[2];
-    if (za < near && zb < near) return;
-    if (za < near || zb < near) {
-      const t = (near - za) / (zb - za), m = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
-      if (za < near) p = m; else q = m;
-    }
     this.a.push(p[0], p[1], p[2], col[0], col[1], col[2], alpha, q[0], q[1], q[2], col[0], col[1], col[2], alpha);
   }
   data() { return new Float32Array(this.a); }

@@ -31,7 +31,7 @@ developer:
   `chess3d/rules.js`. Online players on different versions then get a warning.
 - **Database changes** go in a **new, later-dated** file in
   `chess3d/supabase/migrations/`. Never edit a migration that has already run.
-- **Alchem Fighter belongs to another Claude session.** It is being rebuilt on
+- **Alchemfighter belongs to another Claude session.** It is being rebuilt on
   branch `claude/atomic-space-fighter-game-ihpb71` (`prototype/`, `docs/`).
   Don't change `alchemfighter/`, `prototype/`, `docs/`, `Alchem_Fighter_GODOT/`,
   `scripts/`, `styles/` or `aframe-glow-master/` beyond what Steve asks for.
@@ -69,7 +69,7 @@ developer:
 | `chess/` | Short link that forwards to `chess3d/`, keeping `?join=` codes |
 | `chess3d/` | Cube Chess 8×8×8, the game (see below) |
 | `reasonance/` | Reasonance, the argument-mapping app (working name; see `reasonance/README.md`). Arrows point from a claim out to its reasons. Step 1 is a guest-only editor saving to the browser. |
-| `alchemfighter/` | Alchem Fighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
+| `alchemfighter/` | Alchemfighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
 | `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |
 | `images/`, `favicon.png` | Site images, including `rational-bonding-logo.png` |

@@ -1,7 +1,7 @@
-# Level 1 tutorial: first playable slice
+# Level 1: Electromagnetic Stardust (first playable slice)
 
 Beats 1 and 2 of [`docs/levels/01-hydrogen-tutorial.md`](../../docs/levels/01-hydrogen-tutorial.md),
-in the flat browser window. Live at `rationalbonding.com/alchemfighter/tutorial/` once merged.
+in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `rationalbonding.com/alchemfighter/tutorial/` once merged.
 
 - **Beat 1, meet the proton:** a lone proton drawn as the glow of its electric field (log scale,
   capped), with Field view lines. A stray electron curves past it and keeps going.
@@ -17,7 +17,8 @@ in the flat browser window. Live at `rationalbonding.com/alchemfighter/tutorial/
 |---|---|
 | `physics.js` | Pure physics, no DOM: constants, Kramers capture cross sections, per-pass capture odds, aim cone, hydrogen decay table, Coulomb motion in the sphere |
 | `orbitals.js` | Hydrogen wavefunctions, ported unchanged from the rebuild's `prototype/index.html` |
-| `render.js` | WebGL2: stars, the sphere's wall, field glows, ray-marched electron clouds, lines |
+| `render.js` | WebGL2: stars, the sphere's wall, field glows, ray-marched electron clouds, lines, the VR panel; draws once per eye in VR |
+| `mat4.js` | Small matrix helpers for the flat camera and the headset's eyes |
 | `game.js` | Beats, tutor lines, flight controls, the gun, the cascade, the HUD |
 | `physics.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/physics.test.mjs` |
 
@@ -44,5 +45,18 @@ in the flat browser window. Live at `rationalbonding.com/alchemfighter/tutorial/
 - **Loose electrons:** missed electrons stay in the sphere. The gun allows three loose at once;
   fly close to one to scoop it back.
 
-Not in this slice yet: beats 3 to 5, VR, the potential-landscape grid, field quenching of 2s,
+## Views and controls
+
+- **Field view** (default): electric field lines, green magnetic rings around moving electrons, and
+  each photon's electric and magnetic waves at 90° to each other. The magnetic field is drawn 400×
+  brighter than its true share (it is about v/c ≈ 1/1000 of the electric field at these speeds).
+- **Glow view** (V): the calmer view, glows only.
+- **Window:** drag to look, click or Space to fire, W A S D to fly, R / F up and down, [ ] or the
+  wheel for electron speed.
+- **VR:** 1 metre in the headset is drawn as 1 nm. Left stick flies where you look; right stick turns
+  and rises or sinks; trigger fires along the right controller; A / B change electron speed; X
+  switches Field / Glow view. The tutor text and odds are on a panel above the left hand.
+  Tested only with a simulated headset so far.
+
+Not in this slice yet: beats 3 to 5, the potential-landscape grid, field quenching of 2s,
 and the deuterium "Heavy Find".

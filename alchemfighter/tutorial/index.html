@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>A Lone Proton · Alchem Fighter</title>
-<meta name="description" content="Alchem Fighter, Level 1 (first slice): meet a lone proton and catch an electron with real capture odds, then watch the new hydrogen atom light up.">
+<title>Electromagnetic Stardust · Alchemfighter</title>
+<meta name="description" content="Alchemfighter, Level 1: Electromagnetic Stardust. Catch an electron on a lone proton with real capture odds, and watch the new hydrogen atom light up. In the browser or in VR.">
 <link rel="canonical" href="https://rationalbonding.com/alchemfighter/tutorial/">
 <meta name="theme-color" content="#2fe3e6">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Rational Bonding">
 <meta property="og:url" content="https://rationalbonding.com/alchemfighter/tutorial/">
-<meta property="og:title" content="A Lone Proton · Alchem Fighter">
+<meta property="og:title" content="Electromagnetic Stardust · Alchemfighter">
 <meta property="og:description" content="Catch an electron on a proton with real capture odds, and watch the new hydrogen atom give off its light.">
 <meta property="og:image" content="https://rationalbonding.com/images/share.png">
 <meta property="og:image:alt" content="Rational Bonding">
@@ -111,11 +111,11 @@ a { color: var(--cyan); }
 
 <div class="hud">
   <section class="panel" id="tutor" aria-live="polite">
-    <h1>Alchem Fighter · Level 1 · <span id="beatNum">Beat 1</span></h1>
+    <h1>Alchemfighter · Level 1 · <span id="beatNum">Beat 1</span></h1>
     <h2 id="beatTitle">Meet the proton</h2>
     <div class="say" id="tutorText"></div>
     <ul class="goals" id="goals"></ul>
-    <div class="row"><button type="button" id="fieldBtn" aria-pressed="false" title="Field view (V)">Field view</button><button type="button" id="skipBtn">Skip beat</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
+    <div class="row"><button type="button" id="fieldBtn" aria-pressed="false" title="Glow view: a calmer view without field lines (V)">Glow view</button><button type="button" id="vrBtn" title="Play in a PC VR headset">Enter VR</button><button type="button" id="skipBtn">Skip beat</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
   </section>
 
   <div class="right">
@@ -127,7 +127,8 @@ a { color: var(--cyan); }
       <div class="row" style="justify-content:space-between"><span class="label">Time</span><span class="data" id="timeOut"></span></div>
       <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Every capture chance is multiplied by this same factor, so the shape of the odds stays real">rates ×</span><span class="fine" id="lightNote">light drawn slowed down</span></div>
       <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
-      <div class="fine">Glow brightness follows field strength on a log scale, capped at the centre.</div>
+      <div class="legend"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--good))"></span>magnetic field (drawn ×400)</div>
+      <div class="fine">Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).</div>
     </section>
     <section class="panel" id="passBox">
       <div class="label">Passes (closest approach · chance)</div>
@@ -158,7 +159,7 @@ a { color: var(--cyan); }
       <div class="data" id="aimOut"></div>
       <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that leaves the sphere, at its real wavelength"></canvas>
       <div class="fine" id="spectroNote">Spectrometer: each photon that escapes the sphere, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
-      <div class="keys">Click the view to steer with the mouse (Esc frees it) · Click or Space: fire · W A S D: fly · R / F: up / down · Shift: faster · [ ] or wheel: electron speed · V: field view</div>
+      <div class="keys">Drag to look · Click or Space: fire · W A S D: fly · R / F: up / down · Shift: faster · [ ] or wheel: electron speed · V: Glow / Field view</div>
       <div class="keys touch">Drag to look · FIRE to shoot · ▲ ▼ to fly</div>
     </section>
   </div>
@@ -166,11 +167,11 @@ a { color: var(--cyan); }
 
 <div class="overlay" id="startBox">
   <div class="panel">
-    <h1>Alchem Fighter · first playable slice</h1>
-    <h2>Level 1: A Lone Proton</h2>
-    <p>You're inside a sealed sphere 80 nanometres across, about a thousand times smaller than a bacterium. Matter can't leave it. Light can.</p>
-    <p class="fine">This slice covers the first two beats of the hydrogen tutorial: meet a proton, then catch an electron on it with real capture odds. Flat-screen mode; VR comes later.</p>
-    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button></div>
+    <h1>Alchemfighter</h1>
+    <h2>Level 1: Electromagnetic Stardust</h2>
+    <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. The edge of the system allows for photons (light) to pass, but not much else.</p>
+    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="vrBtn2">Enter VR</button></div>
+    <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>
   </div>
 </div>
 <div class="overlay" id="doneBox" hidden>

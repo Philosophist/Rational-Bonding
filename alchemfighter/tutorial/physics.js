@@ -1,4 +1,4 @@
-// Alchem Fighter, Level 1 (hydrogen tutorial): the physics, with no DOM or WebGL code.
+// Alchemfighter, Level 1 (hydrogen tutorial): the physics, with no DOM or WebGL code.
 // Units: lengths in nm, times in fs, energies in eV, charges in units of e.
 // Design: docs/levels/01-hydrogen-tutorial.md, beats 1 and 2.
 
