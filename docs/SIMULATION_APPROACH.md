@@ -318,23 +318,34 @@ upgraded.
 
 1. **Physics core, small:** the reactive force field for H, C, N, O, Cl, Na,
    plus a test suite that compares bond lengths and bond energies of ~30 small
-   molecules against GFN2-xTB reference numbers checked into the repo.
+   molecules against GFN2-xTB reference numbers checked into the repo. H₂, HD
+   and D₂ come first and must match the exact published H₂ curve, because
+   Level 1 depends on them.
 2. **Export button** (structures and xtb input), in the free version. Cheap,
    and it delivers the "re-run it professionally" promise from day one.
-3. **First chemistry level: hydrogen meets oxygen**, in first-person window
-   mode. A drifting cloud of H₂ and O₂ won't react on its own; the player
+3. **Level 1, the hydrogen tutorial** (`levels/01-hydrogen-tutorial.md`), in
+   first-person window mode. A lone proton, the electron gun, capture with a
+   real light cascade, the photon gun exciting orbitals, neutralizing an H⁺
+   cloud, and finally making 10 H₂ molecules, which only works with a third
+   body, a dust grain, or an H⁻ or H₂⁺ helper, exactly as in nature. Besides
+   the force field it needs free charges in Coulomb fields, the prototype's
+   exact hydrogen atom, electron cross sections, and the event layer (§3b).
+   Level 2, **Heavy Hydrogen**, follows with the neutron gun and isotopes.
+4. **Hydrogen meets oxygen**, a later level once the lesson plan reaches
+   reactions. A drifting cloud of H₂ and O₂ won't react on its own; the player
    fires a UV photon to split an O₂, or launches a hydrogen atom, to start the
    chain reaction that turns it into water with a flash. It is the
    best-studied combustion reaction there is, with ReaxFF parameters and many
-   published simulations to compare against.
-4. **Enter VR** on the same level: PC VR with controllers, cockpit
+   published simulations to compare against, so it is the first real test of
+   the reactive force field on a reaction.
+5. **Enter VR** on the same levels: PC VR with controllers, cockpit
    instruments, and aiming the guns by hand.
-5. **Creative mode, first slice:** placing and orienting atoms (by hand in VR,
+6. **Creative mode, first slice:** placing and orienting atoms (by hand in VR,
    with the crosshair in a window) and watching them bond.
-6. **Fireworks metals** (strontium, barium, copper, sodium) with real emission
+7. **Fireworks metals** (strontium, barium, copper, sodium) with real emission
    lines: a "make a red firework" level.
-7. **Referee (xTB or ML) on the player's PC**, with the confidence meter.
-8. **Later:** shared creations community (and only then, a decision on a
+8. **Referee (xTB or ML) on the player's PC**, with the confidence meter.
+9. **Later:** shared creations community (and only then, a decision on a
    checking server); a standalone Quest version once WebGPU in WebXR is stable.
 
 ## 7. Decisions so far
@@ -345,6 +356,7 @@ upgraded.
 | Flat-screen play too? | **Yes:** a setting to play as a first-person space shooter or in VR. |
 | Export button in the free itch.io version? | **Yes, include it.** |
 | Grabbing atoms? | **Creative mode only.** The main game is shooting; creative mode allows placing and orienting atoms. |
+| First level? | **A hydrogen tutorial** built on a standard chemistry lesson plan: lone proton, electron gun, light, orbitals, then 10 H₂ (2026-11-06; see `levels/01-hydrogen-tutorial.md`). |
 | Pay for a referee server? | **Not now.** No multiplayer yet. Revisit when shared creations are built (§3d explains what a server would be for). |
 
 ## Sources and further reading
