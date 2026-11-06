@@ -1008,10 +1008,9 @@ function showWelcome() {
   $('welcome-signup').hidden = !cloud.auth.configured() || cloud.signedIn();
   document.querySelector('#welcome .signin-note').hidden = $('welcome-signup').hidden;
   $('welcome').hidden = false;
-  ($('welcome-signup').hidden ? $('welcome-tutorial') : $('welcome-signup')).focus();
+  ($('welcome-signup').hidden ? $('welcome-sandbox') : $('welcome-signup')).focus();
 }
 $('welcome-signup').addEventListener('click', () => { closeWelcome(); signIn(); });
-$('welcome-tutorial').addEventListener('click', () => { closeWelcome(); startTutorial(); });
 $('welcome-sandbox').addEventListener('click', (ev) => { ev.preventDefault(); closeWelcome(); });
 $('welcome').addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeWelcome(); });
 
