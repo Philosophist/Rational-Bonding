@@ -11,6 +11,8 @@ begin
   if not exists (select 1 from rs_posts where text = 'It rained last night.') then raise exception 'a rated old post was deleted'; end if;
   select count(*) into n from rs_posts;
   if n <> 78 then raise exception 'expected 77 new posts plus 1 kept, got %', n; end if;
+  select count(*) into old from rs_posts p join profiles f on f.id = p.byline where f.username in ('Claude', 'Claude_AI');
+  if old <> n then raise exception 'only % of % posts signed by Claude', old, n; end if;
   raise notice 'ok: new examples posted, old ones removed, rated one kept';
 end $$;
 select 'ALL PASSED';

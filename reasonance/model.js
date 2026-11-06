@@ -39,11 +39,12 @@ export const STANCES = {
   agree: 'Agree',
   disagree: 'Disagree',
   unknown: "I don't know",
+  noopinion: 'No opinion',
   incomprehensible: 'Incomprehensible',
   dontcare: "I don't care",
 };
 // Agree and Disagree are the two sides; the rest are "Neither".
-export const NEITHER = ['unknown', 'incomprehensible', 'dontcare'];
+export const NEITHER = ['unknown', 'noopinion', 'incomprehensible', 'dontcare'];
 
 // Relevance: how important it would be to know if the opposite of your
 // stance were proven true, to your own satisfaction.

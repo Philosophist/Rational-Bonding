@@ -31,7 +31,7 @@ const GHOST = '#ff2fb4';
 const GHOST_PREFIX = 'ghost:';
 const isGhost = (id) => typeof id === 'string' && id.startsWith(GHOST_PREFIX);
 const ghostOwner = (id) => id.slice(GHOST_PREFIX.length);
-const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
+const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', noopinion: '#a5afc6', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
 
 const $ = (id) => document.getElementById(id);
 const board = $('board'), world = $('world');

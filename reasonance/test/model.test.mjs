@@ -198,6 +198,7 @@ test('posting choices (anonymous, share) survive saving and loading', () => {
 test("I don't care is a Neither view that gives one star by default", async () => {
   const { NEITHER } = await import('../model.js');
   assert.ok(NEITHER.includes('dontcare'));
+  assert.ok(NEITHER.includes('noopinion'));
   const m = createMap('t', 1);
   const a = addNode(m, { text: 'A.' });
   rate(m, a.id, { stance: 'dontcare' });

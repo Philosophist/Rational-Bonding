@@ -149,5 +149,10 @@ select pg_temp.expect_fail($q$insert into rs_ratings (post_id, stance) values ('
 do $$ begin
   if (select dontcare from rs_post_stats where post_id='10000000-0000-0000-0000-000000000006') <> 1 then raise exception 'dontcare not counted'; end if;
 end $$;
+-- "No opinion" counts too
+update rs_ratings set stance = 'noopinion' where post_id = '10000000-0000-0000-0000-000000000006';
+do $$ begin
+  if (select (dontcare, noopinion) from rs_post_stats where post_id='10000000-0000-0000-0000-000000000006') <> (0, 1) then raise exception 'noopinion not counted'; end if;
+end $$;
 reset role;
 select 'ALL PASSED';
