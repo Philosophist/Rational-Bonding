@@ -295,6 +295,21 @@ export function flavor(prev, next) {
   return out;
 }
 
+// Confidence as odds of being wrong: 90% is a 1 in 10 chance, 99.9% is 1 in
+// 1,000. n is Infinity at 100% (never wrong) and 1 at 0%.
+export function confidenceToOdds(c) {
+  if (c == null) return null;
+  if (c >= 100) return Infinity;
+  const n = 100 / (100 - Math.max(0, c));
+  return n < 10 ? Math.round(n * 10) / 10 : Math.round(n);
+}
+export function oddsToConfidence(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return v === Infinity ? 100 : null;
+  if (v <= 1) return 0;
+  return +(100 - 100 / v).toPrecision(8);
+}
+
 // Confidence slider in log mode tells 99% from 99.999% apart.
 // Position p runs 0..6: confidence = 100 - 10^(2 - p); p = 6 snaps to 100.
 export function logSliderToConfidence(p) {

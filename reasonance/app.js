@@ -4,7 +4,7 @@
 import {
   NODE_TYPES, EDGE_TYPES, STANCES, RELEVANCE, createMap, addNode, addEdge, removeItem, flipEdge,
   setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES,
-  isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider,
+  isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider, confidenceToOdds, oddsToConfidence,
   compoundParts, splitIntoPremises, postOrder,
 } from './model.js';
 import { FALLACIES } from './fallacies.js';
@@ -250,8 +250,20 @@ function head(tip, from, color, parent) {
 
 // ---------- render ----------
 let boxes = new Map();
+// Who posted a node, for its label on the board: " · @name", " · by you" or
+// " · anonymous". Unknown authors are fetched in one go after drawing.
+let bylineWant = [];
+function byline(n) {
+  const pid = map.posts?.[n.id];
+  if (!pid || !cloud.signedIn()) return '';
+  if (cloud.mine.has(pid)) return ' · by you';
+  const ab = aboutCache.get(pid);
+  if (ab === undefined) { bylineWant.push(pid); return ''; }
+  return ab ? (ab.by ? ` · @${ab.by.length > 18 ? ab.by.slice(0, 17) + '…' : ab.by}` : ' · anonymous') : '';
+}
 function render() {
   checkTutorial();
+  bylineWant = [];
   boxes = computeBoxes();
   for (const l of Object.values(layers)) l.replaceChildren();
   const lit = spotlight ? litSet(spotlight) : null;
@@ -310,7 +322,7 @@ function render() {
     }
     s('rect', { class: 'box', x: x0, y: y0, width: b.w, height: b.h, rx: 14, stroke: color }, g);
     const kind = s('text', { class: 'kind', x: x0 + 12, y: y0 + 18 }, g);
-    kind.textContent = (n.type === 'fallacy' ? `Fallacy · ${n.fallacy}` : NODE_TYPES[n.type].label) + (cloud.signedIn() && !map.posts?.[n.id] ? ' · draft' : '');
+    kind.textContent = (n.type === 'fallacy' ? `Fallacy · ${n.fallacy}` : NODE_TYPES[n.type].label) + (cloud.signedIn() && !map.posts?.[n.id] ? ' · draft' : byline(n));
     const t = s('text', { x: x0 + 12, y: y0 + 22 }, g);
     L.lines.forEach((line, i) => { const ts = s('tspan', { x: x0 + 12, dy: i ? LINE : LINE + 2 }, t); ts.textContent = line; });
     if (L.sLines.length) {
@@ -323,6 +335,7 @@ function render() {
     if (n.rating?.stance) stanceDot(g, x0 + b.w - 12, y0 + 12, n.rating.stance, true);
     if (!n.text && n.type !== 'fallacy' && n.type !== 'combiner') t.querySelector('tspan').textContent = 'Click to write…';
   }
+  if (bylineWant.length) loadAbout(bylineWant);
   const A = second && boxes.get(selected), B = second && boxes.get(second);
   if (A && B) {
     const p = exitPoint(A, B.cx, B.cy), q = exitPoint(B, A.cx, A.cy), g = s('g', { class: 'link-preview' }, layers.edges);
@@ -587,8 +600,13 @@ function ratingBlock(it) {
   const conf = r.confidence ?? 50;
   const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', value: r.confidence ?? '', placeholder: '–', 'aria-label': 'Confidence percent',
     onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : Number(ev.target.value) }) });
+  // The same confidence as "1 in n chance that I'm wrong"; type either one.
+  const oddsText = (c) => { const n = confidenceToOdds(c); return n == null ? '' : n === Infinity ? '' : String(n); };
+  const odds = h('input', { class: 'num odds', type: 'number', min: 1, step: 'any', value: oddsText(r.confidence), placeholder: r.confidence >= 100 ? '∞' : '–', 'aria-label': "Chance that I'm wrong, 1 in",
+    onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : oddsToConfidence(ev.target.value) }) });
+  num.addEventListener('input', () => { odds.value = num.value === '' ? '' : oddsText(Number(num.value)); });
   const range = h('input', { type: 'range', min: 0, max: logScale ? 6 : 100, step: logScale ? 0.01 : 1, value: logScale ? confidenceToLogSlider(conf) : conf, 'aria-label': 'Confidence slider',
-    oninput: (ev) => { const v = logScale ? logSliderToConfidence(Number(ev.target.value)) : Number(ev.target.value); num.value = v; },
+    oninput: (ev) => { const v = logScale ? logSliderToConfidence(Number(ev.target.value)) : Number(ev.target.value); num.value = v; odds.value = oddsText(v); },
     onchange: (ev) => doRate(it.id, { confidence: logScale ? logSliderToConfidence(Number(ev.target.value)) : Number(ev.target.value) }) });
   const stars = h('div', { class: 'row stars' }, [1, 2, 3, 4, 5].map((v) =>
     h('button', { class: r.relevance >= v ? 'on' : '', title: RELEVANCE[v].text, onclick: () => doRate(it.id, { relevance: r.relevance === v ? null : v }) }, '★')));
@@ -596,6 +614,7 @@ function ratingBlock(it) {
   return [
     h('h3', {}, 'Your view'), stance, shareToggle(it),
     h('label', {}, 'Confidence', range, num, '%'),
+    h('label', { class: 'odds-row' }, '1 /', odds, "chance that I'm wrong"),
     h('label', {}, h('input', { type: 'checkbox', checked: logScale, onchange: (ev) => { logScale = ev.target.checked; renderPanel(); } }), 'Log scale (tells 99% from 99.999%)'),
     h('p', { class: 'muted' }, 'How much would it matter to you if the opposite were proven?'), stars,
     r.relevance ? h('p', { class: 'muted' }, RELEVANCE[r.relevance].text) : null,
@@ -748,7 +767,7 @@ async function loadAbout(pids, force = false) {
   const want = pids.filter((p) => force || !aboutCache.has(p));
   if (!want.length || !cloud.signedIn()) return;
   for (const p of want) aboutCache.set(p, aboutCache.get(p) ?? null);
-  try { const got = await cloud.about(want); for (const p of want) aboutCache.set(p, got[p] ?? null); renderPanel(); } catch { /* a nicety */ }
+  try { const got = await cloud.about(want); for (const p of want) aboutCache.set(p, got[p] ?? null); renderPanel(); render(); } catch { /* a nicety */ }
 }
 // What's already posted that a draft matches, by the draft's current words.
 const lookupCache = new Map(); // item id -> { key, result }
