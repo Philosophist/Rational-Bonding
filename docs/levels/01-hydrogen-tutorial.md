@@ -67,6 +67,27 @@ window):
 - **Census**: counts of H⁺, H, H⁻, H₂⁺ and H₂ in the sphere.
 - **Time scale**: "1 s = …" as in `GAME_DESIGN.md` §8.
 
+## 2b. How charges are drawn: as fields, not balls
+
+A proton is about 60,000 times smaller than the hydrogen atom's 1s cloud, and
+an electron has no measured size at all. Drawn to scale they would be
+invisible. What a charge really spreads through space is its **electric
+field**, so the game draws each free charge as a glow of its field:
+
+- **Brightness follows field strength**, which falls off as 1/r². The centre
+  would be infinitely bright, so brightness is mapped on a logarithmic scale
+  with a cap, and the HUD's legend says so.
+- **Positive and negative get different colours**, chosen not to clash with
+  the cyan and magenta the orbital renderer uses for wave phase.
+- **Fields add up.** Two protons make one brighter, stretched glow. When an
+  electron is captured, its field and the proton's cancel outside the atom,
+  so the glow **fades away** as the atom becomes neutral, and the electron
+  cloud (the orbital) takes its place. Neutralizing is literally visible.
+- **A free electron is also a small wave packet.** Its position is only
+  known to within its wavelength (about a nanometre for a slow electron,
+  bigger than the atom), so its glow is slightly smeared. This is the
+  uncertainty principle at work, and it matters for aiming (beat 2).
+
 ## 2a. The system sphere
 
 Every level takes place in a sealed **system sphere**. The player can't leave
@@ -107,8 +128,9 @@ voice line plus a caption, and each can be replayed from the log.
 
 ### Beat 1: Meet the proton
 
-**The player sees** a small, bright, red-tinted point (positive charge colour)
-with field lines radiating outward when Field view is on.
+**The player sees** a glow, brightest at the centre and fading outward,
+showing the strength of the proton's electric field (see §2b). Field lines
+radiate outward when Field view is on.
 
 > *Tutor:* "This is a proton. It's also a hydrogen ion, written H⁺: a
 > hydrogen atom that has lost its only electron. It carries one unit of
@@ -134,9 +156,22 @@ it once.
 
 **The player does**: fires electrons. The speed dial starts at "slow".
 
+- **Most passes miss.** An electron is only caught if it gives off a photon
+  while it swings past, and that is unlikely on any one pass. The chance is
+  much higher when the electron is **slow** and passes **close**, because
+  that's where it is pulled hardest and swings most sharply. So aim matters:
+  a near-miss with a slow electron is far more likely to be caught than a
+  wide or fast one.
+- **The aim cone.** The gun shows a faint cone where the electron will
+  actually go. It can't be a perfect line, because the electron is a wave
+  (§2b), and slower electrons have wider cones. That sets up a real
+  trade-off: slow electrons are easier to catch but harder to aim.
+- **Feedback.** After each pass, the HUD shows how close it came and the
+  capture chance it had ("closest pass 0.3 nm, chance 2%"), so the player
+  learns what a good shot is.
 - **Too fast**: the electron swings around the proton and escapes, like the
-  stray in beat 1. The tutor says "Too fast to catch. Try slower."
-- **Slow enough**: the proton captures it. An electron cloud blooms around it,
+  stray in beat 1. The tutor says "Too fast to catch. Try slower and closer."
+- **Slow and close**: the proton captures it. An electron cloud blooms around it,
   first large and lobed, then stepping down in a cascade of flashes until it
   settles into the small round 1s cloud. Each step sends out a photon, shown
   as a wave packet and as a line on the spectrometer. Very often one of them
@@ -161,8 +196,11 @@ it once.
 - If the electron does go straight to 1s, a single ultraviolet photon carries
   away 13.6 eV plus the electron's kinetic energy (wavelength shorter than
   91.2 nm). The tutorial shows this case once, labelled, so both are seen.
-- Real capture is slow and unlikely per pass; the game raises the chance and
-  says so on the HUD (see §7).
+- Real capture is very unlikely per pass: for a slow electron, roughly one
+  pass in tens of thousands even when aimed well. The game multiplies every
+  chance by the same factor, so the **shape** stays real (slower and closer
+  is better, by the real ratios) while a good shot succeeds within a few
+  tries. The HUD shows the factor (see §7).
 
 **Done when** one neutral hydrogen atom exists.
 
