@@ -256,13 +256,19 @@ Quest through Link or Air Link). One URL then gives:
 Yes, this is reasonable, and WebXR makes it cheap: the page already draws in a
 window, and an **Enter VR** button switches the same scene into the headset.
 Leaving VR drops you back into the window. The simulation, levels and
-graphics are shared; only three things differ:
+graphics are shared; only the controls differ.
+
+**The main game is shooting.** You fly the ship and fire photons, electrons,
+protons, neutrons and sometimes whole atoms to steer the system into its
+target state. There is no grabbing in the campaign. Touching, placing and
+turning atoms by hand belongs to **creative mode only**, where you build.
 
 | | VR mode | First-person window mode |
 |---|---|---|
 | Looking around | Your head | Mouse, or right stick on a gamepad |
 | Flying and aiming | Controllers: stick to fly, trigger to fire, aim with your hand | WASD or left stick to fly, mouse to aim, click to fire |
-| Grabbing atoms (creative mode) | Reach out and grab with your hand | Point with the crosshair, hold a button to grab, scroll to pull closer or push away |
+| Choosing and tuning the gun | Cockpit dials and buttons, or a quick-select wheel on the controller | Number keys and mouse wheel, or gamepad bumpers |
+| *Creative mode only:* placing and orienting atoms | Reach out, place an atom, turn it with your wrist | Point with the crosshair to place; hold a button and move the mouse to rotate |
 | Instruments | Cockpit panels you look at | The same panels on the edges of the screen |
 
 To keep both modes good, the rules are:
@@ -282,11 +288,14 @@ To keep both modes good, the rules are:
   steps, so a slow chemistry step never drops a frame.
 - **The ship is a cockpit.** A fixed cockpit frame around the player greatly
   reduces motion sickness when flying, and it's where the instruments live.
-- **Creative mode becomes hands-on:** grab an atom, feel it snap into a bond
-  (controller vibration scaled by bond energy), pull a molecule apart. Research
-  groups already do this with real simulations in VR (the open-source
-  NanoVer/Narupa project, and Nanome, which pharmaceutical companies use),
-  so it's a proven way to handle molecules.
+- **Shooting comes first.** Aiming with a tracked controller makes the guns
+  feel physical, and the target atom or molecule stays in front of the
+  cockpit, as in the prototype.
+- **In creative mode only, building is hands-on:** place an atom, turn it to
+  the angle you want, feel it snap into a bond (controller vibration scaled by
+  bond energy). Research groups already handle real simulated molecules this
+  way in VR (the open-source NanoVer/Narupa project, and Nanome, which
+  pharmaceutical companies use), so it's a proven way to build.
 - **Electron clouds cost twice as much in stereo.** The raymarched orbital
   shader needs lower resolution, foveated rendering, or baked impostors for
   distant atoms.
@@ -313,15 +322,19 @@ upgraded.
 2. **Export button** (structures and xtb input), in the free version. Cheap,
    and it delivers the "re-run it professionally" promise from day one.
 3. **First chemistry level: hydrogen meets oxygen**, in first-person window
-   mode. Two H₂ and one O₂ become water with a flash. It is the best-studied
-   combustion reaction there is, with ReaxFF parameters and many published
-   simulations to compare against.
-4. **Enter VR** on the same level: PC VR with controllers, cockpit instruments,
-   and hand-grabbing for a creative-mode first slice.
-5. **Fireworks metals** (strontium, barium, copper, sodium) with real emission
+   mode. A drifting cloud of H₂ and O₂ won't react on its own; the player
+   fires a UV photon to split an O₂, or launches a hydrogen atom, to start the
+   chain reaction that turns it into water with a flash. It is the
+   best-studied combustion reaction there is, with ReaxFF parameters and many
+   published simulations to compare against.
+4. **Enter VR** on the same level: PC VR with controllers, cockpit
+   instruments, and aiming the guns by hand.
+5. **Creative mode, first slice:** placing and orienting atoms (by hand in VR,
+   with the crosshair in a window) and watching them bond.
+6. **Fireworks metals** (strontium, barium, copper, sodium) with real emission
    lines: a "make a red firework" level.
-6. **Referee (xTB or ML) on the player's PC**, with the confidence meter.
-7. **Later:** shared creations community (and only then, a decision on a
+7. **Referee (xTB or ML) on the player's PC**, with the confidence meter.
+8. **Later:** shared creations community (and only then, a decision on a
    checking server); a standalone Quest version once WebGPU in WebXR is stable.
 
 ## 7. Decisions so far
@@ -331,6 +344,7 @@ upgraded.
 | PC VR first, or standalone Quest first? | **PC VR first.** |
 | Flat-screen play too? | **Yes:** a setting to play as a first-person space shooter or in VR. |
 | Export button in the free itch.io version? | **Yes, include it.** |
+| Grabbing atoms? | **Creative mode only.** The main game is shooting; creative mode allows placing and orienting atoms. |
 | Pay for a referee server? | **Not now.** No multiplayer yet. Revisit when shared creations are built (§3d explains what a server would be for). |
 
 ## Sources and further reading
