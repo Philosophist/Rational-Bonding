@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| **System** | One bare proton, then a trapped cloud of 24 protons (an H⁺ plasma) |
+| **System** | One bare proton, then a cloud of 24 protons (an H⁺ plasma), all inside the sealed **system sphere** (§2a) |
 | **Target state** | At least **10 neutral H₂ molecules** at the same time, held for 10 game seconds |
 | **Weapons** | Electron gun (from the start), photon gun (unlocked in beat 3), atom launcher (hydrogen only, beat 5) |
 | **Constraint** | None on the first play. Replays add an energy budget and a timer for star ratings. |
@@ -64,8 +64,41 @@ window):
   see.
 - **Energy ladder**: the hydrogen levels E_n = −13.6 eV / n², with the
   electron's current level lit.
-- **Census**: counts of H⁺, H, H⁻, H₂⁺ and H₂ in the trap.
+- **Census**: counts of H⁺, H, H⁻, H₂⁺ and H₂ in the sphere.
 - **Time scale**: "1 s = …" as in `GAME_DESIGN.md` §8.
+
+## 2a. The system sphere
+
+Every level takes place in a sealed **system sphere**. The player can't leave
+it, and neither can matter. It behaves like this:
+
+- **Matter stays in.** Protons, electrons, atoms and molecules bounce off the
+  wall without losing energy and without reacting with it. That's the one
+  idealization: a real wall would absorb some heat and, if it were bare metal,
+  turn H atoms into H₂ on its surface. The best real wall for keeping atomic
+  hydrogen is a Teflon coating, as in hydrogen masers.
+- **Light leaves.** Photons cross the wall and escape. The spectrometer records
+  every escaping photon, so it shows what a telescope looking at this cloud
+  would see. Escaping light takes its energy with it, which is how a real gas
+  cloud cools.
+- **Inside, light only does what it really does:**
+  - **Bare protons (H⁺) ignore light almost completely.** With no electron
+    they have nothing to absorb with, and the scattering off a bare proton is
+    about three million times weaker than off an electron. Photons pass
+    straight through an ion cloud.
+  - **Neutral atoms absorb photons that match a jump**, and re-emit them in a
+    random direction (fluorescence). A resonant photon in a dense neutral
+    cloud can be passed from atom to atom many times before it escapes. This
+    is real *radiation trapping*.
+  - **Light pushes, a little.** Every photon carries momentum. An H atom that
+    emits or absorbs a 121.6 nm photon recoils at about **3 m/s**. At room
+    temperature, atoms already move at around 2,500 m/s, so the push is real
+    but small. The engine includes it, and the player won't notice it unless
+    the gas is very cold. (It's the same effect that lets physicists cool
+    atoms with lasers.)
+- **Later levels can build the wall.** A shell of atoms or a cold grain-coated
+  wall turns escaping light into fluorescence or heat, and catches atoms so
+  they meet and make H₂. Both are real and make good tools for later levels.
 
 Tutor lines below are written in plain words and kept short. They appear as a
 voice line plus a caption, and each can be replayed from the log.
@@ -171,7 +204,7 @@ selection rules.
 1s → 3p is 12.09 eV; 3p → 2s is 1.89 eV (red) and the
 remaining 10.20 eV leaves from 2s. 2s can't give off a single photon, so in
 empty space it waits about 0.12 s and emits two photons that share the
-10.20 eV. In the trap's electric field (beat 4) 2s is mixed with 2p and drops
+10.20 eV. Near other charges (the ions of beat 4) the electric field mixes 2s with 2p and it drops
 almost at once with one 121.6 nm photon (field quenching). Both are real, and
 the prototype, which currently treats 2s as stable, needs both added. A single photon from 1s only reaches p
 orbitals (Δl = ±1); d and f shapes are left to Act I levels such as Balmer
@@ -186,9 +219,9 @@ the spectrometer shows where they really are.
 
 ### Beat 4: Neutralize the cloud
 
-The view pulls back. 23 more protons drift inside a faint **trap bubble**, a
-round magnetic and electric "bottle" like the Penning traps physicists use to
-hold ions. The first atom sits among them.
+The view pulls back to show the whole system sphere. 23 more protons drift
+inside it, spread out because they repel each other; the outer ones press
+against the wall. The first atom sits among them.
 
 > *Tutor:* "A cloud of hydrogen ions. Notice they keep their distance: like
 > charges push each other apart. Turn each one into a neutral atom with your
@@ -209,9 +242,10 @@ the field lines disappear one by one, and the census counts H⁺ down and H up.
   gas (radiation trapping, already in the prototype).
 
 **Physics**: Coulomb dynamics for all charged particles; capture and
-ionization outcomes from cross sections; trap fields act only on charged
-particles. Without the trap, a pure proton cloud would fly apart (Coulomb
-explosion); see the open questions in §8.
+ionization outcomes from cross sections. A pure proton cloud pushes itself
+outward (Coulomb repulsion) until the sphere's wall holds it, so before the
+player starts, the protons sit spread out near the wall. Neutral atoms stop
+pressing outward and drift freely.
 
 **Done when** no H⁺ is left (or the player moves on with at least 20 neutral
 atoms).
@@ -223,7 +257,7 @@ atoms).
 > on Earth is H₂. Make at least ten. There's a catch, and finding it is the
 > point of this level."
 
-The goal is open: **10 or more H₂ in the trap at once, held for 10 seconds**.
+The goal is open: **10 or more H₂ in the sphere at once, held for 10 seconds**.
 Atoms drift and collide on their own. The player learns that two atoms bumping
 into each other *almost never* stick, and has to find a way to make them stick.
 The tutor gives hints only if the player is stuck (after 60 s, 120 s, 180 s).
@@ -240,7 +274,7 @@ The routes that work, all of them real:
 | Route | What the player does | Real chemistry | Where it happens in nature |
 |---|---|---|---|
 | **Third body** | Launch a hydrogen atom (atom launcher) into a colliding pair at the right moment. The third atom leaves fast, carrying the energy, and the pair stays bonded. | Three-body recombination, H + H + M → H₂ + M | Dense gas: lab hydrogen, stars' atmospheres, Jupiter |
-| **Dust grain** | A small cold grain drifts through the trap. Steer atoms onto it by bouncing photons or electrons off them; atoms stick, wander across the surface, meet, and an H₂ pops off. | Surface catalysis: the grain soaks up the energy | **The main way H₂ forms in space today** |
+| **Dust grain** | A small cold grain drifts through the sphere. Steer atoms onto it by bouncing photons or electrons off them; atoms stick, wander across the surface, meet, and an H₂ pops off. | Surface catalysis: the grain soaks up the energy | **The main way H₂ forms in space today** |
 | **H⁻ shortcut** | Fire one *extra* slow electron at a neutral atom to make H⁻ (a faint infrared photon flashes out). H⁻ meets an H, forms H₂ instantly and throws the spare electron out. | H + e⁻ → H⁻ + photon, then H⁻ + H → H₂ + e⁻ | **How the first molecules formed after the Big Bang** |
 | **H₂⁺ shortcut** | Leave a proton un-neutralized. It grabs a neutral atom to make H₂⁺ (one electron holding two protons). Another H atom collides with it, takes the bond, and the proton is set free again. | H⁺ + H → H₂⁺ + photon, then H₂⁺ + H → H₂ + H⁺ | Also in the early universe |
 
@@ -256,7 +290,7 @@ practised with.
 - **Hard ultraviolet photons** between 11.2 and 13.6 eV (about 91 to 111 nm)
   are absorbed by H₂ and break it roughly 10 to 15% of the time. This is what
   destroys H₂ around young stars. Lyman-alpha (121.6 nm) doesn't.
-- **Heat**: each new H₂ releases energy, so a busy trap warms up. Above a few
+- **Heat**: each new H₂ releases energy, so a busy sphere warms up. Above a few
   thousand kelvin, H₂ shakes itself apart. Making molecules too fast in one
   spot can cook them; the dust grain also acts as a cooler.
 
@@ -413,7 +447,7 @@ because it deals with bare charges and single atoms rather than molecules.
 
 | Piece | Model | Accuracy |
 |---|---|---|
-| Free protons, electrons, ions | Classical motion in Coulomb fields plus the trap field | Exact for paths at these energies; quantum outcomes are chosen at events |
+| Free protons, electrons, ions | Classical motion in Coulomb fields, bouncing off the sphere wall | Exact for paths at these energies; quantum outcomes are chosen at events |
 | Atom's electron cloud and spectrum | The prototype's exact hydrogen wavefunctions, levels, lifetimes and selection rules (Tier 0) | Exact (fine structure ignored) |
 | Capture, ionization, excitation by electrons | Tabulated cross sections (radiative recombination by level; electron-impact ionization and excitation) | Real data, with the overall rate scaled up and labelled |
 | H + H bonding | The exact H₂ potential curves: singlet X¹Σg⁺ (bonding) and triplet b³Σu⁺ (repulsive), with the spin of each encounter chosen 1 : 3 | Reference-quality published curves |
@@ -436,9 +470,9 @@ tool, so the export button is testable from Level 1.
   captured only rarely, and H₂ formation takes thousands of years. The game
   keeps which outcomes are likely and which are rare, and scales overall rates
   so a level takes minutes. The HUD's time scale and a "rates ×N" tag say so.
-- **The trap is simplified.** A real Penning trap holds ions with a strong
-  magnetic field and an electric quadrupole, and needs neutral atoms held by
-  other means. The game's bubble holds everything gently.
+- **The wall is idealized.** Matter bounces off it without sticking or
+  reacting, like the Teflon-coated bulbs hydrogen masers use to keep atoms
+  from recombining, only perfect. Light passes straight through it.
 - **Wavelengths drawn compressed**, lines widened, and fine structure ignored,
   as listed in `GAME_DESIGN.md` §11.
 - **Grain surface chemistry is simplified** to "stick, wander, meet, leave",
@@ -446,9 +480,9 @@ tool, so the export button is testable from Level 1.
 
 ## 8. Open questions for Steve
 
-1. **The trap.** Keep the gentle trap bubble for the tutorial, and save the
-   real Coulomb explosion (an un-neutralized proton cloud blowing itself apart)
-   for a harder level? Recommended: yes.
+1. **The wall.** Should a later level make the wall itself a player tool
+   (a cold wall that atoms stick to, which really does make H₂, or a shell
+   that traps light)? Recommended: yes, as in §2a.
 2. **Hints.** Should the tutor reveal the four H₂ routes one at a time when the
    player is stuck (recommended), or list them up front?
 3. **Level 2.** Is "Heavy Hydrogen" the right second level, or should the
