@@ -120,7 +120,7 @@ button.wide { width: 100%; }
 #account-box { background: var(--panel-2); border-radius: 8px; padding: 10px; }
 .guest-note { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
 .acct-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.acct-actions { display: flex; gap: 4px; }
+.acct-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .acct-item { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid #333a4d; font-size: 13px; }
 .acct-item.my-turn b { color: var(--accent); }
 .acct-item span { display: flex; gap: 4px; }
