@@ -127,6 +127,8 @@ in [CLAUDE.md](CLAUDE.md).
   are publicly visible, unlike Monero.
 - **Blog:** more posts; categories as their own pages.
 - **Alchem Fighter:** handled by the other session (prototype in `prototype/`).
+  The first playable slice of the Level 1 hydrogen tutorial (beats 1 and 2) is in
+  `alchemfighter/tutorial/`; beats 3 to 5 come next.
   When it's ready, publish it under `alchemfighter/` and add a Play button to
   the project page. The early VR scene (`alchemfighter/vr/`) references a
   `jquery.js` file that doesn't exist.
