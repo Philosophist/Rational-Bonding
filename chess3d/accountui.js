@@ -91,6 +91,7 @@ async function onAccountChange(s) {
       el('strong', { textContent: '@' + s.profile.username }),
       el('span', { className: 'acct-actions' },
         el('button', { textContent: 'Profile', onclick: () => openProfile(s.user.id) }),
+        el('button', { textContent: 'Find players', onclick: () => openProfile(s.user.id, 'Find players') }),
         el('button', { textContent: 'Sign out', onclick: () => acct.signOut() }))),
     el('div', { id: 'acct-live' }),
   );
@@ -321,7 +322,7 @@ async function offerPasskey() {
 }
 
 // ---------------------------------------------------------------- profile
-async function openProfile(id) {
+async function openProfile(id, startTab) {
   const d = $('profile-dialog');
   const body = $('profile-body');
   body.innerHTML = 'Loading…';
@@ -358,6 +359,7 @@ async function openProfile(id) {
     Following: () => peopleView(follows),
     ...(self ? { 'Find players': () => findView(), Security: () => securityView() } : {}),
   };
+  let first = null;
   for (const [name, fn] of Object.entries(views)) {
     const b = el('button', { textContent: name, onclick: () => {
       tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
@@ -365,10 +367,11 @@ async function openProfile(id) {
       pane.append(fn());
     } });
     tabs.append(b);
+    if (name === startTab) first = b;
   }
   body.innerHTML = '';
   body.append(header, tabs, pane);
-  tabs.firstChild.click();
+  (first || tabs.firstChild).click();
 }
 
 function statsView(s) {
