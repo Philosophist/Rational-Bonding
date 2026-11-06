@@ -197,7 +197,7 @@ it once.
   away 13.6 eV plus the electron's kinetic energy (wavelength shorter than
   91.2 nm). The tutorial shows this case once, labelled, so both are seen.
 - Real capture is very unlikely per pass: for a slow electron, roughly one
-  pass in tens of thousands even when aimed well. The game multiplies every
+  pass in many thousands even when aimed well. The game multiplies every
   chance by the same factor, so the **shape** stays real (slower and closer
   is better, by the real ratios) while a good shot succeeds within a few
   tries. The HUD shows the factor (see §7).
