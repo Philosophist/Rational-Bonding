@@ -4,14 +4,14 @@
 import {
   NODE_TYPES, EDGE_TYPES, STANCES, RELEVANCE, createMap, addNode, addEdge, removeItem, flipEdge,
   setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES,
-  isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider, confidenceToOdds, oddsToConfidence,
+  isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider,
   compoundParts, splitIntoPremises, postOrder,
 } from './model.js';
 import { FALLACIES } from './fallacies.js';
 import * as cloud from './cloud.js';
 import { openSignIn, openUsername, readLinkError } from '../accounts/signin.js';
 import { initHome, openHome, closeHome } from './home.js';
-import { stanceButtons } from './stances.js';
+import { stanceButtons, oddsLine } from './stances.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const STORE = 'reasonance.maps.v1';
@@ -600,13 +600,11 @@ function ratingBlock(it) {
   const conf = r.confidence ?? 50;
   const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', value: r.confidence ?? '', placeholder: '–', 'aria-label': 'Confidence percent',
     onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : Number(ev.target.value) }) });
-  // The same confidence as "1 in n chance that I'm wrong"; type either one.
-  const oddsText = (c) => { const n = confidenceToOdds(c); return n == null ? '' : n === Infinity ? '' : String(n); };
-  const odds = h('input', { class: 'num odds', type: 'number', min: 1, step: 'any', value: oddsText(r.confidence), placeholder: r.confidence >= 100 ? '∞' : '–', 'aria-label': "Chance that I'm wrong, 1 in",
-    onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : oddsToConfidence(ev.target.value) }) });
-  num.addEventListener('input', () => { odds.value = num.value === '' ? '' : oddsText(Number(num.value)); });
+  // The same confidence as "1 / n chance that I'm wrong"; click n to type it.
+  const odds = oddsLine(h, r.confidence, (v) => doRate(it.id, { confidence: v }));
+  num.addEventListener('input', () => odds.update(num.value === '' ? null : Number(num.value)));
   const range = h('input', { type: 'range', min: 0, max: logScale ? 6 : 100, step: logScale ? 0.01 : 1, value: logScale ? confidenceToLogSlider(conf) : conf, 'aria-label': 'Confidence slider',
-    oninput: (ev) => { const v = logScale ? logSliderToConfidence(Number(ev.target.value)) : Number(ev.target.value); num.value = v; odds.value = oddsText(v); },
+    oninput: (ev) => { const v = logScale ? logSliderToConfidence(Number(ev.target.value)) : Number(ev.target.value); num.value = v; odds.update(v); },
     onchange: (ev) => doRate(it.id, { confidence: logScale ? logSliderToConfidence(Number(ev.target.value)) : Number(ev.target.value) }) });
   const stars = h('div', { class: 'row stars' }, [1, 2, 3, 4, 5].map((v) =>
     h('button', { class: r.relevance >= v ? 'on' : '', title: RELEVANCE[v].text, onclick: () => doRate(it.id, { relevance: r.relevance === v ? null : v }) }, '★')));
@@ -614,7 +612,7 @@ function ratingBlock(it) {
   return [
     h('h3', {}, 'Your view'), stance, shareToggle(it),
     h('label', {}, 'Confidence', range, num, '%'),
-    h('label', { class: 'odds-row' }, '1 /', odds, "chance that I'm wrong"),
+    h('div', { class: 'odds-row' }, odds.el),
     h('label', {}, h('input', { type: 'checkbox', checked: logScale, onchange: (ev) => { logScale = ev.target.checked; renderPanel(); } }), 'Log scale (tells 99% from 99.999%)'),
     h('p', { class: 'muted' }, 'How much would it matter to you if the opposite were proven?'), stars,
     r.relevance ? h('p', { class: 'muted' }, RELEVANCE[r.relevance].text) : null,
