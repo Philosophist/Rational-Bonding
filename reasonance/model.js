@@ -1,4 +1,4 @@
-// Reasonance map model: no DOM code, so it can be tested in Node.
+// Ourgument map model: no DOM code, so it can be tested in Node.
 //
 // Every node and every edge is an item ("a post"). An edge connects any two
 // items, including other edges, which is how people support or contend an
@@ -40,7 +40,10 @@ export const STANCES = {
   disagree: 'Disagree',
   unknown: "I don't know",
   incomprehensible: 'Incomprehensible',
+  dontcare: "I don't care",
 };
+// Agree and Disagree are the two sides; the rest are "Neither".
+export const NEITHER = ['unknown', 'incomprehensible', 'dontcare'];
 
 // Relevance: how important it would be to know if the opposite of your
 // stance were proven true, to your own satisfaction.
@@ -258,6 +261,8 @@ export function rate(map, id, { stance, confidence, relevance } = {}, now = Date
     confidence: confidence === undefined ? prev.confidence ?? null : clampConfidence(confidence),
     relevance: relevance === undefined ? prev.relevance ?? null : clampRelevance(relevance),
   };
+  // Not caring about a claim means it matters little to you: one star, unless you've said otherwise.
+  if (next.stance === 'dontcare' && stance !== undefined && next.relevance == null) next.relevance = 1;
   if (next.stance !== null && !STANCES[next.stance]) throw new Error(`Unknown stance: ${next.stance}`);
   const history = [...(prev.history ?? []), { at: now, ...next }];
   it.rating = { ...next, history };

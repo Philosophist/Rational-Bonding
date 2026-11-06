@@ -1,4 +1,4 @@
-# Reasonance
+# Ourgument
 
 An argument-mapping app: every statement (node) and every inference (arrow) is
 a post, and an arrow can point at another arrow, so people can support or
@@ -11,6 +11,36 @@ be posted publicly (`rs_posts`), and ratings of posted items are saved
 privately with their dated history (`rs_ratings`, `rs_rating_history`). Only
 the totals per post are public (`rs_post_stats`). The 3D sea of posts and the
 feed come in later steps.
+
+## First visit and home
+- **First visit** (signed out): a welcome card explains the idea, with "Sign up
+  or sign in", "Start tutorial", and a small link to the offline sandbox. It
+  shows once per browser ("What is Ourgument?" in the overview brings it back).
+- The sandbox starts **blank**. The examples are under "Load an example here"
+  in the map menu.
+- **Tutorial:** a coach card that moves on by itself as you add a claim, write
+  it, support it, contend it and give a view (`TUTORIAL` in `app.js`).
+- **Signed-in home** (`home.js`): the sea of orbs (three.js 0.160.0, loaded
+  only here) where every public post is an orb and every arrow a line, behind
+  a feed of the newest statements. Give a view straight from the feed, or find
+  a statement. Click an orb to find its post. "Open my maps" goes to the
+  editor, and "Home" comes back.
+- **Floating sandbox:** clicking a feed post floats it over the sea, with its
+  questions, clarifications, rewordings and fallacy calls around it (up to
+  `MAX_NEAR`, 4). Its other inferences, and any past the limit, reach off the
+  edge of the screen; hovering one shows the post at the far end (green for
+  support, red for contention), and clicking goes there. × or Esc goes back.
+- **Answering from the sea:** the floating post has Support it and Contend it.
+  As you type the reason, posts already made are suggested. On Enter (or
+  leaving the box), an exact or close match offers its alternatives and "Add a
+  clarification before posting". Choosing one reuses that post and posts the
+  inference, with you as its author, unless that inference already exists
+  (`cloud.respond`). In the editor, "Use this one" also posts the arrow to it
+  when the other end is posted.
+- **Views:** Agree (green), Disagree (red), and Neither: I don't know,
+  Incomprehensible, or I don't care (which gives one star unless you've set
+  how much it matters).
+- **Print this map** (File menu) prints just the board, in colour.
 
 ## Posting
 - A draft lives only in your map. "Post it" publishes it under your username
@@ -69,6 +99,7 @@ feed come in later steps.
 | `fallacies.js` | The built-in fallacy library |
 | `app.js` | SVG board, panel, saving, import/export, the account and posting |
 | `cloud.js` | Supabase calls: saved maps, posts, ratings, totals |
+| `home.js` | The signed-in home: sea of orbs and the feed |
 | `test/db/` | Database tests for the `rs_*` migration on a plain Postgres |
 | `index.html`, `style.css` | The page |
 
@@ -81,3 +112,11 @@ cd reasonance && npm test
 # database rules, on any Postgres 15+ (a stub stands in for Supabase's auth):
 PSQL="psql -h <socket dir> -p <port> -U postgres" sh test/db/run.sh
 ```
+
+## Example posts
+The three examples (rain, bike lanes, round Earth) are also real public
+posts, signed by a "Claude" account, so the public system isn't empty
+(`chess3d/supabase/migrations/20261105200000_reasonance_examples.sql`,
+written by `node reasonance/tools/seed-examples.mjs`). The Claude account has
+no email, phone or password and is banned from signing in; it only signs
+these posts. To add more, write a new, later-dated migration the same way.

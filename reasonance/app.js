@@ -1,4 +1,4 @@
-// Reasonance map editor: SVG board, panel and saving. The rules of the map
+// Ourgument map editor: SVG board, panel and saving. The rules of the map
 // live in model.js. Arrowheads are drawn as plain triangles (no SVG
 // <marker> references), so they show up wherever the page is hosted.
 import {
@@ -10,6 +10,8 @@ import {
 import { FALLACIES } from './fallacies.js';
 import * as cloud from './cloud.js';
 import { openSignIn, openUsername, readLinkError } from '../accounts/signin.js';
+import { initHome, openHome, closeHome } from './home.js';
+import { stanceButtons } from './stances.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const STORE = 'reasonance.maps.v1';
@@ -29,7 +31,7 @@ const GHOST = '#ff2fb4';
 const GHOST_PREFIX = 'ghost:';
 const isGhost = (id) => typeof id === 'string' && id.startsWith(GHOST_PREFIX);
 const ghostOwner = (id) => id.slice(GHOST_PREFIX.length);
-const STANCE_COLORS = { agree: '#7dffb0', disagree: '#ff5c7a', unknown: '#ffe94d', incomprehensible: '#a5afc6' };
+const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
 
 const $ = (id) => document.getElementById(id);
 const board = $('board'), world = $('world');
@@ -49,6 +51,7 @@ const view = { x: 0, y: 0, k: 1 };
 // Signed out, maps live in this browser. Signed in, they also live in the
 // account, with this browser keeping a copy under a key of their own.
 const storeKey = () => (store?.owner ? `${STORE}.${store.owner}` : STORE);
+// A first visit starts with one blank map (the examples are in the map menu).
 function load(key = STORE, { example = true } = {}) {
   try {
     const raw = JSON.parse(localStorage.getItem(key));
@@ -61,7 +64,7 @@ function load(key = STORE, { example = true } = {}) {
     }
   } catch { /* storage blocked or empty */ }
   if (!example) return { current: null, maps: {} };
-  const m = exampleMap();
+  const m = createMap('Untitled map');
   return { current: m.id, maps: { [m.id]: m } };
 }
 let saveTimer = 0;
@@ -239,6 +242,7 @@ function head(tip, from, color, parent) {
 // ---------- render ----------
 let boxes = new Map();
 function render() {
+  checkTutorial();
   boxes = computeBoxes();
   for (const l of Object.values(layers)) l.replaceChildren();
   const lit = spotlight ? litSet(spotlight) : null;
@@ -386,6 +390,9 @@ function overviewPanel() {
       h('li', { class: 'more' }, 'Shift-click a second node to connect the two.'),
       h('li', { class: 'more' }, 'Double-click to add. Drag or arrow keys to move.')),
     cloud.auth.state.enabled && !cloud.signedIn() && h('div', { class: 'row' }, h('button', { onclick: signIn }, 'Sign in to post and save to your account')),
+    h('div', { class: 'row' },
+      h('button', { onclick: startTutorial }, tutorial ? 'Restart the tutorial' : 'Start tutorial'),
+      h('button', { onclick: showWelcome }, 'What is Ourgument?')),
     ...searchBox(),
   ];
 }
@@ -563,8 +570,7 @@ function shareToggle(it) {
 }
 function ratingBlock(it) {
   const r = it.rating ?? {};
-  const stance = h('div', { class: 'row' }, Object.entries(STANCES).map(([k, label]) =>
-    h('button', { class: r.stance === k ? 'on' : '', onclick: () => doRate(it.id, { stance: r.stance === k ? null : k }) }, label)));
+  const stance = stanceButtons(h, r.stance, (k) => doRate(it.id, { stance: k }));
   const conf = r.confidence ?? 50;
   const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', value: r.confidence ?? '', placeholder: '–', 'aria-label': 'Confidence percent',
     onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : Number(ev.target.value) }) });
@@ -603,6 +609,7 @@ function quietChange() {
     const it = map.items[selected];
     if (isNode(it)) $('compound-warn')?.replaceWith(compoundWarning(it));
     refreshPostBox();
+    checkTutorial();
     save();
   }, 120);
 }
@@ -811,9 +818,20 @@ function draftBox(it, anon) {
     h('div', { class: 'row' }, anon));
   return els;
 }
+// Use a post that's already out there; any arrow joining it to a posted
+// item in this map is posted too (reused if someone already posted it).
 async function useExisting(id, pid) {
-  try { flushSave(); await cloud.link(map, id, pid); lookupCache.delete(id); changed(); toast('Your map now uses that post.'); }
-  catch (err) { toast(err.message); }
+  try {
+    flushSave();
+    await cloud.link(map, id, pid); lookupCache.delete(id);
+    const arrows = Object.values(map.items).filter((e) => isEdge(e) && !map.posts?.[e.id] && (e.from === id || e.to === id)
+      && map.posts?.[e.from] && map.posts?.[e.to]).map((e) => e.id);
+    const r = arrows.length ? await cloud.post(map, arrows, { share: cloud.settings.share_views }) : null;
+    changed();
+    toast(!r ? 'Your map now uses that post.'
+      : r.posted ? `Your map now uses that post, and you wrote the new ${r.posted === 1 ? 'inference' : 'inferences'} to it.`
+        : 'Your map now uses that post, and the inference to it was already posted.');
+  } catch (err) { toast(err.message); changed(); }
 }
 async function postNow(ids) {
   try {
@@ -904,7 +922,7 @@ async function useAccount(uid, { quiet = false } = {}) {
     }
     if (moved) try { localStorage.removeItem(STORE); } catch { /* fine */ }
   }
-  if (!Object.keys(mine.maps).length) { const m = exampleMap(); mine.maps[m.id] = m; }
+  if (!Object.keys(mine.maps).length) { const m = createMap('Untitled map'); mine.maps[m.id] = m; }
   const newest = Object.values(mine.maps).sort((a, b) => b.updated - a.updated)[0].id;
   mine.current = guest && mine.maps[guest.current] ? guest.current : mine.maps[mine.current] ? mine.current : newest;
   mine.owner = uid;
@@ -949,6 +967,7 @@ function renderAccount() {
   $('sign-in').hidden = !!profile;
   $('sign-in').textContent = user && !profile ? 'Choose a username' : 'Sign in';
   $('account-menu').hidden = !profile;
+  $('home-btn').hidden = !profile;
   if (profile) $('account-menu').firstElementChild.textContent = `@${profile.username}`;
   const share = $('account-menu').querySelector('option[value="share"]');
   if (share) share.textContent = `Share my views by default: ${cloud.settings.share_views ? 'on' : 'off'}`;
@@ -956,14 +975,77 @@ function renderAccount() {
 let accountUser = null, accountsReady = false;
 async function onAccount(st) {
   renderAccount();
+  if (st.user) $('welcome').hidden = true;
   if (st.user && !st.profile) openUsername();
   const uid = st.user && st.profile ? st.user.id : null;
   if (uid === accountUser) { renderPanel(); return; }
   accountUser = uid;
-  if (uid) await useAccount(uid, { quiet: !accountsReady });
-  else if (store.owner) { useGuest(); toast('Signed out. These are the maps kept in this browser.'); }
+  if (uid) { await useAccount(uid, { quiet: !accountsReady }); openHome(); }
+  else if (store.owner) { closeHome(); useGuest(); toast('Signed out. These are the maps kept in this browser.'); }
   renderPanel();
 }
+// ---------- first visit: welcome, then an optional tutorial ----------
+const WELCOMED = 'reasonance.welcomed.v1';
+const welcomed = () => { try { return localStorage.getItem(WELCOMED) === '1'; } catch { return false; } };
+function closeWelcome() {
+  try { localStorage.setItem(WELCOMED, '1'); } catch { /* fine */ }
+  $('welcome').hidden = true;
+}
+function showWelcome() {
+  $('welcome-signup').hidden = !cloud.auth.configured() || cloud.signedIn();
+  $('welcome').hidden = false;
+  ($('welcome-signup').hidden ? $('welcome-tutorial') : $('welcome-signup')).focus();
+}
+$('welcome-signup').addEventListener('click', () => { closeWelcome(); signIn(); });
+$('welcome-tutorial').addEventListener('click', () => { closeWelcome(); startTutorial(); });
+$('welcome-sandbox').addEventListener('click', (ev) => { ev.preventDefault(); closeWelcome(); });
+$('welcome').addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeWelcome(); });
+
+// Each step is done when the map shows it: the tutorial moves on by itself.
+const items = () => Object.values(map.items);
+const TUTORIAL = [
+  { text: 'Click <b>+ Statement</b> at the top, or double-click the board, to add a claim.',
+    done: () => items().some(isNode) },
+  { text: 'Type one claim you believe into the box on the right. For example: <i>Cats make good pets.</i>',
+    done: () => items().some((n) => isNode(n) && n.text.trim().length >= 5) },
+  { text: 'Give a reason: with your claim selected, click <b>Support it</b> and type the reason.',
+    done: () => items().some((e) => isEdge(e) && e.type === 'support' && map.items[e.to]?.text?.trim().length >= 3) },
+  { text: 'Now push back. Click <b>Contend it</b> on your claim, or click the arrow\'s label and contend the reasoning itself.',
+    done: () => items().some((e) => isEdge(e) && e.type === 'contention') },
+  { text: 'Say what you think: select a post and click <b>Agree</b>, <b>Disagree</b> or another view. Only you see it.',
+    done: () => items().some((it) => it.rating?.stance) },
+  { text: 'That\'s the heart of it. The pink boxes mark claims nobody has supported yet. <b>Sign in</b> to post your map so others can build on it, or keep playing offline.',
+    done: () => false, last: true },
+];
+let tutorial = null; // { step }
+function startTutorial() {
+  closeWelcome();
+  if (Object.keys(map.items).length) {
+    flushSave();
+    const m = createMap('My first map');
+    store.maps[m.id] = m; openMap(m.id);
+  }
+  selected = null;
+  tutorial = { step: 0 };
+  render();
+}
+function endTutorial() { tutorial = null; $('tutorial').hidden = true; renderPanel(); }
+function checkTutorial() {
+  if (!tutorial) return;
+  while (tutorial.step < TUTORIAL.length - 1 && TUTORIAL[tutorial.step].done()) tutorial.step++;
+  const st = TUTORIAL[tutorial.step];
+  const box = $('tutorial');
+  box.hidden = false;
+  const text = h('p', {}); text.innerHTML = st.text;
+  box.replaceChildren(
+    h('div', { class: 'muted' }, `Tutorial · step ${tutorial.step + 1} of ${TUTORIAL.length}`), text,
+    h('div', { class: 'row' },
+      st.last && cloud.auth.configured() && !cloud.signedIn() ? h('button', { class: 'accent', onclick: () => { endTutorial(); signIn(); } }, 'Sign in') : null,
+      st.last ? h('button', { onclick: endTutorial }, 'Done')
+        : h('button', { onclick: () => { tutorial.step++; render(); } }, 'Skip this step'),
+      st.last ? null : h('button', { onclick: endTutorial }, 'End tutorial')));
+}
+
 async function startAccounts() {
   if (!cloud.auth.configured()) return;
   const linkError = readLinkError();
@@ -1279,7 +1361,7 @@ $('file-menu').addEventListener('change', async (ev) => {
   const what = ev.target.value; ev.target.value = '';
   if (what === 'download') {
     const blob = new Blob([serialize(map)], { type: 'application/json' });
-    const a = h('a', { href: URL.createObjectURL(blob), download: `${(map.title || 'map').replace(/[^\w\- ]+/g, '').trim() || 'map'}.reasonance.json` });
+    const a = h('a', { href: URL.createObjectURL(blob), download: `${(map.title || 'map').replace(/[^\w\- ]+/g, '').trim() || 'map'}.ourgument.json` });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   } else if (what === 'import') {
@@ -1289,6 +1371,9 @@ $('file-menu').addEventListener('change', async (ev) => {
     const drafts = Object.keys(map.items).filter((id) => !map.posts?.[id]);
     if (!drafts.length) { toast('Everything on this map is already posted.'); return; }
     postNow(drafts);
+  } else if (what === 'print') {
+    selected = null; second = null; render(); fit();
+    setTimeout(() => window.print(), 100);
   } else if (what === 'outline') {
     const text = outline(map);
     try { await navigator.clipboard.writeText(text); toast('Outline copied. Paste it into an email or a post.'); }
@@ -1343,3 +1428,12 @@ resetHistory();
 refreshMapList();
 fit();
 startAccounts();
+if (!welcomed()) showWelcome();
+// The signed-in home: the sea of orbs and the feed.
+initHome({
+  h, toast,
+  openInMap: (pid) => pullPost(pid),
+  // A view given in the feed also shows on that post in the open map.
+  rated: (pid, r) => { const id = itemFor(pid); if (id) { rate(map, id, r); changed(); } },
+});
+$('home-btn').addEventListener('click', () => { flushSave(); openHome(); });

@@ -141,4 +141,13 @@ do $$ begin
   if (select count(*) from rs_ratings) <> 1 then raise exception 'anon should see just the one shared view'; end if;
 end $$;
 reset role;
+-- "I don't care" counts in the totals
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a', false); end $$;
+set role authenticated;
+insert into rs_ratings (post_id, stance, relevance) values ('10000000-0000-0000-0000-000000000006','dontcare',1);
+select pg_temp.expect_fail($q$insert into rs_ratings (post_id, stance) values ('10000000-0000-0000-0000-000000000002','meh')$q$, 'check');
+do $$ begin
+  if (select dontcare from rs_post_stats where post_id='10000000-0000-0000-0000-000000000006') <> 1 then raise exception 'dontcare not counted'; end if;
+end $$;
+reset role;
 select 'ALL PASSED';
