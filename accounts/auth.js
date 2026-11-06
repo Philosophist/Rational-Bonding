@@ -74,10 +74,14 @@ async function setUser(user) {
   emit();
 }
 
+const PASSKEY_HOST = /(^|\.)rationalbonding\.com$|^localhost$|^127\.0\.0\.1$/;
+
 export function methods() {
   const ext = settings?.external || {};
   return {
-    passkey: !!settings?.passkeys_enabled && !!window.PublicKeyCredential,
+    // Passkeys belong to rationalbonding.com, so other sites such as
+    // ourgument.com (served by a Cloudflare Worker) don't offer them.
+    passkey: !!settings?.passkeys_enabled && !!window.PublicKeyCredential && PASSKEY_HOST.test(location.hostname),
     providers: PROVIDERS.filter(([id]) => ext[id]),
     email: ext.email !== false,
     phone: !!ext.phone,

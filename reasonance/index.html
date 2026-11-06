@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Reasonance · Rational Bonding</title>
+  <title>Ourgument · Rational Bonding</title>
   <meta name="description" content="Map an argument the way people really think: claims, the reasons behind them, and arguments about the reasoning itself." />
-  <link rel="canonical" href="https://rationalbonding.com/reasonance/" />
+  <link rel="canonical" href="https://ourgument.com/" />
   <meta name="theme-color" content="#2fe3e6" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Rational Bonding" />
-  <meta property="og:url" content="https://rationalbonding.com/reasonance/" />
-  <meta property="og:title" content="Reasonance · Rational Bonding" />
+  <meta property="og:url" content="https://ourgument.com/" />
+  <meta property="og:title" content="Ourgument · Rational Bonding" />
   <meta property="og:description" content="Map an argument the way people really think: claims, the reasons behind them, and arguments about the reasoning itself." />
   <meta property="og:image" content="https://rationalbonding.com/images/share.png" />
   <meta property="og:image:alt" content="Rational Bonding" />
@@ -21,8 +21,8 @@
 </head>
 <body>
   <header class="bar">
-    <a class="brand" href="../" title="Rational Bonding home"><img src="../images/rational-bonding-logo.png" alt="Rational Bonding" width="30" height="27" /></a>
-    <strong class="name">Reasonance</strong>
+    <a class="brand" href="https://rationalbonding.com/" title="Rational Bonding home"><img src="../images/rational-bonding-logo.png" alt="Rational Bonding" width="30" height="27" /></a>
+    <strong class="name">Ourgument</strong>
     <div class="group edit-only">
       <select id="map-select" aria-label="Your maps"></select>
       <input id="map-title" aria-label="Map title" maxlength="200" />
@@ -52,11 +52,13 @@
         <option value="import">Open a map file</option>
         <option value="post-all">Post everything on this map</option>
         <option value="outline">Copy as text outline</option>
+        <option value="print">Print this map</option>
         <option value="delete">Delete this map</option>
       </select>
       <input id="import-file" type="file" accept=".json,application/json" hidden />
     </div>
     <div id="account-box" class="group account" hidden>
+      <button id="home-btn" hidden>Home</button>
       <button id="sign-in">Sign in</button>
       <select id="account-menu" aria-label="Your account" hidden>
         <option value="">@you</option>
@@ -79,6 +81,46 @@
     <div id="caption" class="caption" hidden></div>
     <aside id="panel" class="panel" aria-live="polite"></aside>
     <div id="toast" class="toast" role="status" hidden></div>
+    <div id="tutorial" class="tutorial" role="dialog" aria-label="Tutorial" hidden></div>
+    <section id="home" class="home" aria-label="Home" hidden>
+      <canvas id="sea" aria-hidden="true"></canvas>
+      <div class="home-feed">
+        <div class="home-head">
+          <h2>What people are saying</h2>
+          <button id="home-sandbox" class="accent">Open my maps</button>
+        </div>
+        <input id="feed-search" type="search" placeholder="Find a statement, then press Enter" aria-label="Find a statement" />
+        <div id="feed" class="feed" aria-live="polite"></div>
+      </div>
+      <div id="float" class="float" hidden>
+        <svg id="float-lines" aria-hidden="true"></svg>
+        <div id="float-nodes"></div>
+        <button id="float-close" class="float-close" aria-label="Back to the sea" title="Back to the sea (Esc)">×</button>
+        <div id="float-tip" class="float-tip" hidden></div>
+      </div>
+      <p class="sea-hint">Every orb is a post, and every line an inference. Drag to turn the sea, click an orb to find its post.</p>
+    </section>
   </main>
+
+  <div id="welcome" class="welcome" hidden>
+    <div class="card" role="dialog" aria-labelledby="welcome-title">
+      <img src="../images/rational-bonding-logo.png" alt="" width="64" height="58" />
+      <h1 id="welcome-title">Ourgument</h1>
+      <p class="lead">An argumentation map allows you to map what you think and why. Keep track of your values and compare them to what others think in this nuanced social app.</p>
+      <ul>
+        <li>Parse out the strongest arguments for and against conclusions.</li>
+        <li>Consider ideas you've never heard before.</li>
+        <li>Record your confidence and how significant a claim is to you.</li>
+        <li>Share or remain as private as you want.</li>
+        <li>Print out maps of your arguments to present.</li>
+      </ul>
+      <button id="welcome-signup" class="accent signup">Sign up free</button>
+      <p class="signin-note">Already have an account? The same button signs you in.</p>
+      <div class="actions">
+        <button id="welcome-tutorial">Start tutorial</button>
+      </div>
+      <a href="#" id="welcome-sandbox" class="quiet">or try the sandbox offline</a>
+    </div>
+  </div>
 </body>
 </html>

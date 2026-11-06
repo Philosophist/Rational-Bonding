@@ -1,4 +1,4 @@
-// Reasonance and the shared Rational Bonding account: saved maps, published
+// Ourgument and the shared Rational Bonding account: saved maps, published
 // posts and ratings, in the rs_* tables
 // (chess3d/supabase/migrations/20261105120000_reasonance.sql).
 //
@@ -250,4 +250,59 @@ export async function loadSettings() {
 export async function saveSettings(patch) {
   Object.assign(settings, patch);
   check(await db().from('rs_settings').upsert({ user_id: userId(), ...settings }, { onConflict: 'user_id' }));
+}
+
+// ---------------------------------------------------------------- the home page: feed and sea
+// The newest posted statements, for the feed.
+export async function recent(limit = 40) {
+  return check(await db().from('rs_posts').select(COLS).eq('kind', 'node').neq('type', 'combiner')
+    .order('created_at', { ascending: false }).limit(limit));
+}
+// Many posts and arrows at once, just enough to draw the sea of orbs.
+export async function sea(limit = 600) {
+  return check(await db().from('rs_posts').select('id, kind, type, from_post, to_post')
+    .order('created_at', { ascending: false }).limit(limit));
+}
+// Your own views of these posts: { id: { stance, confidence, relevance, public } }.
+export async function myRatings(pids) {
+  if (!pids.length || !signedIn()) return {};
+  const rows = check(await db().from('rs_ratings').select('post_id, stance, confidence, relevance, public')
+    .eq('user_id', userId()).in('post_id', pids));
+  return Object.fromEntries(rows.map((r) => [r.post_id, r]));
+}
+// Every arrow touching a post (out to its reasons, in from the claims it
+// backs), with the posts at their other ends.
+export async function links(pid, limit = 60) {
+  const out = check(await db().from('rs_posts').select(COLS).eq('from_post', pid).limit(limit));
+  const inn = check(await db().from('rs_posts').select(COLS).eq('to_post', pid).limit(limit));
+  const ends = [...new Set([...out.map((e) => e.to_post), ...inn.map((e) => e.from_post)])];
+  const others = ends.length ? check(await db().from('rs_posts').select(COLS).in('id', ends)) : [];
+  return { out, inn, ends: Object.fromEntries(others.map((r) => [r.id, r])) };
+}
+
+// ---------------------------------------------------------------- posting straight from the sea
+// Posts one row unless the same thing is already posted. Returns { id, made }:
+// made is false when an existing post was reused.
+export async function postOrReuse(row) {
+  const same = row.kind === 'node' && row.type === 'combiner' ? null : await find(row);
+  if (same) return { id: same, made: false };
+  const { data, error } = await db().from('rs_posts').insert(row).select(COLS).single();
+  if (error?.code === '23505') { const again = await find(row); if (again) return { id: again, made: false }; }
+  if (error) throw error;
+  mine.add(data.id);
+  sent.set(data.id, sig(data));
+  return { id: data.id, made: true };
+}
+// A reason for a posted claim: the reason (new or existing), the arrow from
+// the claim to it, and optionally a clarification of the reason.
+export async function respond(claimId, type, { reasonId = null, text = '', clarify = '', anonymous = false } = {}) {
+  const reason = reasonId ? { id: reasonId, made: false } : await postOrReuse({ kind: 'node', type: 'statement', text, anonymous });
+  const arrow = await postOrReuse({ kind: 'edge', type, from_post: claimId, to_post: reason.id, premise: null, anonymous });
+  let clarification = null;
+  if (clarify.trim()) {
+    const c = await postOrReuse({ kind: 'node', type: 'clarification', text: clarify, anonymous });
+    await postOrReuse({ kind: 'edge', type: 'clarification', from_post: reason.id, to_post: c.id, premise: null, anonymous });
+    clarification = c;
+  }
+  return { reason, arrow, clarification };
 }

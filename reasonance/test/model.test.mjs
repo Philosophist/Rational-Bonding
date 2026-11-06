@@ -138,10 +138,11 @@ test('maps round-trip through export, and bad data is refused', () => {
 
 test('the outline starts from conclusions and indents their reasons', () => {
   const text = outline(exampleMap());
-  assert.match(text, /^# Did it rain last night\?/);
-  assert.match(text, /'It rained last night\.'\n  - Support: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contention: 'The sprinklers soak the sidewalk every night\.'/);
-  assert.match(text, /- Premise 1: 'The street is wet too\.'/);
-  assert.match(text, /Fallacy: 'An Ad hominem fallacy is when an argument attacks/);
+  assert.match(text, /^# Should the death penalty be abolished\?/);
+  assert.match(text, /'Every country should abolish the death penalty\.'\n  - Clarification: /);
+  assert.match(text, /    - On that inference:\n      - Contention: 'Stricter standards of proof/);
+  assert.match(text, /- Premise 2: 'An execution cannot be undone\.'/);
+  assert.match(text, /Fallacy: 'An Appeal to popularity fallacy is when/);
 });
 
 test('every post in every example is a single statement', () => {
@@ -192,4 +193,17 @@ test('posting choices (anonymous, share) survive saving and loading', () => {
   const back = parseMap(serialize(m));
   assert.equal(back.items[a.id].anonymous, true);
   assert.equal(back.items[a.id].share, false);
+});
+
+test("I don't care is a Neither view that gives one star by default", async () => {
+  const { NEITHER } = await import('../model.js');
+  assert.ok(NEITHER.includes('dontcare'));
+  assert.ok(NEITHER.includes('noopinion'));
+  const m = createMap('t', 1);
+  const a = addNode(m, { text: 'A.' });
+  rate(m, a.id, { stance: 'dontcare' });
+  assert.equal(m.items[a.id].rating.relevance, 1);
+  rate(m, a.id, { relevance: 4 });
+  rate(m, a.id, { stance: 'dontcare' });
+  assert.equal(m.items[a.id].rating.relevance, 4);
 });
