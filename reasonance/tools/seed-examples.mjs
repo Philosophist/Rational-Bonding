@@ -1,12 +1,15 @@
 // Writes a migration that posts the built-in example arguments as real public
 // posts, authored by a "Claude" account, so the public system isn't empty.
-//   node reasonance/tools/seed-examples.mjs > chess3d/supabase/migrations/<date>_reasonance_examples.sql
+//   node reasonance/tools/seed-examples.mjs > chess3d/supabase/migrations/<date>_ourgument_examples.sql
 // Ids are fixed when the file is written, so running the migration twice is safe.
+// Claude's older example posts that nobody else rated or built on are removed.
 import { randomUUID } from 'node:crypto';
 import { EXAMPLES, exampleMap, postOrder, isNode } from '../model.js';
 
 const q = (v) => (v == null ? 'null' : `'${String(v).replace(/'/g, "''")}'`);
-const CLAUDE = randomUUID();
+// The Claude account made by the first examples migration (20261105200000).
+const CLAUDE = 'fd755006-5431-4848-b134-17805336f581';
+const ids = [];
 const lines = [];
 for (const ex of EXAMPLES) {
   const m = exampleMap(0, ex.key);
@@ -15,17 +18,18 @@ for (const ex of EXAMPLES) {
     const it = m.items[id];
     const key = `${ex.key}:${id}`;
     const end = (x) => `(select post from seed_posts where item = ${q(`${ex.key}:${x}`)})`;
+    const pid = randomUUID(); ids.push(pid);
     const args = isNode(it)
       ? it.type === 'fallacy'
-        ? [q(randomUUID()), "'node'", "'fallacy'", q(it.when), q(it.fallacy), 'null', 'null', 'null']
-        : [q(randomUUID()), "'node'", q(it.type), q(it.text), 'null', 'null', 'null', 'null']
-      : [q(randomUUID()), "'edge'", q(it.type), "''", 'null', end(it.from), end(it.to), it.type === 'premise' ? q(it.premise) : 'null'];
-    lines.push(`  insert into seed_posts values (${q(key)}, pg_temp.rs_seed(claude, ${args.join(', ')}));`);
+        ? [q(pid), "'node'", "'fallacy'", q(it.when), q(it.fallacy), 'null', 'null', 'null']
+        : [q(pid), "'node'", q(it.type), q(it.text), 'null', 'null', 'null', 'null']
+      : [q(pid), "'edge'", q(it.type), "''", 'null', end(it.from), end(it.to), it.type === 'premise' ? q(it.premise) : 'null'];
+    lines.push(`  insert into seed_posts values (${q(key)}, pg_temp.rs_seed(claude, ${args.join(', ')})) on conflict (item) do update set post = excluded.post;`);
   }
 }
 
-console.log(`-- Ourgument: the example arguments (rain, bike lanes, round Earth) as real
--- public posts, authored by a "Claude" account, so the public system has
+console.log(`-- Ourgument: the example arguments (${EXAMPLES.map((e) => e.title).join(' / ')})
+-- as real public posts, authored by a "Claude" account, so the public system has
 -- something in it from the start. Written by reasonance/tools/seed-examples.mjs.
 --
 -- The Claude account is a plain row with no email, phone or password and is
@@ -53,6 +57,7 @@ create temp table if not exists seed_posts (item text primary key, post uuid);
 do $$
 declare
   claude uuid := ${q(CLAUDE)};
+  keep uuid[] := array[${ids.map(q).join(', ')}]::uuid[];
 begin
   if not exists (select 1 from auth.users where id = claude) then
     insert into auth.users (id, instance_id, aud, role, raw_app_meta_data, raw_user_meta_data, created_at, updated_at, banned_until)
@@ -63,6 +68,17 @@ begin
     insert into public.profiles (id, username)
     values (claude, case when exists (select 1 from public.profiles where lower(username) = 'claude') then 'Claude_AI' else 'Claude' end);
   end if;
+
+  -- Remove Claude's older examples, keeping any post someone else rated or
+  -- built an arrow on, so nobody's views or arguments lose their footing.
+  loop
+    delete from public.rs_posts p
+    where p.author = claude
+      and p.id <> all (keep)
+      and not exists (select 1 from public.rs_ratings r where r.post_id = p.id and r.user_id <> claude)
+      and not exists (select 1 from public.rs_posts o where o.from_post = p.id or o.to_post = p.id);
+    exit when not found;
+  end loop;
 
 ${lines.join('\n')}
 exception when others then

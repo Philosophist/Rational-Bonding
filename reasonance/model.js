@@ -424,75 +424,90 @@ function cleanRating(r) {
 
 function touch(map, now = Date.now()) { map.updated = now; }
 
-// The example map: a claim, its reason, and a debate about the inference
-// itself rather than the facts.
-// Ready-made example arguments. Every post is a single statement.
-// Positions are rough; the editor tidies them with Arrange on load.
+// Ready-made example arguments on questions people really disagree about.
+// Every post is a single statement that stands on its own, with no "here",
+// "today" or "our town" that needs outside context. Positions are rough; the
+// editor tidies them with Arrange on load.
 export const EXAMPLES = [
-  { key: 'rain', title: 'Did it rain last night?' },
-  { key: 'bikes', title: 'Should Main Street get bike lanes?' },
-  { key: 'earth', title: 'Is the Earth round?' },
+  { key: 'death-penalty', title: 'Should the death penalty be abolished?' },
+  { key: 'meat', title: 'Is it wrong to raise animals for meat?' },
+  { key: 'basic-income', title: 'Should every adult get a basic income?' },
 ];
-export function exampleMap(now = Date.now(), key = 'rain') {
-  if (key === 'bikes') return bikesExample(now);
-  if (key === 'earth') return earthExample(now);
-  const m = createMap('Did it rain last night?', now);
-  const rain = addNode(m, { text: 'It rained last night.', x: -200, y: 0 });
-  const wet = addNode(m, { text: 'The sidewalk is wet this morning.', x: 260, y: 0 });
-  const inf = addEdge(m, 'support', rain.id, wet.id);
-  const sprink = addNode(m, { text: 'The sprinklers soak the sidewalk every night.', x: 260, y: 230 });
-  addEdge(m, 'contention', inf.id, sprink.id);
-  const street = addNode(m, { type: 'combiner', x: 260, y: -230 });
-  addEdge(m, 'support', inf.id, street.id);
-  addEdge(m, 'premise', street.id, addNode(m, { text: 'The street is wet too.', x: 640, y: -310 }).id);
-  addEdge(m, 'premise', street.id, addNode(m, { text: 'The sprinklers do not reach the street.', x: 640, y: -170 }).id);
-  const neighbour = addNode(m, { type: 'combiner', x: -200, y: 330 });
-  const hom = addEdge(m, 'support', rain.id, neighbour.id);
-  addEdge(m, 'premise', neighbour.id, addNode(m, { text: "My neighbour says it didn't rain.", x: 220, y: 440 }).id);
-  addEdge(m, 'premise', neighbour.id, addNode(m, { text: 'My neighbour is wrong about everything.', x: 220, y: 580 }).id);
-  const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 170 });
-  addEdge(m, 'example', hom.id, fal.id);
+export function exampleMap(now = Date.now(), key = EXAMPLES[0].key) {
+  const build = { 'death-penalty': deathPenaltyExample, meat: meatExample, 'basic-income': basicIncomeExample }[key] || deathPenaltyExample;
+  const m = build(now);
   m.updated = now;
   return m;
 }
+// Small helpers so each example reads like the argument it is.
+function builder(title, now) {
+  const m = createMap(title, now);
+  let row = 0;
+  const node = (text, type) => addNode(m, { text, x: 0, y: 140 * row++, ...(type ? { type } : {}) });
+  const arrow = (type, from, to) => addEdge(m, type, from.id, to.id);
+  const together = (from, type, ...premises) => {
+    const c = addNode(m, { type: 'combiner', x: 0, y: 140 * row++ });
+    const e = arrow(type, from, c);
+    premises.forEach((t) => arrow('premise', c, node(t)));
+    return e;
+  };
+  const fallacy = (inference, name) => arrow('example', inference, addNode(m, { type: 'fallacy', fallacy: name, x: 0, y: 140 * row++ }));
+  return { m, node, arrow, together, fallacy };
+}
 
-function bikesExample(now) {
-  const m = createMap('Should Main Street get bike lanes?', now);
-  const at = (text, x, y, type) => addNode(m, { text, x, y, ...(type ? { type } : {}) });
-  const claim = at('Our town should add bike lanes on Main Street.', 0, 0);
-  const safety = addNode(m, { type: 'combiner', x: 540, y: -200 });
-  addEdge(m, 'support', claim.id, safety.id);
-  addEdge(m, 'premise', safety.id, at('Bike lanes reduce crashes involving cyclists.', 1080, -260).id);
-  addEdge(m, 'premise', safety.id, at('Main Street has more cyclist crashes than any other street in town.', 1080, -140).id);
-  const parking = at('Bike lanes would remove parking spaces on Main Street.', 540, 0);
-  const lost = addEdge(m, 'contention', claim.id, parking.id);
-  addEdge(m, 'contention', lost.id, at('The garage two blocks away is rarely more than half full.', 1080, 40).id);
-  addEdge(m, 'question', claim.id, at('How much would the bike lanes cost?', 540, 180, 'question').id);
-  const slope = at('If we add bike lanes, cars will soon be banned from downtown.', 540, 340);
-  const slide = addEdge(m, 'contention', claim.id, slope.id);
-  const fal = addNode(m, { type: 'fallacy', fallacy: 'Slippery slope', x: 1080, y: 380 });
-  addEdge(m, 'example', slide.id, fal.id);
-  m.updated = now;
+function deathPenaltyExample(now) {
+  const { m, node, arrow, together, fallacy } = builder('Should the death penalty be abolished?', now);
+  const claim = node('Every country should abolish the death penalty.');
+  arrow('clarification', claim, node('Abolishing the death penalty means no crime can be punished by execution.', 'clarification'));
+  const innocent = together(claim, 'support',
+    'Courts sometimes convict innocent people.',
+    'An execution cannot be undone.');
+  const standards = node('Stricter standards of proof could make wrongful executions extremely rare.');
+  const fix = arrow('contention', innocent, standards);
+  arrow('contention', fix, node('People have been freed from death row after years of appeals had upheld their convictions.'));
+  const deter = arrow('support', claim, node('No reliable study has shown that executions deter murder better than life imprisonment.'));
+  arrow('contention', deter, node('A lack of proof that executions deter murder is not proof that they do not.'));
+  const desert = node('Death is the only just punishment for the cruelest murders.');
+  arrow('contention', claim, desert);
+  arrow('question', desert, node('Who should decide which crimes deserve death?', 'question'));
+  arrow('support', desert, node('Punishment should be in proportion to the harm a crime does.', 'axiom'));
+  fallacy(arrow('contention', claim, node('Many voters support the death penalty.')), 'Appeal to popularity');
   return m;
 }
 
-function earthExample(now) {
-  const m = createMap('Is the Earth round?', now);
-  const at = (text, x, y, type) => addNode(m, { text, x, y, ...(type ? { type } : {}) });
-  const claim = at('The Earth is roughly a sphere.', 0, 0);
-  addEdge(m, 'same', claim.id, at('La Terre est à peu près une sphère.', 540, -300).id);
-  const ships = at('Ships disappear hull first as they sail over the horizon.', 540, -140);
-  const sail = addEdge(m, 'support', claim.id, ships.id);
-  addEdge(m, 'support', sail.id, at('Careful observation tells us how the world is.', 1080, -100, 'axiom').id);
-  const shadow = at("The Earth's shadow on the Moon is always round during a lunar eclipse.", 540, 20);
-  addEdge(m, 'support', claim.id, shadow.id);
-  addEdge(m, 'clarification', shadow.id, at('A lunar eclipse happens when the Earth blocks sunlight from reaching the Moon.', 1080, 40).id);
-  const flat = at('The ground looks flat where I stand.', 540, 200);
-  const looks = addEdge(m, 'contention', claim.id, flat.id);
-  addEdge(m, 'contention', looks.id, at('A small patch of a very large sphere looks flat.', 1080, 220).id);
-  const crowd = at('Most people believe the Earth is round.', 540, 360);
-  const pop = addEdge(m, 'support', claim.id, crowd.id);
-  addEdge(m, 'example', pop.id, addNode(m, { type: 'fallacy', fallacy: 'Appeal to popularity', x: 1080, y: 400 }).id);
-  m.updated = now;
+function meatExample(now) {
+  const { m, node, arrow, together, fallacy } = builder('Is it wrong to raise animals for meat?', now);
+  const claim = node('Raising animals to eat them is morally wrong.');
+  arrow('clarification', claim, node('Morally wrong means something a person should not do even where the law allows it.', 'clarification'));
+  const pain = together(claim, 'support',
+    'Farm animals can feel pain.',
+    'Causing pain that is not needed is wrong.',
+    'Most people with access to a modern grocery store can eat well without meat.');
+  arrow('contention', pain, node('Animals on well-run farms can live lives worth living.'));
+  const poor = node('Meat is an important source of nutrition for many people living in poverty.');
+  const need = arrow('contention', claim, poor);
+  arrow('contention', need, node('A need for meat in poverty would excuse only the people who have no other choice.'));
+  fallacy(arrow('contention', claim, node('Eating meat is natural for humans.')), 'Appeal to nature');
+  arrow('question', claim, node('Does it matter whether an animal was farmed or hunted?', 'question'));
+  arrow('support', claim, node('Suffering matters no matter which species feels it.', 'axiom'));
+  return m;
+}
+
+function basicIncomeExample(now) {
+  const { m, node, arrow, together, fallacy } = builder('Should every adult get a basic income?', now);
+  const claim = node('Governments should pay every adult a universal basic income.');
+  arrow('clarification', claim, node('A universal basic income is a regular cash payment to every adult with no work requirement.', 'clarification'));
+  arrow('support', claim, node('Cash paid to everyone reaches poor people who never apply for means-tested benefits.'));
+  together(claim, 'support',
+    'Automation may replace many jobs in the coming decades.',
+    'A basic income would protect people whose jobs disappear.');
+  const cost = node('A basic income large enough to live on would require much higher taxes.');
+  const tax = arrow('contention', claim, cost);
+  arrow('contention', tax, node('Replacing existing welfare programs would pay for part of a basic income.'));
+  const idle = node('People who are paid without working will stop working.');
+  arrow('contention', claim, idle);
+  arrow('contention', idle, node('Basic income trials have found only small changes in how much people work.'));
+  fallacy(arrow('contention', claim, node('Free money will soon mean that nobody works at all.')), 'Slippery slope');
+  arrow('question', claim, node('Should the payment be the same everywhere, whatever local living costs are?', 'question'));
   return m;
 }

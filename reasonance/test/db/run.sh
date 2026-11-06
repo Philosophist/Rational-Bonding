@@ -25,4 +25,10 @@ $PSQL -q -d rs_test2 -c "truncate rs_posts cascade" >/dev/null
 $PSQL -q -d rs_test2 -v ON_ERROR_STOP=1 -f $M/20261105200000_reasonance_examples.sql 2>&1 | grep -i warning && exit 1
 $PSQL -q -d rs_test2 -v ON_ERROR_STOP=1 -f $M/20261105200000_reasonance_examples.sql >/dev/null
 $PSQL -q -d rs_test2 -v ON_ERROR_STOP=1 -f examples.test.sql | grep -q 'ALL PASSED'
+# The newer examples replace the old ones, except posts someone else rated.
+$PSQL -q -d rs_test2 -v ON_ERROR_STOP=1 -f examples-v2.before.sql >/dev/null
+for i in 1 2; do
+  $PSQL -q -d rs_test2 -v ON_ERROR_STOP=1 -f $M/20261106120000_ourgument_examples.sql 2>&1 | grep -i warning && exit 1
+done
+$PSQL -q -d rs_test2 -v ON_ERROR_STOP=1 -f examples-v2.test.sql | grep -q 'ALL PASSED'
 echo 'Database tests passed.'

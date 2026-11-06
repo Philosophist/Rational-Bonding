@@ -51,7 +51,15 @@ const view = { x: 0, y: 0, k: 1 };
 // Signed out, maps live in this browser. Signed in, they also live in the
 // account, with this browser keeping a copy under a key of their own.
 const storeKey = () => (store?.owner ? `${STORE}.${store.owner}` : STORE);
-// A first visit starts with one blank map (the examples are in the map menu).
+// Every visit opens on a clear sandbox: an empty map already there, or a new
+// one. Earlier maps and the examples are in the map menu.
+function blankMap(st) {
+  const empty = Object.values(st.maps).find((m) => !Object.keys(m.items).length);
+  if (empty) return empty.id;
+  const m = createMap('Untitled map');
+  st.maps[m.id] = m;
+  return m.id;
+}
 function load(key = STORE, { example = true } = {}) {
   try {
     const raw = JSON.parse(localStorage.getItem(key));
@@ -60,7 +68,8 @@ function load(key = STORE, { example = true } = {}) {
       for (const [id, m] of Object.entries(raw.maps)) {
         try { const p = parseMap(JSON.stringify(m), m.created, { keepPosts: true }); p.id = id; p.created = m.created ?? p.created; p.updated = m.updated ?? p.updated; maps[id] = p; } catch { /* skip a broken map */ }
       }
-      if (maps[raw.current] || !example) return { current: raw.current, maps };
+      if (!example) return { current: raw.current, maps };
+      if (Object.keys(maps).length) { const st = { maps }; st.current = blankMap(st); return st; }
     }
   } catch { /* storage blocked or empty */ }
   if (!example) return { current: null, maps: {} };
@@ -382,7 +391,11 @@ function overviewPanel() {
   const counts = Object.values(map.items).reduce((c, it) => (c[it.kind]++, c), { node: 0, edge: 0 });
   return [
     h('h2', {}, map.title),
-    h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`),
+    counts.node
+      ? h('p', { class: 'muted' }, `${counts.node} posts, ${counts.edge} arrows.`)
+      : h('div', { class: 'starter' },
+        h('p', {}, 'A clear sandbox. Add a statement with + Statement, or start from an example argument:'),
+        h('div', { class: 'row' }, EXAMPLES.map((ex) => h('button', { onclick: () => { loadExample(ex.key); refreshMapList(); } }, ex.title)))),
     h('ul', { class: 'tips' },
       h('li', {}, 'One statement per node or edge.'),
       h('li', {}, 'Arrows point from a claim to its supports and contentions.'),
@@ -922,9 +935,9 @@ async function useAccount(uid, { quiet = false } = {}) {
     }
     if (moved) try { localStorage.removeItem(STORE); } catch { /* fine */ }
   }
-  if (!Object.keys(mine.maps).length) { const m = createMap('Untitled map'); mine.maps[m.id] = m; }
-  const newest = Object.values(mine.maps).sort((a, b) => b.updated - a.updated)[0].id;
-  mine.current = guest && mine.maps[guest.current] ? guest.current : mine.maps[mine.current] ? mine.current : newest;
+  // Keep working on a map made just before signing in; otherwise start clear.
+  const working = guest && mine.maps[guest.current] && Object.keys(mine.maps[guest.current].items).length;
+  mine.current = working ? guest.current : blankMap(mine);
   mine.owner = uid;
   store = mine; map = store.maps[store.current];
   selected = null; second = null; spotlight = null; connecting = null;
@@ -993,6 +1006,7 @@ function closeWelcome() {
 }
 function showWelcome() {
   $('welcome-signup').hidden = !cloud.auth.configured() || cloud.signedIn();
+  document.querySelector('#welcome .signin-note').hidden = $('welcome-signup').hidden;
   $('welcome').hidden = false;
   ($('welcome-signup').hidden ? $('welcome-tutorial') : $('welcome-signup')).focus();
 }
