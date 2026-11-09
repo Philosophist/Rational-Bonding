@@ -110,7 +110,6 @@ function renderGoals() {
 }
 function startBeat(n) {
   S.beat = n;
-  $('beatNum').textContent = `Beat ${n}`;
   $('beatTitle').textContent = BEATS[n].title;
   say(BEATS[n].say);
   $('fireBtn').disabled = n < 2;
@@ -373,7 +372,7 @@ function step(dtReal) {
     if (!S.b1.start) S.b1.start = d;
     S.b1.maxAngle = Math.max(S.b1.maxAngle, Math.acos(Math.max(-1, Math.min(1, v3.dot(d, S.b1.start)))));
     if (S.b1.moved && S.b1.maxAngle > 1.3 && S.b1.toggled) {
-      log('Beat 1 done: you have seen the field from two sides.');
+      log('Nicely done: you have seen the field from two sides. Your electron gun is ready.');
       startBeat(2);
     }
   }
@@ -603,7 +602,7 @@ function updateHud() {
   renderGoals();
   const a = aimInfo();
   const ch = $('crosshair');
-  if (S.beat < 2) { $('aimOut').textContent = 'The gun unlocks in beat 2.'; ch.classList.remove('on'); return; }
+  if (S.beat < 2) { $('aimOut').textContent = 'The gun unlocks once you have looked around the proton.'; ch.classList.remove('on'); return; }
   if (S.cascade) { $('aimOut').textContent = 'Watching the cascade…'; return; }
   if (a.target && a.rp !== undefined) {
     ch.classList.toggle('on', a.chance > 0.05);
@@ -944,7 +943,7 @@ function drawPanelCanvas() {
   g.fillStyle = 'rgba(8,14,26,0.86)'; g.strokeStyle = 'rgba(47,227,230,0.5)'; g.lineWidth = 3;
   g.beginPath(); g.roundRect ? g.roundRect(2, 2, W - 4, H - 4, 18) : g.rect(2, 2, W - 4, H - 4); g.fill(); g.stroke();
   g.fillStyle = '#2fe3e6'; g.font = '700 26px system-ui, sans-serif';
-  g.fillText(`ALCHEMFIGHTER · LEVEL 1 · BEAT ${S.beat}`, 28, 46);
+  g.fillText('ALCHEMFIGHTER · LEVEL 1 · ELECTROMAGNETIC STARDUST', 28, 46);
   g.fillStyle = '#ffffff'; g.font = '700 36px system-ui, sans-serif';
   g.fillText($('beatTitle').textContent, 28, 92);
   g.fillStyle = '#d6e2ee'; g.font = '26px system-ui, sans-serif';
