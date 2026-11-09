@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Electromagnetic Stardust · Alchemfighter</title>
+<meta name="description" content="Alchemfighter, Level 1: Electromagnetic Stardust. Catch an electron on a lone proton with real capture odds, and watch the new hydrogen atom light up. In the browser or in VR.">
+<link rel="canonical" href="https://rationalbonding.com/alchemfighter/tutorial/">
+<meta name="theme-color" content="#2fe3e6">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rational Bonding">
+<meta property="og:url" content="https://rationalbonding.com/alchemfighter/tutorial/">
+<meta property="og:title" content="Electromagnetic Stardust · Alchemfighter">
+<meta property="og:description" content="Catch an electron on a proton with real capture odds, and watch the new hydrogen atom give off its light.">
+<meta property="og:image" content="https://rationalbonding.com/images/share.png">
+<meta property="og:image:alt" content="Rational Bonding">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../favicon.png">
+<style>
+:root {
+  --void: #04060c;
+  --panel: rgba(8, 14, 26, 0.8);
+  --line: rgba(47, 227, 230, 0.22);
+  --ink: #d6e2ee;
+  --muted: #8a9db1;
+  --cyan: #2fe3e6;
+  --magenta: #e04dff;
+  --plus: #ffa02e;     /* positive field glow */
+  --minus: #5a8cff;    /* negative field glow */
+  --gold: #ffe94d;
+  --good: #5cf29a;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--void); color: var(--ink); font: 14px/1.45 var(--font-display); }
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.hud { position: fixed; inset: 0; pointer-events: none; display: grid; gap: 10px;
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  grid-template-columns: minmax(0, 380px) 1fr minmax(0, 330px); grid-template-rows: auto 1fr auto; }
+.panel { pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; backdrop-filter: blur(6px); min-width: 0; }
+#tutor { grid-column: 1; grid-row: 1; align-self: start; }
+.right { grid-column: 3; grid-row: 1 / 3; display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow: hidden; }
+#passBox, #logPanel { min-height: 0; overflow: hidden; }
+.bottom { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 10px; align-items: end; }
+h1 { font: 700 12px/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin: 0 0 6px; }
+h2 { font: 700 19px/1.2 var(--font-display); margin: 0 0 6px; }
+.label { font: 500 10px/1.2 var(--font-data); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.data { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+p { margin: 0 0 6px; }
+.say { border-left: 2px solid var(--gold); padding-left: 9px; margin: 6px 0 8px; }
+.say::before { content: "Tutor"; display: block; font: 500 10px/1.4 var(--font-data); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+ul.goals { list-style: none; margin: 6px 0; padding: 0; font-size: 13px; }
+ul.goals li::before { content: "○ "; color: var(--muted); }
+ul.goals li.done { color: var(--good); }
+ul.goals li.done::before { content: "✓ "; color: var(--good); }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+button { font: 500 12px var(--font-data); color: var(--ink); background: rgba(47,227,230,.07); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px; cursor: pointer; }
+button:hover { border-color: var(--cyan); }
+button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+button[aria-pressed="true"] { background: rgba(47,227,230,.22); border-color: var(--cyan); color: #fff; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+.fire { font: 700 14px var(--font-display); letter-spacing: .12em; padding: 9px 18px; border-color: var(--minus); background: rgba(90,140,255,.2); }
+.tag { display: inline-block; font: 500 11px var(--font-data); border: 1px solid rgba(255,233,77,.5); color: var(--gold); border-radius: 3px; padding: 1px 6px; }
+#census { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; }
+#census b { display: block; font: 700 20px/1.1 var(--font-data); }
+.legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.swatch { width: 34px; height: 8px; border-radius: 4px; }
+#passes { font: 12px/1.5 var(--font-data); overflow: hidden; }
+#logBox div { padding: 2px 0; }
+#passes div { padding: 3px 0; border-top: 1px solid rgba(255,255,255,.06); }
+#passes div:first-of-type { border-top: 0; }
+.hit { color: var(--good); }
+.miss { color: var(--muted); }
+.fast { color: var(--magenta); }
+#weapon { display: flex; flex-direction: column; gap: 6px; }
+#dialOut { font: 700 16px var(--font-data); min-width: 8.5em; text-align: center; }
+#aimOut { font-size: 12px; }
+#spectro { width: 100%; height: 70px; display: block; }
+#ladder { width: 176px; height: 170px; display: block; }
+.keys { color: var(--muted); font: 11px/1.5 var(--font-data); }
+.keys.touch { display: none; }
+@media (pointer: coarse) { .keys { display: none; } .keys.touch { display: block; } #moveBtns { display: flex !important; } }
+#moveBtns { display: none; gap: 6px; }
+#crosshair { position: fixed; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; pointer-events: none; color: rgba(214,226,238,.7); }
+#crosshair.on { color: var(--good); }
+.overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(2,4,10,.45); }
+.overlay .panel { max-width: 460px; padding: 20px 22px; }
+.overlay h2 { font-size: 22px; }
+.fine { font-size: 11px; color: var(--muted); }
+a { color: var(--cyan); }
+@media (max-width: 900px) {
+  .hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; gap: 6px; }
+  #tutor { grid-row: 1; padding: 8px 10px; }
+  #tutor .say { font-size: 13px; }
+  .right { grid-column: 1; grid-row: 2; align-self: start; align-items: flex-end; }
+  .right > :not(#statusBox) { display: none; }
+  #statusBox { width: auto; }
+  .bottom { grid-template-columns: minmax(0, 1fr); }
+  #ladderBox, .keys, #spectroNote { display: none !important; }
+  #spectro { height: 44px; }
+  h2 { font-size: 16px; }
+}
+@media (max-width: 900px) and (max-height: 760px) { #tutor .say { max-height: 6.5em; overflow: auto; } }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-label="The system sphere: a proton's electric field glow, electrons and light"></canvas>
+<div id="crosshair" aria-hidden="true"><svg viewBox="-18 -18 36 36" width="36" height="36"><circle r="8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M-16 0h5M11 0h5M0-16v5M0 11v5" stroke="currentColor" stroke-width="1.4"/><circle r="1.1" fill="currentColor"/></svg></div>
+
+<div class="hud">
+  <section class="panel" id="tutor" aria-live="polite">
+    <h1>Alchemfighter · Level 1 · <span id="beatNum">Beat 1</span></h1>
+    <h2 id="beatTitle">Meet the proton</h2>
+    <div class="say" id="tutorText"></div>
+    <ul class="goals" id="goals"></ul>
+    <div class="row"><button type="button" id="fieldBtn" aria-pressed="false" title="Glow view: a calmer view without field lines (V)">Glow view</button><button type="button" id="vrBtn" title="Play in a PC VR headset">Enter VR</button><button type="button" id="skipBtn">Skip beat</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
+  </section>
+
+  <div class="right">
+    <section class="panel" id="statusBox">
+      <div class="label">Census</div>
+      <div id="census" class="data"><div><b id="cHp">1</b><span class="label">H⁺</span></div><div><b id="cH">0</b><span class="label">H</span></div><div><b id="cE">0</b><span class="label">free e⁻</span></div></div>
+    </section>
+    <section class="panel">
+      <div class="row" style="justify-content:space-between"><span class="label">Time</span><span class="data" id="timeOut"></span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><button type="button" id="speedBtn" title="Game speed (, and . keys)">game speed ×1</button><span class="data fine">ship <span id="shipOut">still</span></span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Every capture chance is multiplied by this same factor, so the shape of the odds stays real">rates ×</span><span class="fine" id="lightNote">light drawn slowed down</span></div>
+      <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
+      <div class="legend"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--good))"></span>magnetic field (drawn ×400)</div>
+      <div class="fine">Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).</div>
+    </section>
+    <section class="panel" id="passBox">
+      <div class="label">Passes (closest approach · chance)</div>
+      <div id="passes"><div class="miss">No passes yet.</div></div>
+    </section>
+    <section class="panel" id="logPanel">
+      <div class="label">Light and events</div>
+      <div id="logBox" class="data fine" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div class="bottom">
+    <section class="panel" id="ladderBox">
+      <div class="label">Energy ladder</div>
+      <canvas id="ladder" width="352" height="340"></canvas>
+    </section>
+    <section class="panel" id="weapon">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <span class="label">Electron gun</span>
+          <button type="button" id="dialDown" aria-label="Slower" title="Slower ([ or mouse wheel)">◀</button>
+          <span class="data" id="dialOut"></span>
+          <button type="button" id="dialUp" aria-label="Faster" title="Faster (] or mouse wheel)">▶</button>
+          <span class="data fine" id="speedOut"></span>
+        </div>
+        <div class="row"><span id="moveBtns"><button type="button" id="fwdBtn">▲ fly</button><button type="button" id="backBtn">▼ back</button><button type="button" id="brakeBtn">■ brake</button></span><button type="button" class="fire" id="fireBtn">FIRE</button></div>
+      </div>
+      <div class="data" id="aimOut"></div>
+      <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that leaves the sphere, at its real wavelength"></canvas>
+      <div class="data fine" id="photonOut" aria-live="polite"></div>
+      <div class="fine" id="spectroNote">Spectrometer: each photon that escapes the sphere, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
+      <div class="keys">Drag to look · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
+      <div class="keys touch">Drag to look · FIRE to shoot · ▲ ▼ to thrust · ■ to brake</div>
+    </section>
+  </div>
+</div>
+
+<div class="overlay" id="startBox">
+  <div class="panel">
+    <h1>Alchemfighter</h1>
+    <h2>Level 1: Electromagnetic Stardust</h2>
+    <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. The edge of the system allows for photons (light) to pass, but not much else.</p>
+    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="vrBtn2">Enter VR</button></div>
+    <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>
+  </div>
+</div>
+<div class="overlay" id="doneBox" hidden>
+  <div class="panel">
+    <h1>Beat 2 complete</h1>
+    <h2>You made a hydrogen atom</h2>
+    <p id="doneText"></p>
+    <p class="fine" id="doneKinds"></p>
+    <p class="fine">Next in the tutorial: the photon gun lights up the atom (beat 3). That part isn't built yet.</p>
+    <div class="row" style="margin-top:10px"><button type="button" id="keepBtn">Keep playing</button><button type="button" id="againBtn">Play again</button></div>
+  </div>
+</div>
+<div class="overlay" id="glFail" hidden><div class="panel"><h2>WebGL2 is unavailable</h2><p>This game needs a browser with WebGL2 turned on.</p></div></div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>
