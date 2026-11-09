@@ -10,7 +10,7 @@ import {
 import { FALLACIES } from './fallacies.js';
 import * as cloud from './cloud.js';
 import { openSignIn, openUsername, readLinkError } from '../accounts/signin.js';
-import { initHome, openHome, closeHome } from './home.js';
+import { initHome, openHome, closeHome, seaClick } from './home.js';
 import { stanceButtons, oddsLine } from './stances.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -31,7 +31,7 @@ const GHOST = '#ff2fb4';
 const GHOST_PREFIX = 'ghost:';
 const isGhost = (id) => typeof id === 'string' && id.startsWith(GHOST_PREFIX);
 const ghostOwner = (id) => id.slice(GHOST_PREFIX.length);
-const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', noopinion: '#a5afc6', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
+const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', noopinion: '#a5afc6', other: '#a5afc6', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
 
 const $ = (id) => document.getElementById(id);
 const board = $('board'), world = $('world');
@@ -465,6 +465,36 @@ async function pullPost(pid) {
     await bringReasons(selected, { quiet: true });
   } catch (err) { toast(err.message); }
 }
+// Puts a posted item on the map if it isn't there yet: a statement near
+// `near` (or mid-board), an arrow together with both its ends. Returns its id.
+async function ensurePost(pid, near = null, depth = 0) {
+  const have = itemFor(pid);
+  if (have) return have;
+  if (depth > 3) return null;
+  const r = await cloud.getPost(pid);
+  if (!r) return null;
+  if (r.kind === 'node') {
+    computeBoxes();
+    const c = toWorld(board.clientWidth / 2, board.clientHeight / 2);
+    const id = addPostedNode(r, near ? placeNear(near, 330, 0) : { x: c.x, y: c.y });
+    changed();
+    return id;
+  }
+  const from = await ensurePost(r.from_post, null, depth + 1);
+  const to = from && await ensurePost(r.to_post, from, depth + 1);
+  if (!to) return null;
+  const again = itemFor(pid);
+  if (again) return again;
+  try { const made = addEdge(map, r.type, from, to); cloud.adopt(map, made.id, r); changed(); return made.id; } catch { return null; }
+}
+// An arrow clicked in the sea: both its posts join the map, and the arrow is
+// selected so you can give your view on the inference.
+async function bringEdge(pid) {
+  try {
+    const id = await ensurePost(pid);
+    if (id) select(id); else toast("That arrow couldn't be added to this map.");
+  } catch (err) { toast(err.message); }
+}
 // Adds the posted arrows leading out from a posted item, and their far ends.
 async function bringReasons(id, { quiet = false } = {}) {
   const pid = map.posts?.[id];
@@ -596,7 +626,7 @@ function shareToggle(it) {
 }
 function ratingBlock(it) {
   const r = it.rating ?? {};
-  const stance = stanceButtons(h, r.stance, (k) => doRate(it.id, { stance: k }));
+  const stance = stanceButtons(h, r.stance, (k, other) => doRate(it.id, { stance: k, other }), r.other);
   const conf = r.confidence ?? 50;
   const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', value: r.confidence ?? '', placeholder: '–', 'aria-label': 'Confidence percent',
     onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : Number(ev.target.value) }) });
@@ -812,7 +842,7 @@ function postBoxParts(it) {
     h('p', { class: 'muted' }, h('strong', {}, by), ' ',
       !st ? '' : st.raters ? `So far: ${parts.join(' · ')}.` : 'Nobody has rated it yet.',
       yours && othersRated(it, st) ? ' Others have rated it, so its words are fixed.' : ''),
-    views.length ? h('p', { class: 'muted' }, 'Shared views: ', views.slice(0, 8).map((v) => `@${v.name ?? 'someone'} ${STANCES[v.stance].toLowerCase()}${v.confidence != null ? ` (${v.confidence}%)` : ''}`).join(' · ')) : null,
+    views.length ? h('p', { class: 'muted' }, 'Shared views: ', views.slice(0, 8).map((v) => `@${v.name ?? 'someone'} ${v.stance === 'other' && v.other ? `says "${v.other}"` : STANCES[v.stance].toLowerCase()}${v.confidence != null ? ` (${formatConfidence(v.confidence)})` : ''}`).join(' · ')) : null,
     !yours ? h('p', { class: 'muted' }, "Someone else's post, so the words are theirs. To say it another way, or narrow what it means, add a clarification.") : null,
     yours ? h('div', { class: 'row' }, anon) : null,
     isNode(it) ? h('div', { class: 'row' }, h('button', { onclick: () => bringReasons(it.id) }, 'Bring in its posted reasons')) : null,
@@ -1238,6 +1268,8 @@ function endPointer(ev) {
   } else {
     if (connecting) { cancelConnect(); return; }
     if (present) { spotlight = null; render(); return; }
+    // Over the sea, a click on empty board reaches the orbs and lines behind it.
+    if (seaClick(ev)) return;
     if (selected) select(null);
   }
 }
@@ -1463,6 +1495,7 @@ if (!welcomed()) showWelcome();
 initHome({
   h, toast,
   openInMap: (pid) => pullPost(pid),
+  bringEdge: (pid) => bringEdge(pid),
   // A view given in the feed also shows on that post in the open map.
   rated: (pid, r) => { const id = itemFor(pid); if (id) { rate(map, id, r); changed(); } },
 });

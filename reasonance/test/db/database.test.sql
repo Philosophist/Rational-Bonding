@@ -154,5 +154,12 @@ update rs_ratings set stance = 'noopinion' where post_id = '10000000-0000-0000-0
 do $$ begin
   if (select (dontcare, noopinion) from rs_post_stats where post_id='10000000-0000-0000-0000-000000000006') <> (0, 1) then raise exception 'noopinion not counted'; end if;
 end $$;
+-- "Other", in your own words: counted in the totals, words kept in history
+update rs_ratings set stance = 'other', other_text = 'Depends what you mean by exists' where post_id = '10000000-0000-0000-0000-000000000006';
+do $$ begin
+  if (select (noopinion, other) from rs_post_stats where post_id='10000000-0000-0000-0000-000000000006') <> (0, 1) then raise exception 'other not counted'; end if;
+  if not exists (select 1 from rs_rating_history where other_text = 'Depends what you mean by exists') then raise exception 'other words not in history'; end if;
+end $$;
+select pg_temp.expect_fail($q$update rs_ratings set stance = 'agree', other_text = 'x' where post_id = '10000000-0000-0000-0000-000000000006'$q$, 'check');
 reset role;
 select 'ALL PASSED';

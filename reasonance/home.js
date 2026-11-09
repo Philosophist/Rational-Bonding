@@ -3,7 +3,7 @@
 // three.js loads only when the home page first opens; without it, the feed
 // still works over a plain background.
 import * as cloud from './cloud.js';
-import { STANCES, EDGE_TYPES, RELEVANCE } from './model.js';
+import { STANCES, EDGE_TYPES, RELEVANCE, formatConfidence } from './model.js';
 import { stanceButtons, oddsLine } from './stances.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -13,13 +13,13 @@ const NODE_COLORS = {
 const EDGE_COLORS = { support: 0x2fe3e6, contention: 0xe04dff, example: 0xb026ff };
 const $ = (id) => document.getElementById(id);
 
-let deps = null; // { h, toast, openInMap, rated }
+let deps = null; // { h, toast, openInMap, bringEdge, rated }
 let feedRows = [], mine = {}, stats = {}, about = {};
 let sea = null;
 
 export function initHome(d) {
   deps = d;
-  $('home-sandbox').addEventListener('click', () => closeHome());
+  $('home-sandbox').addEventListener('click', () => enterSeaMap());
   $('feed-search').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') loadFeed(ev.target.value); });
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('float').hidden) closeFloat(); });
   new ResizeObserver(() => { if (floatState) drawFloat(); }).observe($('home'));
@@ -27,6 +27,7 @@ export function initHome(d) {
 export const homeOpen = () => !$('home').hidden;
 
 export async function openHome() {
+  document.body.classList.remove('sea-map');
   document.body.classList.add('home');
   $('home').hidden = false;
   startSea();
@@ -34,9 +35,26 @@ export async function openHome() {
 }
 export function closeHome() {
   closeFloat();
-  document.body.classList.remove('home');
+  document.body.classList.remove('home', 'sea-map');
   $('home').hidden = true;
   if (sea) cancelAnimationFrame(sea.frame), (sea.running = false);
+}
+
+// Your map, editable, laid over the sea: the feed steps aside, the sea keeps
+// turning behind, and clicking an orb or a line in it brings that post in.
+export const seaMapOpen = () => document.body.classList.contains('sea-map');
+export function enterSeaMap() {
+  closeFloat();
+  document.body.classList.remove('home');
+  document.body.classList.add('sea-map');
+  $('home').hidden = false;
+  startSea();
+}
+// Opens a post in your map over the sea.
+function openPost(pid) {
+  glow(pid);
+  enterSeaMap();
+  deps.openInMap(pid);
 }
 
 // ---------------------------------------------------------------- feed
@@ -72,13 +90,13 @@ function card(r) {
   const counts = countsLine(st);
   const by = ab?.by ? `@${ab.by}` : 'anonymous';
   // Clicking the post (anywhere but its buttons) opens it in the floating sandbox.
-  return h('article', { class: 'post-card', 'data-id': r.id, tabindex: 0, title: 'Open it over the sea',
+  return h('article', { class: 'post-card', 'data-id': r.id, tabindex: 0, title: 'Open it in your map',
     onmouseenter: () => glow(r.id), onfocusin: () => glow(r.id),
-    onclick: (ev) => { if (!ev.target.closest('button')) openFloat(r.id); },
-    onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openFloat(r.id); } },
+    onclick: (ev) => { if (!ev.target.closest('button, select, input')) openPost(r.id); },
+    onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openPost(r.id); } },
   h('p', { class: `text ${r.type}` }, postText(r)),
   h('div', { class: 'meta' }, [by, counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-  stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(r.id, k)),
+  stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(r.id, { stance: k, other }), my?.other),
   my?.stance ? h('div', { class: 'muted' }, my.public ? 'Your view is shared.' : 'Your view is private.') : null);
 }
 // A view from the feed or the floating post: a stance, or { confidence } or
@@ -86,7 +104,8 @@ function card(r) {
 async function rateFromFeed(pid, change) {
   const my = mine[pid] ?? {};
   const patch = typeof change === 'object' && change ? change : { stance: change };
-  const next = { stance: my.stance ?? null, confidence: my.confidence ?? null, relevance: my.relevance ?? null, ...patch };
+  const next = { stance: my.stance ?? null, confidence: my.confidence ?? null, relevance: my.relevance ?? null, other: my.other ?? null, ...patch };
+  if (next.stance !== 'other') next.other = null;
   if (patch.stance === 'dontcare' && next.relevance == null) next.relevance = 1; // not caring: one star
   const share = my.stance ? !!my.public : cloud.settings.share_views;
   try {
@@ -160,22 +179,24 @@ async function startSea() {
   const nodeIds = ids.filter((id) => byId.get(id).kind === 'node');
   const edgeIds = ids.filter((id) => byId.get(id).kind === 'edge');
   const nodes = points(nodeIds, (id) => NODE_COLORS[byId.get(id).type] ?? 0x2fe3e6, 7, 0.95);
-  points(edgeIds, (id) => EDGE_COLORS[byId.get(id).type] ?? 0xd9def0, 3.5, 0.8);
+  const edges = points(edgeIds, (id) => EDGE_COLORS[byId.get(id).type] ?? 0xd9def0, 3.5, 0.8);
   if (filler.length) points(filler, (id) => [0x2fe3e6, 0xe04dff, 0x3b6dff, 0xffe94d][id.length % 4], 3, 0.35);
   // Lines: claim -> arrow orb -> reason.
-  const seg = [];
+  const seg = [], segIds = []; // two segments (four points) per arrow
   for (const id of edgeIds) {
     const r = byId.get(id), m = pos.get(id), a = pos.get(r.from_post), b = pos.get(r.to_post);
-    if (a && b && m) seg.push(...a, ...m, ...m, ...b);
+    if (a && b && m) { seg.push(...a, ...m, ...m, ...b); segIds.push(id); }
   }
+  let lines = null;
   if (seg.length) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
-    group.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.35 })));
+    lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.35 }));
+    group.add(lines);
   }
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xffe94d, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
   halo.scale.set(18, 18, 1); group.add(halo);
 
-  sea = { THREE, renderer, scene, camera, group, nodes, nodeIds, pos, halo, running: true, frame: 0, drag: null, spin: 0.0009 };
+  sea = { THREE, renderer, scene, camera, group, nodes, nodeIds, edges, edgeIds, lines, segIds, pos, halo, running: true, frame: 0, drag: null, spin: 0.0009 };
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (still) sea.spin = 0;
   const resize = () => {
@@ -215,27 +236,42 @@ function glow(pid) {
   if (!p) return;
   sea.halo.position.set(...p); sea.halo.material.opacity = 1;
 }
-async function pick(ev) {
-  const { THREE, camera, nodes, nodeIds } = sea;
+// What's under the pointer in the sea: a statement orb, an arrow's orb, or an
+// arrow's line. Returns { pid, edge } or null.
+function hitSea(ev) {
+  if (!sea) return null;
+  const { THREE, camera, nodes, nodeIds, edges, edgeIds, lines, segIds } = sea;
   const rect = $('sea').getBoundingClientRect();
-  const ray = new THREE.Raycaster(); ray.params.Points.threshold = 3;
+  if (!rect.width || !rect.height) return null;
+  const ray = new THREE.Raycaster(); ray.params.Points.threshold = 3; ray.params.Line.threshold = 1.5;
   ray.setFromCamera(new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1), camera);
-  const hit = ray.intersectObject(nodes)[0];
+  const n = ray.intersectObject(nodes)[0];
+  if (n) return { pid: nodeIds[n.index], edge: false };
+  const e = ray.intersectObject(edges)[0];
+  if (e) return { pid: edgeIds[e.index], edge: true };
+  const l = lines && ray.intersectObject(lines)[0];
+  if (l) return { pid: segIds[Math.floor(l.index / 4)], edge: true };
+  return null;
+}
+function bring(hit) {
+  glow(hit.pid);
+  if (hit.edge) deps.bringEdge(hit.pid); else deps.openInMap(hit.pid);
+}
+// A click on the sea from the home page: opens your map over the sea with it.
+function pick(ev) {
+  const hit = hitSea(ev);
   if (!hit) return;
-  const pid = nodeIds[hit.index];
-  glow(pid);
-  openFloat(pid);
-  const el = document.querySelector(`.post-card[data-id="${pid}"]`);
-  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('picked'); setTimeout(() => el.classList.remove('picked'), 1600); return; }
-  // Not in the feed yet: put it at the top.
-  try {
-    const r = await cloud.getPost(pid);
-    if (!r) return;
-    feedRows = [r, ...feedRows.filter((x) => x.id !== pid)];
-    Object.assign(mine, await cloud.myRatings([pid])); Object.assign(stats, await cloud.stats([pid])); Object.assign(about, await cloud.about([pid]));
-    renderFeed();
-    $('feed').scrollTop = 0;
-  } catch { /* fine */ }
+  enterSeaMap();
+  bring(hit);
+}
+// A click on the empty board while your map is over the sea, passed down to
+// the sea. True if it landed on something.
+export function seaClick(ev) {
+  if (!seaMapOpen()) return false;
+  const hit = hitSea(ev);
+  if (!hit) return false;
+  bring(hit);
+  return true;
 }
 
 // ---------------------------------------------------------------- floating sandbox
@@ -294,7 +330,7 @@ function drawFloat() {
     h('button', { class: 'fclose', 'aria-label': 'Back to the sea', title: 'Back to the sea (Esc)', onclick: closeFloat }, '×'),
     h('p', { class: 'text' }, postText(post)),
     h('div', { class: 'meta' }, [ab?.by ? `@${ab.by}` : 'anonymous', counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-    stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(post.id, k)),
+    stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(post.id, { stance: k, other }), my?.other),
     composeBox(post),
     ...viewDetails(post.id, my)));
   // Near: questions, clarifications, rewordings and fallacies it's called.
@@ -357,7 +393,7 @@ function viewDetails(pid, my = {}) {
   }
   if (conf != null || stars != null) {
     out.push(h('div', { class: 'given' },
-      conf != null ? h('div', {}, `${+conf.toFixed(conf >= 99 ? 4 : 1)}% · `, oddsLine(h, conf, (v) => rateFromFeed(pid, { confidence: v })).el) : null,
+      conf != null ? h('div', {}, `${formatConfidence(conf)} · `, oddsLine(h, conf, (v) => rateFromFeed(pid, { confidence: v })).el) : null,
       stars != null ? h('div', { class: 'stars-given', title: RELEVANCE[stars].text },
         h('button', { class: 'plain', title: 'Change how much it matters', onclick: (ev) => ev.currentTarget.replaceWith(starRow()) }, '★'.repeat(stars) + '☆'.repeat(5 - stars))) : null));
   }

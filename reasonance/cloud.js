@@ -200,11 +200,11 @@ export async function stats(pids) {
 export async function about(pids) {
   if (!pids.length) return {};
   const posts = check(await db().from('rs_posts').select('id, byline, anonymous').in('id', pids));
-  const views = check(await db().from('rs_ratings').select('user_id, post_id, stance, confidence, relevance').eq('public', true).in('post_id', pids));
+  const views = check(await db().from('rs_ratings').select('user_id, post_id, stance, confidence, relevance, other_text').eq('public', true).in('post_id', pids));
   const names = await usernames([...posts.map((p) => p.byline), ...views.map((v) => v.user_id)]);
   const out = {};
   for (const p of posts) out[p.id] = { by: p.byline ? names[p.byline] ?? null : null, anonymous: p.anonymous, views: [] };
-  for (const v of views) out[v.post_id]?.views.push({ ...v, name: names[v.user_id] ?? null, me: v.user_id === userId() });
+  for (const v of views) out[v.post_id]?.views.push({ ...v, other: v.other_text ?? null, name: names[v.user_id] ?? null, me: v.user_id === userId() });
   return out;
 }
 export async function usernames(ids) {
@@ -235,6 +235,7 @@ export async function rate(pid, r, share = false) {
   check(await db().from('rs_ratings').upsert({
     user_id: userId(), post_id: pid,
     stance: r.stance ?? null, confidence: r.confidence ?? null, relevance: r.relevance ?? null,
+    other_text: r.stance === 'other' ? r.other ?? null : null,
     public: !!share,
   }, { onConflict: 'user_id,post_id' }));
 }
@@ -266,9 +267,9 @@ export async function sea(limit = 600) {
 // Your own views of these posts: { id: { stance, confidence, relevance, public } }.
 export async function myRatings(pids) {
   if (!pids.length || !signedIn()) return {};
-  const rows = check(await db().from('rs_ratings').select('post_id, stance, confidence, relevance, public')
+  const rows = check(await db().from('rs_ratings').select('post_id, stance, confidence, relevance, other_text, public')
     .eq('user_id', userId()).in('post_id', pids));
-  return Object.fromEntries(rows.map((r) => [r.post_id, r]));
+  return Object.fromEntries(rows.map((r) => [r.post_id, { ...r, other: r.other_text ?? null }]));
 }
 // Every arrow touching a post (out to its reasons, in from the claims it
 // backs), with the posts at their other ends.
