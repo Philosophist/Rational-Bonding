@@ -68,6 +68,16 @@ export function newId(prefix = 'i') {
   return `${prefix}${r.slice(0, 12)}`;
 }
 
+// The title for a new map nobody has named yet: "Untitled map 1", then 2,
+// and so on, after the highest one already in use.
+export function untitledName(titles) {
+  let top = 0;
+  for (const t of titles) {
+    const m = /^untitled map(?: (\d+))?$/i.exec(String(t ?? '').trim());
+    if (m) top = Math.max(top, m[1] ? Number(m[1]) : 1);
+  }
+  return `Untitled map ${top + 1}`;
+}
 export function createMap(title = 'Untitled map', now = Date.now()) {
   return { version: MAP_VERSION, id: newId('m'), title, created: now, updated: now, items: {} };
 }

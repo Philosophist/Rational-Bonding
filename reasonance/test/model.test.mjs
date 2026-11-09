@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
-  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder, publicCopy,
+  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder, publicCopy, untitledName,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -277,4 +277,10 @@ test('a shared map leaves out your views, their history and anonymous links', ()
   assert.equal(Object.keys(parseMap(text).items).length, 3);
   assert.equal(parseMap(serialize(m), Date.now(), { keepPosts: true }).public, true);
   assert.equal(parseMap(serialize(m)).public, undefined);
+});
+
+test('untitled maps count up from 1', () => {
+  assert.equal(untitledName([]), 'Untitled map 1');
+  assert.equal(untitledName(['Rain', 'Untitled map 1']), 'Untitled map 2');
+  assert.equal(untitledName(['Untitled map', 'untitled map 3', 'My map 9']), 'Untitled map 4');
 });

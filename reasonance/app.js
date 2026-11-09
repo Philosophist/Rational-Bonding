@@ -3,7 +3,7 @@
 // <marker> references), so they show up wherever the page is hosted.
 import {
   NODE_TYPES, EDGE_TYPES, STANCES, RELEVANCE, createMap, addNode, addEdge, removeItem, flipEdge,
-  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES,
+  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES, untitledName,
   isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider,
   compoundParts, splitIntoPremises, postOrder,
 } from './model.js';
@@ -57,7 +57,7 @@ const storeKey = () => (store?.owner ? `${STORE}.${store.owner}` : STORE);
 function blankMap(st) {
   const empty = Object.values(st.maps).find((m) => !Object.keys(m.items).length);
   if (empty) return empty.id;
-  const m = createMap('Untitled map');
+  const m = createMap(untitledName(Object.values(st.maps).map((x) => x.title)));
   st.maps[m.id] = m;
   return m.id;
 }
@@ -74,7 +74,7 @@ function load(key = STORE, { example = true } = {}) {
     }
   } catch { /* storage blocked or empty */ }
   if (!example) return { current: null, maps: {} };
-  const m = createMap('Untitled map');
+  const m = createMap(untitledName([]));
   return { current: m.id, maps: { [m.id]: m } };
 }
 let saveTimer = 0;
@@ -1476,7 +1476,7 @@ $('map-select').addEventListener('change', (ev) => {
 });
 $('map-title').addEventListener('input', (ev) => { map.title = ev.target.value.slice(0, 200); refreshMapList(); renderPanel(); save(); });
 $('new-map').addEventListener('click', () => {
-  const m = createMap('Untitled map');
+  const m = createMap(untitledName(Object.values(store.maps).map((x) => x.title)));
   const n = addNode(m, { text: '', x: 0, y: 0 });
   store.maps[m.id] = m; openMap(m.id); select(n.id); $('edit-text')?.focus();
 });
