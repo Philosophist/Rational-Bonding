@@ -44,6 +44,10 @@
       <button id="redo" class="edit-only" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
       <button id="clear" class="edit-only" title="Remove every post from this map (Undo brings them back)">Clear</button>
       <button id="arrange" class="edit-only" title="Lay the map out automatically">Arrange</button>
+      <select id="arrange-style" class="edit-only" aria-label="How Arrange lays out the map">
+        <option value="radial">Around the main claim</option>
+        <option value="tree">As a tree, left to right</option>
+      </select>
       <button id="fit" title="Fit the whole map on screen">Fit</button>
       <button id="present" title="Hide the editing tools and present the map">Present</button>
       <select id="file-menu" class="edit-only" aria-label="Save, share or load">
@@ -51,6 +55,7 @@
         <option value="download">Download map file</option>
         <option value="import">Open a map file</option>
         <option value="post-all">Post everything on this map</option>
+        <option value="share-map">Share this map publicly</option>
         <option value="outline">Copy as text outline</option>
         <option value="print">Print this map</option>
         <option value="delete">Delete this map</option>
@@ -62,6 +67,7 @@
       <button id="sign-in">Sign in</button>
       <select id="account-menu" aria-label="Your account" hidden>
         <option value="">@you</option>
+        <option value="profile">My profile</option>
         <option value="username">Change username</option>
         <option value="share">Share my views by default: off</option>
         <option value="signout">Sign out</option>
@@ -97,10 +103,13 @@
         <div id="float-nodes"></div>
         <div id="float-tip" class="float-tip" hidden></div>
       </div>
-      <p class="sea-hint">Every orb is a post, and every line an inference. Drag to turn the sea, click an orb to find its post.</p>
+      <p class="sea-hint">Every orb is a post, and every line an inference. Drag to turn the sea, click an orb or a line to bring it into your map.</p>
     </section>
   </main>
 
+  <div id="profile" class="profile" hidden>
+    <div class="card" role="dialog" aria-label="Profile"></div>
+  </div>
   <div id="welcome" class="welcome" hidden>
     <div class="card" role="dialog" aria-labelledby="welcome-title">
       <img src="../images/rational-bonding-logo.png" alt="" width="64" height="58" />

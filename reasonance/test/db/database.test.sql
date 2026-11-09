@@ -161,5 +161,27 @@ do $$ begin
   if not exists (select 1 from rs_rating_history where other_text = 'Depends what you mean by exists') then raise exception 'other words not in history'; end if;
 end $$;
 select pg_temp.expect_fail($q$update rs_ratings set stance = 'agree', other_text = 'x' where post_id = '10000000-0000-0000-0000-000000000006'$q$, 'check');
+-- Shared maps: alice shares one; anyone reads it; bob can't change or remove it.
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a', false); end $$;
+insert into rs_public_maps (id, title, data) values ('m1', 'Rain', '{"items":{}}');
+select pg_temp.expect_fail($q$insert into rs_public_maps (id, title, data) values ('m2', 'x', '{"items":{"n1":{"rating":{"stance":"agree"}}}}')$q$, 'no_views');
+select pg_temp.expect_fail($q$insert into rs_public_maps (owner, id, title, data) values ('00000000-0000-0000-0000-00000000000b', 'm3', 'x', '{}')$q$, 'row-level');
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000b', false); end $$;
+update rs_public_maps set title = 'hacked';
+delete from rs_public_maps;
+do $$ begin
+  if (select title from rs_public_maps where id = 'm1') <> 'Rain' then raise exception 'bob changed alice''s shared map'; end if;
+  if exists (select 1 from rs_maps) then raise exception 'bob sees private maps'; end if;
+end $$;
+reset role; set role anon;
+do $$ begin
+  if (select count(*) from rs_public_maps) <> 1 then raise exception 'shared map not public'; end if;
+end $$;
+reset role; set role authenticated;
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a', false); end $$;
+delete from rs_public_maps where id = 'm1';
+do $$ begin
+  if exists (select 1 from rs_public_maps) then raise exception 'alice could not unshare'; end if;
+end $$;
 reset role;
 select 'ALL PASSED';
