@@ -60,8 +60,8 @@
           <button id="facing-cancel">Undo move</button>
         </div>
       </div>
-      <div id="zoom-ctrls"><button id="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button><button id="zoom-out" title="Zoom out (−)" aria-label="Zoom out">−</button></div>
-      <div id="help-tip">Drag to orbit · scroll or <kbd>+</kbd> <kbd>−</kbd> to zoom · right-drag or arrows/<kbd>WASD</kbd> to pan · <kbd>Q</kbd> <kbd>E</kbd> turn · <kbd>[</kbd> <kbd>]</kbd> levels · <kbd>0</kbd> all</div>
+      <div id="zoom-ctrls"><button id="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button><button id="zoom-out" title="Zoom out (−)" aria-label="Zoom out">−</button><button id="recenter" title="Recenter the view (R)" aria-label="Recenter the view">⌖</button></div>
+      <div id="help-tip">Drag to orbit · scroll or <kbd>+</kbd> <kbd>−</kbd> to zoom · right-drag or arrows/<kbd>WASD</kbd> to pan · <kbd>Q</kbd> <kbd>E</kbd> turn · <kbd>[</kbd> <kbd>]</kbd> levels · <kbd>0</kbd> all · <kbd>R</kbd> recenter</div>
     </main>
 
     <aside id="panel">
@@ -113,6 +113,7 @@
         <label class="check" data-for="relative"><input type="checkbox" id="rule-knightFacing" /> Knights leap along their own axes</label>
         <label class="check"><input type="checkbox" id="view-paths" checked /> Show move paths (touching cubes; knights get L lines)</label>
         <label class="check" data-for="relative"><input type="checkbox" id="view-hex" checked /> Show the hexagon around corner-facing pieces</label>
+        <label class="check"><input type="checkbox" id="view-follow" checked /> Turn the camera to a piece when you select it</label>
         <label>Time control
           <select id="tc-select"></select>
         </label>

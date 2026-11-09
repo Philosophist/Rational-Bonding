@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
-  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES,
+  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder, publicCopy, untitledName,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -115,6 +115,55 @@ test('log confidence scale separates 99% from 99.999%', () => {
   assert.ok(Math.abs(confidenceToLogSlider(99.9) - 3) < 1e-9);
 });
 
+test('confidence reads as a 1 in n chance of being wrong', async () => {
+  const { confidenceToOdds, oddsToConfidence } = await import('../model.js');
+  assert.equal(confidenceToOdds(90), 10);
+  assert.equal(confidenceToOdds(50), 2);
+  assert.equal(confidenceToOdds(99.9), 1000);
+  assert.equal(confidenceToOdds(75), 4);
+  assert.equal(confidenceToOdds(100), Infinity);
+  assert.equal(confidenceToOdds(0), 1);
+  assert.equal(confidenceToOdds(null), null);
+  assert.equal(oddsToConfidence(10), 90);
+  assert.equal(oddsToConfidence(1000), 99.9);
+  assert.equal(oddsToConfidence(1), 0);
+  assert.equal(oddsToConfidence('x'), null);
+});
+
+test('below 50% the odds read as a chance of being right', async () => {
+  const { oddsPhrase, phraseToConfidence } = await import('../model.js');
+  assert.deepEqual(oddsPhrase(90), { n: 10, side: 'wrong' });
+  assert.deepEqual(oddsPhrase(50), { n: 2, side: 'wrong' });
+  assert.deepEqual(oddsPhrase(25), { n: 4, side: 'right' });
+  assert.deepEqual(oddsPhrase(0), { n: Infinity, side: 'right' });
+  assert.equal(oddsPhrase(null), null);
+  // someone types 1.5 as their chance of being wrong: that's 33%, shown as right
+  const c = phraseToConfidence(1.5, 'wrong');
+  assert.ok(Math.abs(c - 33.333333) < 1e-4);
+  assert.deepEqual(oddsPhrase(c), { n: 3, side: 'right' });
+  assert.equal(phraseToConfidence(4, 'right'), 25);
+});
+
+test('"Other" keeps your own words, only while it is your view', async () => {
+  const { createMap, addNode, rate, parseMap, serialize } = await import('../model.js');
+  const m = createMap('t'); const a = addNode(m, { text: 'A God exists.' });
+  rate(m, a.id, { stance: 'other', other: '  Depends what you mean by God  ' });
+  assert.equal(m.items[a.id].rating.other, 'Depends what you mean by God');
+  assert.equal(parseMap(serialize(m)).items[a.id].rating.other, 'Depends what you mean by God');
+  rate(m, a.id, { stance: 'agree' });
+  assert.equal(m.items[a.id].rating.other, null);
+});
+
+test('a million to one reads as nearly certain', async () => {
+  const { oddsToConfidence, oddsPhrase, formatConfidence } = await import('../model.js');
+  const c = oddsToConfidence(1e6);
+  assert.equal(c, 99.9999);
+  assert.deepEqual(oddsPhrase(c), { n: 1e6, side: 'wrong' });
+  assert.equal(formatConfidence(c), '99.9999%');
+  assert.equal(formatConfidence(oddsToConfidence(1e8)), '99.999999%');
+  assert.equal(formatConfidence(33.3333), '33.3%');
+});
+
 test('maps round-trip through export, and bad data is refused', () => {
   const m = exampleMap(5);
   const back = parseMap(serialize(m));
@@ -138,10 +187,11 @@ test('maps round-trip through export, and bad data is refused', () => {
 
 test('the outline starts from conclusions and indents their reasons', () => {
   const text = outline(exampleMap());
-  assert.match(text, /^# Did it rain last night\?/);
-  assert.match(text, /'It rained last night\.'\n  - Support: 'The sidewalk is wet this morning\.'\n    - On that inference:\n      - Contention: 'The sprinklers soak the sidewalk every night\.'/);
-  assert.match(text, /- Premise 1: 'The street is wet too\.'/);
-  assert.match(text, /Fallacy: 'An Ad hominem fallacy is when an argument attacks/);
+  assert.match(text, /^# Should the death penalty be abolished\?/);
+  assert.match(text, /'Every country should abolish the death penalty\.'\n  - Clarification: /);
+  assert.match(text, /    - On that inference:\n      - Contention: 'Stricter standards of proof/);
+  assert.match(text, /- Premise 2: 'An execution cannot be undone\.'/);
+  assert.match(text, /Fallacy: 'An Appeal to popularity fallacy is when/);
 });
 
 test('every post in every example is a single statement', () => {
@@ -174,4 +224,63 @@ test('compound posts are spotted and can be split into combined premises', () =>
   assert.equal(itemText(m, e.id), "'It rained' is supported by 'These premises, taken together'");
   assert.deepEqual(made.map((id) => m.items[id].text), ['The street is wet too.', 'The sprinklers do not reach it.']);
   assert.throws(() => splitIntoPremises(m, claim.id, ['one']));
+});
+
+test('posted items keep their server ids only in a map\'s own saved copy', () => {
+  const { m, a, b } = twoClaims();
+  const e = addEdge(m, 'support', a.id, b.id);
+  m.posts = { [a.id]: '11111111-2222-4333-8444-555555555555', [e.id]: 'not-a-uuid', nope: '11111111-2222-4333-8444-555555555555' };
+  assert.deepEqual(parseMap(serialize(m), 1, { keepPosts: true }).posts, { [a.id]: '11111111-2222-4333-8444-555555555555' });
+  assert.equal(parseMap(serialize(m)).posts, undefined, 'an opened file starts as drafts');
+  assert.deepEqual(postOrder(m, [e.id]), [a.id, b.id, e.id], 'ends are posted before their arrow');
+});
+
+test('posting choices (anonymous, share) survive saving and loading', () => {
+  const m = createMap('t', 1);
+  const a = addNode(m, { text: 'A.' });
+  a.anonymous = true; a.share = false;
+  const back = parseMap(serialize(m));
+  assert.equal(back.items[a.id].anonymous, true);
+  assert.equal(back.items[a.id].share, false);
+});
+
+test("I don't care is a Neither view that gives one star by default", async () => {
+  const { NEITHER } = await import('../model.js');
+  assert.ok(NEITHER.includes('dontcare'));
+  assert.ok(NEITHER.includes('noopinion'));
+  const m = createMap('t', 1);
+  const a = addNode(m, { text: 'A.' });
+  rate(m, a.id, { stance: 'dontcare' });
+  assert.equal(m.items[a.id].rating.relevance, 1);
+  rate(m, a.id, { relevance: 4 });
+  rate(m, a.id, { stance: 'dontcare' });
+  assert.equal(m.items[a.id].rating.relevance, 4);
+});
+
+test('a shared map leaves out your views, their history and anonymous links', () => {
+  const m = createMap('Mine');
+  const a = addNode(m, { text: 'A God exists' });
+  const b = addNode(m, { text: 'Life exists' });
+  const e = addEdge(m, 'support', a.id, b.id);
+  rate(m, a.id, { stance: 'agree', confidence: 90 });
+  rate(m, e.id, { stance: 'other', other: 'secret words' });
+  m.items[a.id].share = true;
+  m.items[b.id].anonymous = true;
+  m.posts = { [a.id]: '11111111-1111-1111-1111-111111111111', [b.id]: '22222222-2222-2222-2222-222222222222' };
+  m.public = true;
+  const pub = publicCopy(m);
+  const text = JSON.stringify(pub);
+  assert.ok(!text.includes('rating') && !text.includes('secret') && !text.includes('history') && !text.includes('share'));
+  assert.deepEqual(Object.keys(pub.posts), [a.id]);
+  assert.equal(pub.items[e.id].from, a.id);
+  // It reads back as a normal map, and your own copy remembers it's shared.
+  assert.equal(Object.keys(parseMap(text).items).length, 3);
+  assert.equal(parseMap(serialize(m), Date.now(), { keepPosts: true }).public, true);
+  assert.equal(parseMap(serialize(m)).public, undefined);
+});
+
+test('untitled maps count up from 1', () => {
+  assert.equal(untitledName([]), 'Untitled map 1');
+  assert.equal(untitledName(['Rain', 'Untitled map 1']), 'Untitled map 2');
+  assert.equal(untitledName(['Untitled map', 'untitled map 3', 'My map 9']), 'Untitled map 4');
 });

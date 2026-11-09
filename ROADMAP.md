@@ -92,13 +92,20 @@ in [CLAUDE.md](CLAUDE.md).
   days, handled by hand until then): a `delete_my_account()` function in a new
   migration, plus a button in the profile panel.
 
-- **Reasonance** (argument-mapping app, `reasonance/`). Plan:
+- **Ourgument** (argument-mapping app, formerly Reasonance, at `reasonance/`). Plan:
   https://claude.ai/artifact/KYaEnrF5TgaUmroiHLhaRf
-  1. Map editor, guest-only, saving in the browser (this PR).
-  2. Accounts and posts: `rs_*` tables by migration, shared sign-in, axioms,
-     fallacies and dated belief history saved to the account.
+  1. Map editor, guest-only, saving in the browser (done).
+  2. Accounts and posts (done): `rs_*` tables by migration, shared sign-in
+     (`accounts/auth.js`, `accounts/signin.js`), unique posts (matching what's
+     already posted), anonymous posting, views private unless shared, dated
+     history, public totals, maps saved to the account, pulling public posts
+     into a private map. Later, Cube
+     Chess could switch from its own `chess3d/account.js` to `accounts/auth.js`.
   3. The 3D sea of posts (three.js), clicking a post brings it into the map.
+     Started: the signed-in home shows the sea behind the feed, and clicking
+     an orb finds its post. Next: fly into an orb and see its arguments.
   4. Feed and search, belief sharing, "wants to know what you think" asks.
+     Started: a newest-first feed with views given in place, and search.
   5. Curation settings (sliders, following someone's curation).
   6. Default blurs, phone-verified totals, rate limits, illegal-content
      reports. Then the opt-in, paid data tool and labelled sponsored posts.

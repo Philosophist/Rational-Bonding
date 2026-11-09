@@ -1,4 +1,4 @@
-// Reasonance map model: no DOM code, so it can be tested in Node.
+// Ourgument map model: no DOM code, so it can be tested in Node.
 //
 // Every node and every edge is an item ("a post"). An edge connects any two
 // items, including other edges, which is how people support or contend an
@@ -39,8 +39,16 @@ export const STANCES = {
   agree: 'Agree',
   disagree: 'Disagree',
   unknown: "I don't know",
+  noopinion: 'No opinion',
   incomprehensible: 'Incomprehensible',
+  dontcare: "I don't care",
+  other: 'Other',
 };
+// Agree and Disagree are the two sides; the rest are "Neither".
+export const NEITHER = ['unknown', 'noopinion', 'incomprehensible', 'dontcare', 'other'];
+// "Other" carries the person's own words, up to this many characters.
+export const OTHER_MAX = 200;
+const cleanOther = (t) => (typeof t === 'string' && t.trim() ? t.trim().slice(0, OTHER_MAX) : null);
 
 // Relevance: how important it would be to know if the opposite of your
 // stance were proven true, to your own satisfaction.
@@ -60,6 +68,16 @@ export function newId(prefix = 'i') {
   return `${prefix}${r.slice(0, 12)}`;
 }
 
+// The title for a new map nobody has named yet: "Untitled map 1", then 2,
+// and so on, after the highest one already in use.
+export function untitledName(titles) {
+  let top = 0;
+  for (const t of titles) {
+    const m = /^untitled map(?: (\d+))?$/i.exec(String(t ?? '').trim());
+    if (m) top = Math.max(top, m[1] ? Number(m[1]) : 1);
+  }
+  return `Untitled map ${top + 1}`;
+}
 export function createMap(title = 'Untitled map', now = Date.now()) {
   return { version: MAP_VERSION, id: newId('m'), title, created: now, updated: now, items: {} };
 }
@@ -249,7 +267,7 @@ export function standingContention(map, id) {
 
 // Ratings. Every change is kept with its time, so a map remembers when and
 // what you believed. Returns the flavor text to show, if any.
-export function rate(map, id, { stance, confidence, relevance } = {}, now = Date.now()) {
+export function rate(map, id, { stance, confidence, relevance, other } = {}, now = Date.now()) {
   const it = map.items[id];
   if (!it) return [];
   const prev = it.rating ?? { history: [] };
@@ -258,6 +276,10 @@ export function rate(map, id, { stance, confidence, relevance } = {}, now = Date
     confidence: confidence === undefined ? prev.confidence ?? null : clampConfidence(confidence),
     relevance: relevance === undefined ? prev.relevance ?? null : clampRelevance(relevance),
   };
+  // Your own words for "Other"; they go with that view only.
+  next.other = next.stance === 'other' ? cleanOther(other === undefined ? prev.other : other) : null;
+  // Not caring about a claim means it matters little to you: one star, unless you've said otherwise.
+  if (next.stance === 'dontcare' && stance !== undefined && next.relevance == null) next.relevance = 1;
   if (next.stance !== null && !STANCES[next.stance]) throw new Error(`Unknown stance: ${next.stance}`);
   const history = [...(prev.history ?? []), { at: now, ...next }];
   it.rating = { ...next, history };
@@ -287,6 +309,50 @@ export function flavor(prev, next) {
   }
   if (next.relevance && next.relevance !== prev.relevance) out.push(RELEVANCE[next.relevance].cheer);
   return out;
+}
+
+// Confidence as odds of being wrong: 90% is a 1 in 10 chance, 99.9% is 1 in
+// 1,000. n is Infinity at 100% (never wrong) and 1 at 0%.
+export function confidenceToOdds(c) {
+  if (c == null) return null;
+  if (c >= 100) return Infinity;
+  const n = 100 / (100 - Math.max(0, c));
+  return n < 10 ? Math.round(n * 10) / 10 : Math.round(n);
+}
+export function oddsToConfidence(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return v === Infinity ? 100 : null;
+  if (v <= 1) return 0;
+  return +(100 - 100 / v).toPrecision(8);
+}
+
+// How a confidence reads in words. From 50% up it is the chance of being
+// wrong ("1 / 10 chance that I'm wrong" at 90%). Below 50% being wrong is the
+// likelier outcome, so it flips to the chance of being right ("1 / 4 chance
+// that I'm right" at 25%).
+const roundOdds = (n) => (n === Infinity ? n : n < 10 ? Math.round(n * 10) / 10 : Math.round(n));
+export function oddsPhrase(c) {
+  if (c == null) return null;
+  if (c >= 50) return { n: confidenceToOdds(c), side: 'wrong' };
+  return { n: c <= 0 ? Infinity : roundOdds(100 / c), side: 'right' };
+}
+// A confidence for display, with enough decimals that 1 in a million
+// shows as 99.9999% rather than 100%.
+export function formatConfidence(c) {
+  if (c == null) return '';
+  if (c >= 100 || c <= 0) return `${c >= 100 ? 100 : 0}%`;
+  const d = c >= 99 ? Math.min(10, Math.ceil(-Math.log10(100 - c)) + 2) : 1;
+  return `${+c.toFixed(d)}%`;
+}
+// Turns a typed n back into a confidence, read on the side being shown.
+export function phraseToConfidence(n, side = 'wrong') {
+  const v = Number(n);
+  if (side === 'right') {
+    if (v === Infinity) return 0;
+    if (!Number.isFinite(v)) return null;
+    return v <= 1 ? 100 : +(100 / v).toPrecision(8);
+  }
+  return oddsToConfidence(n);
 }
 
 // Confidence slider in log mode tells 99% from 99.999% apart.
@@ -341,7 +407,7 @@ export function serialize(map) {
 
 // Parses an exported map and checks every field, so a pasted file can't
 // smuggle in anything unexpected.
-export function parseMap(text, now = Date.now()) {
+export function parseMap(text, now = Date.now(), { keepPosts = false } = {}) {
   let raw;
   try { raw = JSON.parse(text); } catch { throw new Error('That is not valid map data.'); }
   if (!raw || typeof raw !== 'object' || typeof raw.items !== 'object') throw new Error('That is not valid map data.');
@@ -354,6 +420,7 @@ export function parseMap(text, now = Date.now()) {
       const n = { id: it.id, kind: 'node', type: it.type, text: String(it.text ?? '').slice(0, MAX_TEXT), x: num(it.x), y: num(it.y) };
       if (it.type === 'fallacy') { n.fallacy = String(it.fallacy ?? 'Unnamed').slice(0, 100); n.when = String(it.when ?? '').slice(0, MAX_TEXT); }
       if (it.rating) n.rating = cleanRating(it.rating);
+      keepChoices(n, it);
       map.items[n.id] = n;
     }
   }
@@ -365,6 +432,7 @@ export function parseMap(text, now = Date.now()) {
     const e = { id: it.id, kind: 'edge', type, from: String(it.from), to: String(it.to) };
     if (it.premise !== undefined) e.premise = String(it.premise).slice(0, 12);
     if (it.rating) e.rating = cleanRating(it.rating);
+    keepChoices(e, it);
     map.items[e.id] = e;
   }
   for (const e of Object.values(map.items).filter(isEdge)) {
@@ -373,7 +441,51 @@ export function parseMap(text, now = Date.now()) {
   for (const e of Object.values(map.items).filter(isEdge)) {
     if (dependsOn(map, e.from, e.id) || dependsOn(map, e.to, e.id)) throw new Error('An arrow in that map points at itself.');
   }
+  // Which items are published posts, by their id on the server. Kept only for
+  // a map's own saved copy; an opened file starts as drafts (keepPosts false).
+  if (keepPosts && raw.posts && typeof raw.posts === 'object') {
+    const posts = {};
+    for (const [id, pid] of Object.entries(raw.posts)) if (map.items[id] && UUID.test(String(pid))) posts[id] = String(pid).toLowerCase();
+    if (Object.keys(posts).length) map.posts = posts;
+    if (raw.public === true) map.public = true;
+  }
   return map;
+}
+
+// The copy of a map that anyone can see once its owner shares it: the posts,
+// arrows and layout, but none of the owner's views or their history (views
+// someone chose to share are public on their posts already) and none of their
+// posting choices. Posts you made anonymously aren't linked to their public
+// post, so sharing the map doesn't give away that you wrote them.
+export function publicCopy(map) {
+  const items = {};
+  for (const [id, it] of Object.entries(map.items)) {
+    const { rating, share, anonymous, ...rest } = it;
+    items[id] = JSON.parse(JSON.stringify(rest));
+  }
+  const posts = {};
+  for (const [id, pid] of Object.entries(map.posts ?? {})) if (items[id] && !map.items[id].anonymous) posts[id] = pid;
+  return { app: 'reasonance', version: map.version, id: map.id, title: map.title, created: map.created, updated: map.updated, items, posts };
+}
+// Posting choices: post without a name, and share (or not) your view of it.
+function keepChoices(to, from) {
+  if (from.anonymous === true) to.anonymous = true;
+  if (typeof from.share === 'boolean') to.share = from.share;
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Items in the order they must be posted: an arrow after both its ends.
+export function postOrder(map, ids) {
+  const out = [], seen = new Set();
+  const visit = (id) => {
+    if (seen.has(id) || !map.items[id]) return;
+    seen.add(id);
+    const it = map.items[id];
+    if (isEdge(it)) { visit(it.from); visit(it.to); }
+    out.push(id);
+  };
+  for (const id of ids) visit(id);
+  return out;
 }
 
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
@@ -383,6 +495,7 @@ function cleanRating(r) {
     stance: STANCES[x?.stance] ? x.stance : null,
     confidence: clampConfidence(x?.confidence ?? null),
     relevance: clampRelevance(x?.relevance ?? null),
+    other: x?.stance === 'other' ? cleanOther(x?.other) : null,
   });
   const { at, ...cur } = one(r);
   return { ...cur, history: Array.isArray(r.history) ? r.history.slice(-500).map(one) : [] };
@@ -390,75 +503,90 @@ function cleanRating(r) {
 
 function touch(map, now = Date.now()) { map.updated = now; }
 
-// The example map: a claim, its reason, and a debate about the inference
-// itself rather than the facts.
-// Ready-made example arguments. Every post is a single statement.
-// Positions are rough; the editor tidies them with Arrange on load.
+// Ready-made example arguments on questions people really disagree about.
+// Every post is a single statement that stands on its own, with no "here",
+// "today" or "our town" that needs outside context. Positions are rough; the
+// editor tidies them with Arrange on load.
 export const EXAMPLES = [
-  { key: 'rain', title: 'Did it rain last night?' },
-  { key: 'bikes', title: 'Should Main Street get bike lanes?' },
-  { key: 'earth', title: 'Is the Earth round?' },
+  { key: 'death-penalty', title: 'Should the death penalty be abolished?' },
+  { key: 'meat', title: 'Is it wrong to raise animals for meat?' },
+  { key: 'basic-income', title: 'Should every adult get a basic income?' },
 ];
-export function exampleMap(now = Date.now(), key = 'rain') {
-  if (key === 'bikes') return bikesExample(now);
-  if (key === 'earth') return earthExample(now);
-  const m = createMap('Did it rain last night?', now);
-  const rain = addNode(m, { text: 'It rained last night.', x: -200, y: 0 });
-  const wet = addNode(m, { text: 'The sidewalk is wet this morning.', x: 260, y: 0 });
-  const inf = addEdge(m, 'support', rain.id, wet.id);
-  const sprink = addNode(m, { text: 'The sprinklers soak the sidewalk every night.', x: 260, y: 230 });
-  addEdge(m, 'contention', inf.id, sprink.id);
-  const street = addNode(m, { type: 'combiner', x: 260, y: -230 });
-  addEdge(m, 'support', inf.id, street.id);
-  addEdge(m, 'premise', street.id, addNode(m, { text: 'The street is wet too.', x: 640, y: -310 }).id);
-  addEdge(m, 'premise', street.id, addNode(m, { text: 'The sprinklers do not reach the street.', x: 640, y: -170 }).id);
-  const neighbour = addNode(m, { type: 'combiner', x: -200, y: 330 });
-  const hom = addEdge(m, 'support', rain.id, neighbour.id);
-  addEdge(m, 'premise', neighbour.id, addNode(m, { text: "My neighbour says it didn't rain.", x: 220, y: 440 }).id);
-  addEdge(m, 'premise', neighbour.id, addNode(m, { text: 'My neighbour is wrong about everything.', x: 220, y: 580 }).id);
-  const fal = addNode(m, { type: 'fallacy', fallacy: 'Ad hominem', x: -640, y: 170 });
-  addEdge(m, 'example', hom.id, fal.id);
+export function exampleMap(now = Date.now(), key = EXAMPLES[0].key) {
+  const build = { 'death-penalty': deathPenaltyExample, meat: meatExample, 'basic-income': basicIncomeExample }[key] || deathPenaltyExample;
+  const m = build(now);
   m.updated = now;
   return m;
 }
+// Small helpers so each example reads like the argument it is.
+function builder(title, now) {
+  const m = createMap(title, now);
+  let row = 0;
+  const node = (text, type) => addNode(m, { text, x: 0, y: 140 * row++, ...(type ? { type } : {}) });
+  const arrow = (type, from, to) => addEdge(m, type, from.id, to.id);
+  const together = (from, type, ...premises) => {
+    const c = addNode(m, { type: 'combiner', x: 0, y: 140 * row++ });
+    const e = arrow(type, from, c);
+    premises.forEach((t) => arrow('premise', c, node(t)));
+    return e;
+  };
+  const fallacy = (inference, name) => arrow('example', inference, addNode(m, { type: 'fallacy', fallacy: name, x: 0, y: 140 * row++ }));
+  return { m, node, arrow, together, fallacy };
+}
 
-function bikesExample(now) {
-  const m = createMap('Should Main Street get bike lanes?', now);
-  const at = (text, x, y, type) => addNode(m, { text, x, y, ...(type ? { type } : {}) });
-  const claim = at('Our town should add bike lanes on Main Street.', 0, 0);
-  const safety = addNode(m, { type: 'combiner', x: 540, y: -200 });
-  addEdge(m, 'support', claim.id, safety.id);
-  addEdge(m, 'premise', safety.id, at('Bike lanes reduce crashes involving cyclists.', 1080, -260).id);
-  addEdge(m, 'premise', safety.id, at('Main Street has more cyclist crashes than any other street in town.', 1080, -140).id);
-  const parking = at('Bike lanes would remove parking spaces on Main Street.', 540, 0);
-  const lost = addEdge(m, 'contention', claim.id, parking.id);
-  addEdge(m, 'contention', lost.id, at('The garage two blocks away is rarely more than half full.', 1080, 40).id);
-  addEdge(m, 'question', claim.id, at('How much would the bike lanes cost?', 540, 180, 'question').id);
-  const slope = at('If we add bike lanes, cars will soon be banned from downtown.', 540, 340);
-  const slide = addEdge(m, 'contention', claim.id, slope.id);
-  const fal = addNode(m, { type: 'fallacy', fallacy: 'Slippery slope', x: 1080, y: 380 });
-  addEdge(m, 'example', slide.id, fal.id);
-  m.updated = now;
+function deathPenaltyExample(now) {
+  const { m, node, arrow, together, fallacy } = builder('Should the death penalty be abolished?', now);
+  const claim = node('Every country should abolish the death penalty.');
+  arrow('clarification', claim, node('Abolishing the death penalty means no crime can be punished by execution.', 'clarification'));
+  const innocent = together(claim, 'support',
+    'Courts sometimes convict innocent people.',
+    'An execution cannot be undone.');
+  const standards = node('Stricter standards of proof could make wrongful executions extremely rare.');
+  const fix = arrow('contention', innocent, standards);
+  arrow('contention', fix, node('People have been freed from death row after years of appeals had upheld their convictions.'));
+  const deter = arrow('support', claim, node('No reliable study has shown that executions deter murder better than life imprisonment.'));
+  arrow('contention', deter, node('A lack of proof that executions deter murder is not proof that they do not.'));
+  const desert = node('Death is the only just punishment for the cruelest murders.');
+  arrow('contention', claim, desert);
+  arrow('question', desert, node('Who should decide which crimes deserve death?', 'question'));
+  arrow('support', desert, node('Punishment should be in proportion to the harm a crime does.', 'axiom'));
+  fallacy(arrow('contention', claim, node('Many voters support the death penalty.')), 'Appeal to popularity');
   return m;
 }
 
-function earthExample(now) {
-  const m = createMap('Is the Earth round?', now);
-  const at = (text, x, y, type) => addNode(m, { text, x, y, ...(type ? { type } : {}) });
-  const claim = at('The Earth is roughly a sphere.', 0, 0);
-  addEdge(m, 'same', claim.id, at('La Terre est à peu près une sphère.', 540, -300).id);
-  const ships = at('Ships disappear hull first as they sail over the horizon.', 540, -140);
-  const sail = addEdge(m, 'support', claim.id, ships.id);
-  addEdge(m, 'support', sail.id, at('Careful observation tells us how the world is.', 1080, -100, 'axiom').id);
-  const shadow = at("The Earth's shadow on the Moon is always round during a lunar eclipse.", 540, 20);
-  addEdge(m, 'support', claim.id, shadow.id);
-  addEdge(m, 'clarification', shadow.id, at('A lunar eclipse happens when the Earth blocks sunlight from reaching the Moon.', 1080, 40).id);
-  const flat = at('The ground looks flat where I stand.', 540, 200);
-  const looks = addEdge(m, 'contention', claim.id, flat.id);
-  addEdge(m, 'contention', looks.id, at('A small patch of a very large sphere looks flat.', 1080, 220).id);
-  const crowd = at('Most people believe the Earth is round.', 540, 360);
-  const pop = addEdge(m, 'support', claim.id, crowd.id);
-  addEdge(m, 'example', pop.id, addNode(m, { type: 'fallacy', fallacy: 'Appeal to popularity', x: 1080, y: 400 }).id);
-  m.updated = now;
+function meatExample(now) {
+  const { m, node, arrow, together, fallacy } = builder('Is it wrong to raise animals for meat?', now);
+  const claim = node('Raising animals to eat them is morally wrong.');
+  arrow('clarification', claim, node('Morally wrong means something a person should not do even where the law allows it.', 'clarification'));
+  const pain = together(claim, 'support',
+    'Farm animals can feel pain.',
+    'Causing pain that is not needed is wrong.',
+    'Most people with access to a modern grocery store can eat well without meat.');
+  arrow('contention', pain, node('Animals on well-run farms can live lives worth living.'));
+  const poor = node('Meat is an important source of nutrition for many people living in poverty.');
+  const need = arrow('contention', claim, poor);
+  arrow('contention', need, node('A need for meat in poverty would excuse only the people who have no other choice.'));
+  fallacy(arrow('contention', claim, node('Eating meat is natural for humans.')), 'Appeal to nature');
+  arrow('question', claim, node('Does it matter whether an animal was farmed or hunted?', 'question'));
+  arrow('support', claim, node('Suffering matters no matter which species feels it.', 'axiom'));
+  return m;
+}
+
+function basicIncomeExample(now) {
+  const { m, node, arrow, together, fallacy } = builder('Should every adult get a basic income?', now);
+  const claim = node('Governments should pay every adult a universal basic income.');
+  arrow('clarification', claim, node('A universal basic income is a regular cash payment to every adult with no work requirement.', 'clarification'));
+  arrow('support', claim, node('Cash paid to everyone reaches poor people who never apply for means-tested benefits.'));
+  together(claim, 'support',
+    'Automation may replace many jobs in the coming decades.',
+    'A basic income would protect people whose jobs disappear.');
+  const cost = node('A basic income large enough to live on would require much higher taxes.');
+  const tax = arrow('contention', claim, cost);
+  arrow('contention', tax, node('Replacing existing welfare programs would pay for part of a basic income.'));
+  const idle = node('People who are paid without working will stop working.');
+  arrow('contention', claim, idle);
+  arrow('contention', idle, node('Basic income trials have found only small changes in how much people work.'));
+  fallacy(arrow('contention', claim, node('Free money will soon mean that nobody works at all.')), 'Slippery slope');
+  arrow('question', claim, node('Should the payment be the same everywhere, whatever local living costs are?', 'question'));
   return m;
 }

@@ -23,9 +23,10 @@ const RULES_KEY = 'chess3d-rules';
 const DOCK_KEY = 'chess3d-level-map';
 const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing'];
 const TC_KEY = 'chess3d-tc';
-// View options (this device only): move paths and corner-facing hexagons.
+// View options (this device only): move paths, corner-facing hexagons, and
+// turning the camera to a piece when it's selected.
 const VIEW_KEY = 'chess3d-view';
-const view = { paths: true, hex: true };
+const view = { paths: true, hex: true, follow: true };
 try {
   Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || '{}'));
 } catch {}
@@ -235,10 +236,22 @@ const PIECE_MID = 0.47;
 const g2w = (d) => new THREE.Vector3(d[0], d[2], -d[1]);
 const ARROW = new THREE.ConeGeometry(0.08, 0.2, 12).rotateX(-Math.PI / 2);
 
-// The model's "up" for a facing: the frame axis square to it that points most
-// upward (then most toward the enemy), so pieces lean the way they look.
-// The same "up" the rules use (see frameUp), so pieces lean the way they look.
-const upFor = frameUp;
+// The board a piece stands on in Relative mode is the plane of its facing and
+// its sideways direction. Facing a corner there is no square sideways, so it
+// is the hexagon step that stays on the same level: the ordinary board tipped
+// up toward the corner.
+function boardSide(o, c) {
+  return isCornerFacing(o) ? [o[0], -o[1], 0] : pawnFrame(o, c).side;
+}
+// The model's "up": square to its board, pointing upward, so pieces stand on
+// their board and lean the way they look. Apart from corner facings this is
+// the same "up" the rules use (see frameUp).
+function upFor(o, c) {
+  if (!isCornerFacing(o)) return frameUp(o, c);
+  const f = o.slice(0, 3), s = boardSide(o, c);
+  const u = [s[1] * f[2] - s[2] * f[1], s[2] * f[0] - s[0] * f[2], s[0] * f[1] - s[1] * f[0]];
+  return u[2] < 0 ? u.map((v) => -v) : u;
+}
 
 function orientPiece(g, o, c) {
   const y = g2w(upFor(o, c)).normalize();
@@ -383,8 +396,8 @@ function addMarker(geo, mat, sq, clickable) {
 // Move paths: every straight move is a chain of cubes that touch (by a face,
 // an edge or just a corner). Draw each chain's cube outlines and a line through
 // their centres, so you can see nothing is skipped. Knights jump, so they have none.
-const PATH_CELL_MAT = new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 0.4, depthWrite: false });
-const PATH_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.8, depthWrite: false });
+const PATH_CELL_MAT = new THREE.LineBasicMaterial({ color: 0xff2bd6, transparent: true, opacity: 0.2, depthWrite: false });
+const PATH_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.4, depthWrite: false });
 const EDGE_PTS = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.9, 0.9, 0.9)).attributes.position.array;
 function cellEdges(cells) {
   const out = new Float32Array(cells.length * EDGE_PTS.length);
@@ -410,8 +423,8 @@ function addLines(positions, mat, sq) {
 // Knights jump, so instead of touching cubes they get: a solid line straight
 // to each landing square, and a dotted "L" that explains it: two squares along
 // one of the knight's own axes, then a turn at right angles for the last one.
-const KNIGHT_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.85, depthWrite: false });
-const KNIGHT_DASH_MAT = new THREE.LineDashedMaterial({ color: 0xffe94d, dashSize: 0.12, gapSize: 0.09, transparent: true, opacity: 0.95, depthWrite: false });
+const KNIGHT_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.4, depthWrite: false });
+const KNIGHT_DASH_MAT = new THREE.LineDashedMaterial({ color: 0xffe94d, dashSize: 0.12, gapSize: 0.09, transparent: true, opacity: 0.55, depthWrite: false });
 function addKnightPaths(from, piece) {
   const relative = app.game.rules.mode === 'relative' && piece.o && app.game.rules.knightFacing;
   const axes = relative ? frameDirs(piece.o) : ROOK_DIRS;
@@ -470,8 +483,8 @@ function addPaths(from, piece) {
 
 // Corner facings: the six directions square to the facing form a hexagon.
 // Highlight those six touching cubes and the hexagon through their centres.
-const HEX_CELL_MAT = new THREE.MeshBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.22, depthWrite: false });
-const HEX_LINE_MAT = new THREE.LineBasicMaterial({ color: 0xffe94d, transparent: true, opacity: 0.95, depthWrite: false });
+const HEX_CELL_MAT = new THREE.MeshBasicMaterial({ color: 0x3b6dff, transparent: true, opacity: 0.12, depthWrite: false });
+const HEX_LINE_MAT = new THREE.LineBasicMaterial({ color: 0xffe94d, transparent: true, opacity: 0.45, depthWrite: false });
 function addHexagon(from, o) {
   const f = g2w(o).normalize();
   const dirs = hexDirs(o);
@@ -556,13 +569,73 @@ function setFocus(f) {
 }
 
 // ---------------------------------------------------------------- camera
-function resetCamera() {
-  layoutLabels();
+function homeView() {
   const c = center();
   const s = app.viewColor === 'w' ? 1 : -1;
-  camera.position.set(9.5 * s, c.y + 5, 15.5 * s);
-  controls.target.copy(c);
+  return { pos: new THREE.Vector3(9.5 * s, c.y + 5, 15.5 * s), target: c };
+}
+function resetCamera() {
+  layoutLabels();
+  camAnim = null;
+  const h = homeView();
+  camera.position.copy(h.pos);
+  controls.target.copy(h.target);
   controls.update();
+}
+
+// Smooth camera flights (recenter, and turning to a selected piece). The
+// target slides straight over; the view direction swings round on a sphere so
+// the board never flips or lurches. Any drag, wheel or camera key stops it.
+let camAnim = null;
+const CAM_MS = 650;
+function flyTo(pos, target) {
+  const fromOff = camera.position.clone().sub(controls.target);
+  const toOff = pos.clone().sub(target);
+  camAnim = {
+    t0: performance.now(),
+    fromTarget: controls.target.clone(), toTarget: target.clone(),
+    fromDir: fromOff.clone().normalize(), toDir: toOff.clone().normalize(),
+    fromLen: fromOff.length(), toLen: toOff.length(),
+  };
+}
+function stepCamAnim(now) {
+  const a = camAnim;
+  if (!a) return;
+  const t = Math.min(1, (now - a.t0) / CAM_MS);
+  const e = 1 - Math.pow(1 - t, 3); // ease out
+  const q = new THREE.Quaternion().setFromUnitVectors(a.fromDir, a.toDir);
+  const dir = a.fromDir.clone().applyQuaternion(new THREE.Quaternion().slerp(q, e));
+  controls.target.lerpVectors(a.fromTarget, a.toTarget, e);
+  camera.position.copy(controls.target).addScaledVector(dir, THREE.MathUtils.lerp(a.fromLen, a.toLen, e));
+  if (t >= 1) camAnim = null;
+}
+function recenter() {
+  const h = homeView();
+  flyTo(h.pos, h.target);
+}
+
+// A view that frames a piece and every square it can reach. The camera looks
+// at the middle of them from the player's side, a little from above, and
+// backs off just far enough that all of them fit on screen.
+function focusOn(sq, targets) {
+  const pts = [worldPos(sq), ...targets.map((m) => worldPos(m.to))];
+  const box = new THREE.Box3().setFromPoints(pts);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  // Lean the aim toward the piece itself so it stays near the middle.
+  const target = sphere.center.clone().lerp(pts[0], 0.35);
+  const r = Math.max(2.5, sphere.radius + target.distanceTo(sphere.center)) + 0.8;
+  const vFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+  const hFov = Math.atan(Math.tan(vFov) * camera.aspect);
+  const dist = THREE.MathUtils.clamp(r / Math.sin(Math.min(vFov, hFov)), 9, controls.maxDistance);
+  // Keep the side you're looking from (no sudden swing to the far side), but
+  // settle at a comfortable height: about 30° above the piece.
+  const off = camera.position.clone().sub(controls.target);
+  off.y = 0;
+  if (off.lengthSq() < 1e-6) off.set(0, 0, app.viewColor === 'w' ? 1 : -1);
+  off.normalize();
+  const elev = THREE.MathUtils.degToRad(30);
+  const dir = off.multiplyScalar(Math.cos(elev)).setY(Math.sin(elev));
+  flyTo(target.clone().addScaledVector(dir, dist), target);
 }
 
 // Keyboard and button camera moves. Held keys move smoothly, a little each frame.
@@ -592,6 +665,7 @@ function orbitBy(angle) {
 }
 function stepCamera(dt) {
   if (!camKeys.size) return;
+  camAnim = null;
   const k = Math.min(dt, 0.05); // seconds, capped so a slow frame doesn't jump
   for (const a of camKeys) {
     if (a === 'left') panBy(-0.6 * k, 0);
@@ -622,11 +696,10 @@ function pick(ev) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const markers = markerGroup.children.filter((m) => m.visible && m.userData.clickable);
-  let hit = raycaster.intersectObjects(markers, false)[0];
-  if (hit) return hit.object.userData.sq;
+  const dot = pickTarget();
+  if (dot >= 0) return dot;
   const pieces = pieceGroup.children.filter((g) => !g.userData.dim);
-  hit = raycaster.intersectObjects(pieces, true)[0];
+  let hit = raycaster.intersectObjects(pieces, true)[0];
   if (hit) {
     let o = hit.object;
     while (o.userData.sq === undefined) o = o.parent;
@@ -636,6 +709,28 @@ function pick(ev) {
   hit = raycaster.intersectObjects(tiles, false)[0];
   if (hit) return hit.instanceId + N * N * hit.object.userData.level;
   return -1;
+}
+
+// Move dots, capture bubbles and pawn attack dots win over the cubes behind
+// them, whether or not you can play the move right now (blue preview dots too).
+// Small dots get a hit area a bit bigger than they look, so they are easy to
+// hit; if the pointer is near several, the one closest to the camera wins.
+const HIT_RADIUS = new Map([[DOT, 0.3], [ATTACK_DOT, 0.24], [BUBBLE, 0.46]]);
+const _p = new THREE.Vector3();
+function pickTarget() {
+  let best = -1, bestDist = Infinity;
+  for (const m of markerGroup.children) {
+    const r = HIT_RADIUS.get(m.geometry);
+    if (!m.visible || !r) continue;
+    _p.copy(m.position);
+    if (raycaster.ray.distanceSqToPoint(_p) > r * r) continue;
+    const along = _p.sub(raycaster.ray.origin).dot(raycaster.ray.direction);
+    if (along > 0 && along < bestDist) {
+      bestDist = along;
+      best = m.userData.sq;
+    }
+  }
+  return best;
 }
 
 let down = null;
@@ -699,6 +794,7 @@ function select(sq) {
   // Opponent pieces (or pieces you can't move right now) show their moves as a preview.
   app.targets = p ? legalMovesFrom({ ...app.game, turn: p.c, result: null }, sq) : [];
   refreshHighlights();
+  if (view.follow && p) focusOn(sq, app.targets);
 }
 
 function deselect() {
@@ -1004,9 +1100,9 @@ function setGame(game, anim = null) {
   maybeSaveLocal(game);
 }
 
-// Bright white lines for the board a piece stands on in Relative mode: the
+// Faint white lines for the board a piece stands on in Relative mode: the
 // plane of its facing and its left/right, through its square. Facing a flat
-// diagonal, that board is tilted through the cube.
+// diagonal or a corner, that board is tilted through the cube.
 // Thin 1 px lines, the same thickness as the original board lines.
 const pieceBoardMat = new LineMaterial({ color: THEME.bright, linewidth: 1, transparent: true, opacity: 0.95, depthWrite: false });
 const pieceBoard = new LineSegments2(new LineSegmentsGeometry(), pieceBoardMat);
@@ -1039,39 +1135,28 @@ function showPieceBoard(sq, o, color) {
   const c = coords(sq);
   const pts = [];
   const toWorld = (p) => [p[0] - 3.5, p[2], 3.5 - p[1]];
-  if (isCornerFacing(o)) {
-    // Facing a corner, its "board" is the flat sheet of cubes square to the
-    // facing: a triangle grid through the cube centres, with the hexagon of
-    // touching neighbours around the piece. Shown when "hexagons" is on.
-    if (!view.hex) {
-      pieceBoard.visible = false;
-      return;
-    }
-    const [a, b] = hexDirs(o).filter((d, i, all) => all.findIndex((e) => e.every((v, k) => v === -d[k])) > i);
-    const ab = a.map((v, k) => v + b[k]);
-    const third = hexDirs(o).some((d) => d.every((v, k) => v === ab[k])) ? ab : a.map((v, k) => v - b[k]);
-    for (const [step, along] of [[b, a], [a, b], [a, third]])
-      for (let j = -2 * N; j <= 2 * N; j++) {
-        const p = c.map((v, k) => v + j * step[k]);
-        const t = clipToCube(p, along);
-        if (!t) continue;
-        pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
-      }
-    pieceBoard.geometry.dispose();
-    pieceBoard.geometry = new LineSegmentsGeometry().setPositions(pts);
-    renderer.getSize(pieceBoardMat.resolution);
-    pieceBoard.visible = true;
-    lattice.material.opacity = 0.06;
-    return;
-  }
-  const { side } = pawnFrame(o, color);
-  for (const [step, along] of [[side, fwd], [fwd, side]])
-    for (let j = -2 * N; j <= 2 * N; j++) {
-      const p = c.map((v, k) => v + (j + 0.5) * step[k]);
+  // The board is the plane of the piece's facing and its sideways direction
+  // (see boardSide), through its square. Its lines are exactly where that
+  // plane cuts the walls between cubes, so every cell shown is the slice of a
+  // real cube (squares on the ordinary board, other shapes when it is tilted).
+  const side = boardSide(o, color);
+  const n = [side[1] * fwd[2] - side[2] * fwd[1], side[2] * fwd[0] - side[0] * fwd[2], side[0] * fwd[1] - side[1] * fwd[0]];
+  for (let a = 0; a < 3; a++) {
+    const u = n.map((v, k) => (k === a ? 0 : v)); // n without its part along axis a
+    const uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+    if (!uu) continue; // the board is parallel to these walls
+    const e = [0, 1, 2].map((k) => (k === a ? 1 : 0));
+    const along = [n[1] * e[2] - n[2] * e[1], n[2] * e[0] - n[0] * e[2], n[0] * e[1] - n[1] * e[0]];
+    for (let w = 0; w <= N; w++) {
+      const q = c.slice();
+      q[a] = w - 0.5; // the wall between cubes w-1 and w
+      const off = n[a] * (q[a] - c[a]);
+      const p = q.map((v, k) => v - (off * u[k]) / uu);
       const t = clipToCube(p, along);
       if (!t) continue;
       pts.push(...toWorld(p.map((v, k) => v + t[0] * along[k])), ...toWorld(p.map((v, k) => v + t[1] * along[k])));
     }
+  }
   pieceBoard.geometry.dispose();
   pieceBoard.geometry = new LineSegmentsGeometry().setPositions(pts);
   renderer.getSize(pieceBoardMat.resolution);
@@ -1084,11 +1169,11 @@ function refreshHighlights() {
   // board the side to move's king stands on (the starting diagonal), a bit dimmer.
   const sel = app.selected >= 0 ? viewBoard()[app.selected] : null;
   if (sel?.o) {
-    pieceBoardMat.opacity = 0.95;
+    pieceBoardMat.opacity = 0.35;
     showPieceBoard(app.selected, sel.o, sel.c);
   } else {
     const k = findKing(viewBoard(), app.game.turn);
-    pieceBoardMat.opacity = 0.5;
+    pieceBoardMat.opacity = 0.2;
     showPieceBoard(k, k >= 0 ? viewBoard()[k].o : null, app.game.turn);
   }
   rebuildMarkers();
@@ -1572,7 +1657,7 @@ function wireUI() {
   try {
     showDock(localStorage.getItem(DOCK_KEY) === 'open');
   } catch {}
-  for (const k of ['paths', 'hex']) {
+  for (const k of ['paths', 'hex', 'follow']) {
     const box = $(`view-${k}`);
     box.checked = !!view[k];
     box.onchange = () => {
@@ -1593,6 +1678,8 @@ function wireUI() {
   new ResizeObserver(syncDock).observe(dock);
 
   $('zoom-in').onclick = () => zoomBy(0.8);
+  $('recenter').onclick = recenter;
+  controls.addEventListener('start', () => (camAnim = null)); // a drag or wheel takes over
   $('zoom-out').onclick = () => zoomBy(1.25);
   window.addEventListener('keyup', (e) => camKeys.delete(CAM_KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key]));
   window.addEventListener('blur', () => camKeys.clear());
@@ -1608,6 +1695,7 @@ function wireUI() {
     if (e.key === ']') setFocus(app.focus < 0 ? 0 : Math.min(N - 1, app.focus + 1));
     else if (e.key === '[') setFocus(app.focus < 0 ? N - 1 : Math.max(0, app.focus - 1));
     else if (e.key === '0') setFocus(-1);
+    else if (e.key === 'r' || e.key === 'R' || e.key === 'Home') recenter();
     else if (e.key === 'Escape') app.preview ? app.preview.cancel() : deselect();
     else if (e.key === 'Enter' && app.preview) app.preview.confirm();
     else if (app.mode === 'review' && e.key === 'ArrowLeft') showReviewPly(app.review.ply - 1);
@@ -1620,6 +1708,7 @@ const ANIM_MS = 380;
 let lastFrame = 0;
 function animate(now) {
   stepCamera(lastFrame ? (now - lastFrame) / 1000 : 0);
+  stepCamAnim(now);
   lastFrame = now;
   for (const g of pieceGroup.children) {
     const a = g.userData.anim;
