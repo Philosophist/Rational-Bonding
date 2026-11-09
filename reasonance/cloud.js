@@ -7,7 +7,7 @@
 // posted: then the map uses that post), and ratings of posted items are saved
 // with their dated history, private unless shared.
 import * as auth from '../accounts/auth.js';
-import { isNode, isEdge, postOrder } from './model.js';
+import { isNode, isEdge, postOrder, publicCopy, EDGE_TYPES } from './model.js';
 
 export { auth };
 const db = () => auth.client();
@@ -48,6 +48,60 @@ export async function saveMap(map) {
 }
 export async function deleteMap(id) {
   check(await db().from('rs_maps').delete().eq('owner', userId()).eq('id', id));
+}
+
+// ---------------------------------------------------------------- shared maps, profiles, follows
+// A shared map's public copy: posts, arrows and layout, none of your views.
+export async function publishMap(map) {
+  const data = publicCopy(map);
+  check(await db().from('rs_public_maps').upsert({ owner: userId(), id: map.id, title: (map.title || 'Untitled map').slice(0, 200), data }, { onConflict: 'owner,id' }));
+}
+export async function unpublishMap(id) {
+  check(await db().from('rs_public_maps').delete().eq('owner', userId()).eq('id', id));
+}
+export async function publicMap(owner, id) {
+  return check(await db().from('rs_public_maps').select('owner, id, title, data, updated_at').eq('owner', owner).eq('id', id).maybeSingle());
+}
+export async function publicMaps(owner) {
+  return check(await db().from('rs_public_maps').select('owner, id, title, updated_at').eq('owner', owner).order('updated_at', { ascending: false }).limit(50));
+}
+export async function profileByName(name) {
+  return check(await db().from('profiles').select('id, username').ilike('username', String(name).replace(/[%_\\]/g, '\\$&')).maybeSingle());
+}
+export async function following() {
+  if (!signedIn()) return [];
+  return check(await db().from('follows').select('followee').eq('follower', userId())).map((r) => r.followee);
+}
+export async function followerCount(id) {
+  const { count } = await db().from('follows').select('follower', { count: 'exact', head: true }).eq('followee', id);
+  return count ?? 0;
+}
+export async function follow(id) {
+  check(await db().from('follows').insert({ follower: userId(), followee: id }));
+}
+export async function unfollow(id) {
+  check(await db().from('follows').delete().eq('follower', userId()).eq('followee', id));
+}
+// Views someone shared, newest first, with the posts they're on.
+export async function sharedViews(users, limit = 30) {
+  if (!users.length) return [];
+  const views = check(await db().from('rs_ratings').select('user_id, post_id, stance, confidence, relevance, other_text, updated_at')
+    .eq('public', true).in('user_id', users).order('updated_at', { ascending: false }).limit(limit));
+  const pids = [...new Set(views.map((v) => v.post_id))];
+  const posts = pids.length ? check(await db().from('rs_posts').select(COLS).in('id', pids)) : [];
+  const byId = new Map(posts.map((p) => [p.id, p]));
+  // An inference reads as "'A' is supported by 'B'".
+  const ends = [...new Set(posts.filter((p) => p.kind === 'edge').flatMap((p) => [p.from_post, p.to_post]))].filter((id) => !byId.has(id));
+  if (ends.length) for (const p of check(await db().from('rs_posts').select(COLS).in('id', ends))) byId.set(p.id, p);
+  const words = (p) => p?.type === 'fallacy' ? `${p.fallacy} fallacy` : p?.text ?? '…';
+  for (const p of posts) if (p.kind === 'edge') p.label = `'${words(byId.get(p.from_post))}' ${EDGE_TYPES[p.type]?.phrase ?? p.type} '${words(byId.get(p.to_post))}'`;
+  return views.filter((v) => byId.has(v.post_id)).map((v) => ({ ...v, other: v.other_text ?? null, post: byId.get(v.post_id) }));
+}
+// Maps these people shared, newest first.
+export async function sharedMaps(users, limit = 20) {
+  if (!users.length) return [];
+  return check(await db().from('rs_public_maps').select('owner, id, title, updated_at').in('owner', users)
+    .order('updated_at', { ascending: false }).limit(limit));
 }
 
 // ---------------------------------------------------------------- finding what's already posted

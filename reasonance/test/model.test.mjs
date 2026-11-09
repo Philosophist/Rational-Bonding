@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
-  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder,
+  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder, publicCopy,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -255,4 +255,26 @@ test("I don't care is a Neither view that gives one star by default", async () =
   rate(m, a.id, { relevance: 4 });
   rate(m, a.id, { stance: 'dontcare' });
   assert.equal(m.items[a.id].rating.relevance, 4);
+});
+
+test('a shared map leaves out your views, their history and anonymous links', () => {
+  const m = createMap('Mine');
+  const a = addNode(m, { text: 'A God exists' });
+  const b = addNode(m, { text: 'Life exists' });
+  const e = addEdge(m, 'support', a.id, b.id);
+  rate(m, a.id, { stance: 'agree', confidence: 90 });
+  rate(m, e.id, { stance: 'other', other: 'secret words' });
+  m.items[a.id].share = true;
+  m.items[b.id].anonymous = true;
+  m.posts = { [a.id]: '11111111-1111-1111-1111-111111111111', [b.id]: '22222222-2222-2222-2222-222222222222' };
+  m.public = true;
+  const pub = publicCopy(m);
+  const text = JSON.stringify(pub);
+  assert.ok(!text.includes('rating') && !text.includes('secret') && !text.includes('history') && !text.includes('share'));
+  assert.deepEqual(Object.keys(pub.posts), [a.id]);
+  assert.equal(pub.items[e.id].from, a.id);
+  // It reads back as a normal map, and your own copy remembers it's shared.
+  assert.equal(Object.keys(parseMap(text).items).length, 3);
+  assert.equal(parseMap(serialize(m), Date.now(), { keepPosts: true }).public, true);
+  assert.equal(parseMap(serialize(m)).public, undefined);
 });

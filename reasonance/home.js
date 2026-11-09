@@ -5,6 +5,7 @@
 import * as cloud from './cloud.js';
 import { STANCES, EDGE_TYPES, RELEVANCE, formatConfidence } from './model.js';
 import { stanceButtons, oddsLine } from './stances.js';
+import { nameLink, viewPhrase, postWords, ago } from './profile.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 const NODE_COLORS = {
@@ -13,8 +14,10 @@ const NODE_COLORS = {
 const EDGE_COLORS = { support: 0x2fe3e6, contention: 0xe04dff, example: 0xb026ff };
 const $ = (id) => document.getElementById(id);
 
-let deps = null; // { h, toast, openInMap, bringEdge, rated }
-let feedRows = [], mine = {}, stats = {}, about = {};
+let deps = null; // { h, toast, openInMap, bringEdge, rated, openSharedMap }
+// The home feed: one list, newest first, of posted statements plus what the
+// people you follow shared (maps they updated, views they gave).
+let feedRows = [], feedItems = [], mine = {}, stats = {}, about = {};
 let sea = null;
 
 export function initHome(d) {
@@ -50,20 +53,33 @@ export function enterSeaMap() {
   $('home').hidden = false;
   startSea();
 }
-// Opens a post in your map over the sea.
-function openPost(pid) {
+// Opens a post in your map over the sea (an inference brings both its ends).
+function openPost(pid, edge = false) {
   glow(pid);
   enterSeaMap();
-  deps.openInMap(pid);
+  if (edge) deps.bringEdge(pid); else deps.openInMap(pid);
 }
+export const openPostRow = (row) => openPost(row.id, row.kind === 'edge');
 
 // ---------------------------------------------------------------- feed
 async function loadFeed(q = '') {
   const feed = $('feed');
   feed.replaceChildren(deps.h('p', { class: 'muted' }, 'Loading…'));
   try {
-    feedRows = q.trim() ? await cloud.search(q) : await cloud.recent(40);
-    const ids = feedRows.map((r) => r.id);
+    let maps = [], views = [];
+    if (q.trim()) feedRows = await cloud.search(q);
+    else {
+      const fl = await cloud.following().catch(() => []);
+      [feedRows, maps, views] = await Promise.all([cloud.recent(40), cloud.sharedMaps(fl).catch(() => []), cloud.sharedViews(fl).catch(() => [])]);
+    }
+    const names = await cloud.usernames([...maps.map((m) => m.owner), ...views.map((v) => v.user_id)]);
+    feedItems = [
+      ...feedRows.map((r) => ({ kind: 'post', row: r, at: r.created_at })),
+      ...maps.map((m) => ({ kind: 'map', m, name: names[m.owner], at: m.updated_at })),
+      ...views.map((v) => ({ kind: 'view', v, row: v.post, name: names[v.user_id], at: v.updated_at })),
+    ];
+    if (!q.trim()) feedItems.sort((a, b) => new Date(b.at) - new Date(a.at));
+    const ids = [...new Set(feedItems.filter((i) => i.row).map((i) => i.row.id))];
     [mine, stats, about] = await Promise.all([cloud.myRatings(ids), cloud.stats(ids), cloud.about(ids)]);
   } catch (err) {
     feed.replaceChildren(deps.h('p', { class: 'muted' }, `Couldn't load posts: ${err.message}`));
@@ -74,28 +90,42 @@ async function loadFeed(q = '') {
 function renderFeed() {
   const { h } = deps;
   const feed = $('feed');
-  if (!feedRows.length) {
+  if (!feedItems.length) {
     feed.replaceChildren(h('p', { class: 'muted' }, 'Nothing here yet. Open your maps and post the first statement.'));
     return;
   }
-  feed.replaceChildren(...feedRows.map(card));
+  feed.replaceChildren(...feedItems.map(feedCard));
+}
+function feedCard(it) {
+  const { h } = deps;
+  if (it.kind === 'post') return card(it.row);
+  if (it.kind === 'view') {
+    return card(it.row, h('div', { class: 'lead' }, nameLink(it.name), ` ${viewPhrase(it.v)} · ${ago(it.at)}`));
+  }
+  const open = () => deps.openSharedMap(it.m.owner, it.m.id);
+  return h('article', { class: 'post-card map-card', tabindex: 0, title: 'Open a copy in your maps',
+    onclick: (ev) => { if (!ev.target.closest('button')) open(); },
+    onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) open(); } },
+  h('div', { class: 'lead' }, nameLink(it.name), ` updated a shared map · ${ago(it.at)}`),
+  h('p', { class: 'text map-title' }, it.m.title || 'Untitled map'),
+  h('div', { class: 'meta' }, 'Click to open your own copy of it.'));
 }
 const postText = (r) => r.type === 'fallacy' ? `A ${r.fallacy} fallacy is when an argument ${r.text}` : r.text;
 function countsLine(st) {
   return st ? Object.entries(STANCES).filter(([k]) => st[k]).map(([k, label]) => `${st[k]} ${label.toLowerCase()}`) : [];
 }
-function card(r) {
+function card(r, lead = null) {
   const { h } = deps;
   const st = stats[r.id], ab = about[r.id], my = mine[r.id];
   const counts = countsLine(st);
-  const by = ab?.by ? `@${ab.by}` : 'anonymous';
-  // Clicking the post (anywhere but its buttons) opens it in the floating sandbox.
+  // Clicking the post (anywhere but its buttons) opens it in your map over the sea.
   return h('article', { class: 'post-card', 'data-id': r.id, tabindex: 0, title: 'Open it in your map',
     onmouseenter: () => glow(r.id), onfocusin: () => glow(r.id),
-    onclick: (ev) => { if (!ev.target.closest('button, select, input')) openPost(r.id); },
-    onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openPost(r.id); } },
-  h('p', { class: `text ${r.type}` }, postText(r)),
-  h('div', { class: 'meta' }, [by, counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
+    onclick: (ev) => { if (!ev.target.closest('button, select, input')) openPostRow(r); },
+    onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openPostRow(r); } },
+  lead,
+  h('p', { class: `text ${r.type}` }, postWords(r)),
+  h('div', { class: 'meta' }, ab?.by ? nameLink(ab.by) : 'anonymous', ` · ${counts.length ? counts.join(' · ') : 'no views yet'}`),
   stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(r.id, { stance: k, other }), my?.other),
   my?.stance ? h('div', { class: 'muted' }, my.public ? 'Your view is shared.' : 'Your view is private.') : null);
 }
@@ -113,9 +143,7 @@ async function rateFromFeed(pid, change) {
     mine[pid] = { ...my, ...next, public: share };
     stats = { ...stats, ...(await cloud.stats([pid])) };
     deps.rated(pid, next);
-    const el = document.querySelector(`.post-card[data-id="${pid}"]`);
-    const row = feedRows.find((r) => r.id === pid);
-    if (el && row) el.replaceWith(card(row));
+    if (feedItems.some((i) => i.row?.id === pid)) renderFeed();
     if (floatState?.pid === pid) drawFloat();
   } catch (err) { deps.toast(`Your view wasn't saved: ${err.message}`); }
 }

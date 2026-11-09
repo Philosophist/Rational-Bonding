@@ -437,8 +437,25 @@ export function parseMap(text, now = Date.now(), { keepPosts = false } = {}) {
     const posts = {};
     for (const [id, pid] of Object.entries(raw.posts)) if (map.items[id] && UUID.test(String(pid))) posts[id] = String(pid).toLowerCase();
     if (Object.keys(posts).length) map.posts = posts;
+    if (raw.public === true) map.public = true;
   }
   return map;
+}
+
+// The copy of a map that anyone can see once its owner shares it: the posts,
+// arrows and layout, but none of the owner's views or their history (views
+// someone chose to share are public on their posts already) and none of their
+// posting choices. Posts you made anonymously aren't linked to their public
+// post, so sharing the map doesn't give away that you wrote them.
+export function publicCopy(map) {
+  const items = {};
+  for (const [id, it] of Object.entries(map.items)) {
+    const { rating, share, anonymous, ...rest } = it;
+    items[id] = JSON.parse(JSON.stringify(rest));
+  }
+  const posts = {};
+  for (const [id, pid] of Object.entries(map.posts ?? {})) if (items[id] && !map.items[id].anonymous) posts[id] = pid;
+  return { app: 'reasonance', version: map.version, id: map.id, title: map.title, created: map.created, updated: map.updated, items, posts };
 }
 // Posting choices: post without a name, and share (or not) your view of it.
 function keepChoices(to, from) {

@@ -10,7 +10,8 @@ import {
 import { FALLACIES } from './fallacies.js';
 import * as cloud from './cloud.js';
 import { openSignIn, openUsername, readLinkError } from '../accounts/signin.js';
-import { initHome, openHome, closeHome, seaClick } from './home.js';
+import { initHome, openHome, closeHome, seaClick, enterSeaMap, openPostRow } from './home.js';
+import { initProfile, openProfile } from './profile.js';
 import { stanceButtons, oddsLine } from './stances.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -950,6 +951,8 @@ async function pushCloud() {
     const problems = await cloud.syncPosted(m);
     if (problems.length) toast(problems[0]);
     await cloud.saveMap(m);
+    // A shared map's public copy follows along (without your views).
+    if (m.public) await cloud.publishMap(m);
   } catch (err) {
     if (Date.now() - cloudWarned > 60000) { cloudWarned = Date.now(); toast(`Not saved to your account yet (${err.message}). It's kept in this browser and will try again.`); }
     cloudSave();
@@ -1163,6 +1166,8 @@ function arrange() {
     k.sort((a, b) => key(a) - key(b));
     void p;
   }
+  const roots = nodes.filter((n) => !parent.has(n));
+  if (arrangeStyle() === 'radial') { radial(roots, kids); changed(); fit(); return; }
   let cursor = 0;
   const GAP = 36, COL = 540;
   const place = (n, depth) => {
@@ -1178,10 +1183,46 @@ function arrange() {
     n.y = Math.max(start + up, (k[0].y + k.at(-1).y) / 2);
     cursor = Math.max(cursor, n.y + down + GAP);
   };
-  for (const r of nodes.filter((n) => !parent.has(n))) { place(r, 0); cursor += GAP * 2; }
+  for (const r of roots) { place(r, 0); cursor += GAP * 2; }
   for (const n of nodes) { n.x = Math.round(n.x); n.y = Math.round(n.y); }
   changed();
   fit();
+}
+
+// The default layout: the main claim (the one with the most hanging off it)
+// in the centre, its reasons around it, theirs further out, each branch
+// getting a slice of the circle in proportion to its size. Separate
+// arguments sit side by side.
+const ARRANGE_KEY = 'ourgument.arrange';
+function arrangeStyle() { try { return localStorage.getItem(ARRANGE_KEY) === 'tree' ? 'tree' : 'radial'; } catch { return 'radial'; } }
+function radial(roots, kids) {
+  const leaves = new Map();
+  const count = (n) => { const k = kids.get(n); const v = k.length ? k.reduce((s, c) => s + count(c), 0) : 1; leaves.set(n, v); return v; };
+  for (const r of roots) count(r);
+  roots.sort((a, b) => leaves.get(b) - leaves.get(a));
+  const RING = 560, SPACE = 480;
+  let left = 0;
+  roots.forEach((root, i) => {
+    // How far out each ring sits: far enough apart, and roomy enough for what's on it.
+    const perDepth = [];
+    const walk = (n, d) => { perDepth[d] = (perDepth[d] ?? 0) + 1; for (const c of kids.get(n)) walk(c, d + 1); };
+    walk(root, 0);
+    const radius = [0];
+    for (let d = 1; d < perDepth.length; d++) radius[d] = Math.max(radius[d - 1] + RING, perDepth[d] * SPACE / (2 * Math.PI));
+    const outer = radius.at(-1) + NODE_W / 2;
+    const cx = i === 0 ? 0 : left + outer, cy = 0;
+    const put = (n, d, a0, a1) => {
+      const a = (a0 + a1) / 2;
+      n.x = cx + Math.cos(a) * radius[d] * 1.6; n.y = cy + Math.sin(a) * radius[d] * 0.8;
+      let at = a0;
+      for (const c of kids.get(n)) { const span = (a1 - a0) * leaves.get(c) / leaves.get(n); put(c, d + 1, at, at + span); at += span; }
+    };
+    // The first reason starts at the top and they go round clockwise.
+    put(root, 0, -Math.PI / 2, Math.PI * 1.5);
+    root.x = cx; root.y = cy;
+    left = (i === 0 ? outer : cx + outer) + 120;
+  });
+  for (const n of roots.flatMap(function all(n) { return [n, ...kids.get(n).flatMap(all)]; })) { n.x = Math.round(n.x); n.y = Math.round(n.y); }
 }
 
 function fit() {
@@ -1356,6 +1397,54 @@ function refreshMapList() {
       .map((m) => h('option', { value: m.id, selected: m.id === map.id }, m.title || 'Untitled map'))),
     h('optgroup', { label: 'Load an example here' }, EXAMPLES.map((ex) => h('option', { value: `example:${ex.key}` }, ex.title))));
   $('map-title').value = map.title;
+  const share = $('file-menu').querySelector('option[value="share-map"]');
+  if (share) share.textContent = map.public ? 'Stop sharing this map' : 'Share this map publicly';
+}
+// Sharing a map: anyone can see its posts, arrows and layout, on your profile
+// and in your followers' feeds. Your views on it stay as private as before.
+const mapLink = (owner, id) => `${location.origin}${location.pathname}?map=${owner}/${id}`;
+async function toggleShareMap() {
+  const m = map;
+  try {
+    if (m.public) {
+      await cloud.unpublishMap(m.id);
+      delete m.public; save(); refreshMapList();
+      toast('This map is private again.');
+    } else {
+      m.public = true; save(); refreshMapList();
+      await cloud.publishMap(m);
+      const link = mapLink(cloud.userId(), m.id);
+      try { await navigator.clipboard.writeText(link); toast('Shared. The link is copied. Everything on this map is public now, but your views stay private unless you share them.'); }
+      catch { toast(`Shared: ${link}`); }
+    }
+  } catch (err) { toast(`Couldn't change sharing: ${err.message}`); }
+}
+// Opens someone's shared map as your own copy, to explore and build on.
+async function openSharedMap(owner, id) {
+  try {
+    if (owner === cloud.userId() && store.maps[id]) { openMap(id); enterSeaMap(); return; }
+    const row = await cloud.publicMap(owner, id);
+    if (!row) { toast('That map is no longer shared.'); return; }
+    const names = await cloud.usernames([owner]);
+    const p = parseMap(JSON.stringify(row.data), Date.now(), { keepPosts: true });
+    delete p.public;
+    p.title = `${row.title || 'Untitled map'}${names[owner] ? ` (from @${names[owner]})` : ''}`.slice(0, 200);
+    store.maps[p.id] = p;
+    openMap(p.id);
+    if (cloud.signedIn()) enterSeaMap();
+    toast('This is your own copy. Change it freely; the original stays as it is.');
+  } catch (err) { toast(`Couldn't open that map: ${err.message}`); }
+}
+// Links: ?map=owner/id opens a shared map, ?u=name opens a profile.
+async function openLinks() {
+  const q = new URLSearchParams(location.search);
+  const m = q.get('map'), u = q.get('u');
+  if (!m && !u) return;
+  window.history.replaceState(null, '', location.pathname + location.hash);
+  $('welcome').hidden = true;
+  const [owner, id] = (m ?? '').split('/');
+  if (m && /^[0-9a-f-]{36}$/i.test(owner) && /^[A-Za-z0-9]{1,40}$/.test(id ?? '')) await openSharedMap(owner, id);
+  if (u) openProfile(u.replace(/^@/, '').slice(0, 40));
 }
 function openMap(id) {
   flushSave();
@@ -1409,6 +1498,11 @@ $('add-other').addEventListener('change', (ev) => {
   selected = n.id; changed();
 });
 $('arrange').addEventListener('click', arrange);
+$('arrange-style').value = arrangeStyle();
+$('arrange-style').addEventListener('change', (ev) => {
+  try { localStorage.setItem(ARRANGE_KEY, ev.target.value); } catch { /* fine */ }
+  arrange();
+});
 $('fit').addEventListener('click', fit);
 function togglePresent() {
   const on = document.body.classList.toggle('present');
@@ -1433,6 +1527,9 @@ $('file-menu').addEventListener('change', async (ev) => {
     const drafts = Object.keys(map.items).filter((id) => !map.posts?.[id]);
     if (!drafts.length) { toast('Everything on this map is already posted.'); return; }
     postNow(drafts);
+  } else if (what === 'share-map') {
+    if (!cloud.signedIn()) { signIn(); return; }
+    toggleShareMap();
   } else if (what === 'print') {
     selected = null; second = null; render(); fit();
     setTimeout(() => window.print(), 100);
@@ -1446,6 +1543,7 @@ $('file-menu').addEventListener('change', async (ev) => {
     const gone = map.id;
     delete store.maps[gone];
     if (store.owner) cloud.deleteMap(gone).catch((err) => toast(`Couldn't remove it from your account: ${err.message}`));
+    if (store.owner && map.public) cloud.unpublishMap(gone).catch(() => {});
     openMap(Object.values(store.maps).sort((a, b) => b.updated - a.updated)[0].id);
     toast('Map deleted.');
   }
@@ -1478,6 +1576,7 @@ $('sign-in').addEventListener('click', signIn);
 $('account-menu').addEventListener('change', (ev) => {
   const what = ev.target.value; ev.target.value = '';
   if (what === 'username') openUsername();
+  else if (what === 'profile') openProfile(cloud.auth.state.profile.username);
   else if (what === 'share') {
     cloud.saveSettings({ share_views: !cloud.settings.share_views })
       .then(() => { renderAccount(); renderPanel(); toast(cloud.settings.share_views ? 'New views you give will be public. You can still keep any one private.' : 'New views you give will be private. You can still share any one.'); })
@@ -1489,14 +1588,16 @@ addEventListener('pagehide', () => { if (store.owner) pushCloud(); });
 resetHistory();
 refreshMapList();
 fit();
-startAccounts();
 if (!welcomed()) showWelcome();
+startAccounts().finally(openLinks);
 // The signed-in home: the sea of orbs and the feed.
 initHome({
   h, toast,
   openInMap: (pid) => pullPost(pid),
   bringEdge: (pid) => bringEdge(pid),
+  openSharedMap: (owner, id) => openSharedMap(owner, id),
   // A view given in the feed also shows on that post in the open map.
   rated: (pid, r) => { const id = itemFor(pid); if (id) { rate(map, id, r); changed(); } },
 });
 $('home-btn').addEventListener('click', () => { flushSave(); openHome(); });
+initProfile({ h, toast, signIn, openSharedMap: (owner, id) => openSharedMap(owner, id), openPost: (row) => openPostRow(row) });
