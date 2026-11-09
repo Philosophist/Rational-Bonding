@@ -181,6 +181,38 @@ export function lambdaRGB(nm) {
   return [r, g, b];
 }
 export const band = nm => (nm < 380 ? 'UV' : nm > 750 ? 'IR' : 'visible');
+
+// What kind of radiation a wavelength is, in everyday names. Band edges follow the usual
+// conventions (ISO 21348 for ultraviolet; CIE for UV-A/B/C; common colour names for visible).
+const CLASSES = [
+  [0.01, 'gamma ray', 'gamma', 'from atomic nuclei; far beyond anything hydrogen\'s electron can make'],
+  [10, 'X-ray', 'X-ray', 'passes through soft tissue'],
+  [100, 'extreme ultraviolet', 'EUV', 'stopped by a few centimetres of air; astronomers see it from space'],
+  [200, 'far ultraviolet', 'far UV', 'absorbed by air, so it is also called vacuum UV'],
+  [280, 'UV-C', 'UV-C', 'germicidal; the ozone layer blocks it'],
+  [315, 'UV-B', 'UV-B', 'causes sunburn'],
+  [380, 'UV-A', 'UV-A', 'black light'],
+  [450, 'violet light', 'violet', 'visible'],
+  [485, 'blue light', 'blue', 'visible'],
+  [500, 'cyan light', 'cyan', 'visible'],
+  [565, 'green light', 'green', 'visible'],
+  [590, 'yellow light', 'yellow', 'visible'],
+  [625, 'orange light', 'orange', 'visible'],
+  [750, 'red light', 'red', 'visible'],
+  [1400, 'near infrared', 'near IR', 'like a TV remote or night-vision camera'],
+  [3000, 'short-wave infrared', 'SWIR', 'felt as warmth; used in fibre-optic links'],
+  [8000, 'mid infrared', 'mid IR', 'heat-seeking sensors see it'],
+  [15000, 'long-wave infrared', 'LWIR', 'thermal cameras: the glow of warm bodies'],
+  [1e6, 'far infrared', 'far IR', 'between heat and microwaves'],
+  [1e9, 'microwave', 'microwave', 'like a microwave oven or Wi-Fi'],
+  [Infinity, 'radio wave', 'radio', 'like radio broadcasts'],
+];
+export function classify(nm) {
+  for (const [max, name, short, note] of CLASSES) if (nm < max) return { name, short, note, visible: note === 'visible' };
+}
+// Hydrogen's series are named after the step the electron lands on.
+const SERIES = ['', 'Lyman', 'Balmer', 'Paschen', 'Brackett', 'Pfund', 'Humphreys'];
+export const seriesName = nLow => SERIES[nLow] || `n=${nLow}`;
 export function lineName(nm) {
   const named = [[121.57, 'Lyman-α'], [102.57, 'Lyman-β'], [97.25, 'Lyman-γ'], [656.47, 'H-α'], [486.27, 'H-β'], [1875.6, 'Paschen-α']];
   for (const [l, name] of named) if (Math.abs(nm - l) / l < 2e-3) return name;

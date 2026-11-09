@@ -40,8 +40,23 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   about 1 capture in 6, fewer than in a real nebula.
 - **2s** decays by two photons sharing 10.2 eV after about 0.12 s, shown as a labelled time skip.
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
-- **Time:** 1 screen second is 40 fs while particles fly, and 50 ns during a cascade (free
-  particles wait meanwhile). Light is drawn slowed down so you can see it leave.
+- **Time:** 1 screen second is 40 fs while particles fly, and 25 ns during a cascade (free
+  particles wait meanwhile). Light is drawn slowed down so you can see it leave. The player can
+  pick a game speed (×0.1 to ×2), and the clock slows automatically (down to ×0.03) while an
+  electron is within 4 nm of a proton, so it never moves faster than about 2.5 nm per screen
+  second there. Capture odds are per pass, so slow motion doesn't change them.
+- **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
+  then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
+  jump; the spiral only shows which electron went where.
+- **Orbital wobble:** clouds shimmer like soap bubbles (quadrupole and octupole ripples), more
+  while settling in or changing shape. This is artistic: a single stationary state doesn't change
+  shape. The real change, two shapes mixing during a step down, is drawn too.
+- **Radiation names:** every photon is named by kind (`classify` in `physics.js`: gamma, X-ray,
+  extreme / far UV, UV-C / B / A, the visible colours, near / short-wave / mid / long-wave / far IR,
+  microwave, radio) and by hydrogen series (Lyman, Balmer, Paschen, Brackett; "continuum" for the
+  capture photon).
+- **Ship:** obeys Newton's first law. Keys fire thrusters (5 nm/s², 15 with Shift), the ship
+  coasts when you let go, X brakes, and the system's wall bounces it back softly.
 - **Free electrons:** missed electrons stay in the sphere. There is no limit on firing; above 12
   free electrons the oldest is removed, to keep the simulation smooth.
 
@@ -51,9 +66,10 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   each photon's electric and magnetic waves at 90° to each other. The magnetic field is drawn 400×
   brighter than its true share (it is about v/c ≈ 1/1000 of the electric field at these speeds).
 - **Glow view** (V): the calmer view, glows only.
-- **Window:** drag to look, click or Space to fire, W A S D to fly, R / F up and down, [ ] or the
-  wheel for electron speed.
-- **VR:** 1 metre in the headset is drawn as 1 nm. Left stick flies where you look; right stick turns
+- **Window:** drag to look, click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
+  [ ] or the wheel for electron speed, , and . for game speed.
+- **VR:** 1 metre in the headset is drawn as 1 nm. Left stick thrusts where you look (the ship keeps drifting;
+  squeeze the left grip to brake; Y changes game speed); right stick turns
   and rises or sinks; trigger fires along the right controller; A / B change electron speed; X
   switches Field / Glow view. The tutor text and odds are on a panel above the left hand.
   Tested only with a simulated headset so far.

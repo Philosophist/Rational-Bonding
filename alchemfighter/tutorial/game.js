@@ -24,8 +24,18 @@ const fmtNm = r => (r < 0.1 ? `${(r * 1000).toFixed(0)} pm` : `${r.toFixed(2)} n
 // Time: while particles fly, one screen second is FS_PER_S femtoseconds. During a cascade the
 // clock switches to nanoseconds and the free particles wait (shown as "paused" in the HUD).
 const FS_PER_S = 40;
-const NS_PER_S = 50;
-const LIGHT_SPEED = 28;          // nm per screen second: light is drawn slowed down so you can see it
+const NS_PER_S = 25;
+const LIGHT_SPEED = 20;          // nm per screen second: light is drawn slowed down so you can see it
+// Game speed the player picks (, and . keys), and automatic slow motion when an electron dives in
+// close to a proton: there it speeds up a lot, so the clock slows until it moves at most
+// SLOW_TARGET nm per screen second. Odds per pass don't depend on the clock.
+const SPEEDS = [0.1, 0.25, 0.5, 1, 2];
+const SLOW_NEAR = 4, SLOW_TARGET = 2.5, SLOW_MIN = 0.03;
+// After a capture the electron's glow is drawn melting into its new cloud over this many seconds.
+// (In nature the change is a sudden quantum jump; this lets you see which electron went where.)
+const FALL_DUR = 2.2;
+// The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
+const THRUST = 5, THRUST_FAST = 15, BRAKE = 10;   // nm/s²
 const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
 const PROTON_SMEAR = 0.01;       // nm, keeps the glow's centre finite (log scale, capped)
 // Missed electrons stay in the sphere (matter can't leave). Fire as many as you like; past this many
@@ -35,14 +45,14 @@ const MAX_FREE = 12;
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-const cam = { p: [0, 1.5, 24], yaw: Math.PI, pitch: -0.06, fov: 62 * Math.PI / 180 };
+const cam = { p: [0, 1.5, 24], v: [0, 0, 0], yaw: Math.PI, pitch: -0.06, fov: 62 * Math.PI / 180 };
 let S;
 let nextId = 1;
 function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], photons: [], flashes: [], spectrum: [],
-    shots: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null,
+    shots: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false }, ended: false, said: '',
   };
@@ -67,7 +77,7 @@ const freeElectrons = () => S.ps.filter(p => p.kind === 'electron' && p.active);
 const BEATS = {
   1: {
     title: 'Meet the proton',
-    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field: the lines show it. If the lines feel busy, press V for the calmer Glow view.',
+    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field: the lines show it. If the lines feel busy, press V for the calmer Glow view. Your ship drifts like anything in space: the keys fire thrusters, and X brakes.',
   },
   2: {
     title: 'First capture',
@@ -81,7 +91,7 @@ function say(text) {
 function goals() {
   if (S.beat === 1) {
     return [
-      ['Fly around the proton (W A S D)', S.b1.moved],
+      ['Fly around the proton (W A S D, X to brake)', S.b1.moved],
       ['Look at it from two sides', S.b1.maxAngle > 1.3],
       ['Try Glow view and back (V)', S.b1.toggled],
     ];
@@ -206,11 +216,17 @@ function capture(e, p, E) {
   p.q = 0;                                  // the pair is neutral now: no more Coulomb force
   const atom = { p, st, trans: null, fade: 0, beat: 0, wait: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
   S.atoms.push(atom);
-  emitPhoton(p.pos, lam);
-  S.flashes.push({ pos: [...p.pos], col: [1, 1, 1], t: 0, life: 1.0, size: 1.6 });
-  log(`Captured into ${P.stateName(st)}: one ${lam.toFixed(1)} nm photon (${P.band(lam)}) carries off ${(P.HC / lam).toFixed(2)} eV.`, 'hit');
+  // The photon leaves from where the electron is when it is caught.
+  emitPhoton(e.pos, lam);
+  S.flashes.push({ pos: [...e.pos], col: [1, 1, 1], t: 0, life: 1.2, size: 1.0 });
+  const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
+  let axis = v3.cross(off, rel); axis = v3.len(axis) > 1e-12 ? v3.norm(axis) : [0, 1, 0];
+  S.falling.push({ e, atom, off, axis, t: 0 });
+  S.lastPhoton = { lam, nLow: st.n, capture: true };
+  log(`Captured into ${P.stateName(st)}: one ${lam.toFixed(1)} nm photon carries off ${(P.HC / lam).toFixed(2)} eV. ${describe(lam, st.n, true, true)}.`, 'hit');
   if (st.n === 1) log('Straight to 1s! That happens: a single ultraviolet photon, shorter than 91.2 nm, takes all the energy at once.', 'hit');
   scheduleDecay(atom);
+  atom.wait += FALL_DUR;                    // let the electron settle in before the next step down
   S.cascade = { atom, start: S.time };
   S.autoCam = { atom, t: 0 };
   S.b2.captured = true;
@@ -222,13 +238,21 @@ function scheduleDecay(atom) {
   const d = P.pickDecay(atom.st);
   atom.pending = d;
   if (!d) return;
-  atom.wait = d.twoPhoton ? 3.0 : Math.min(6, Math.max(0.35, d.delayNs / NS_PER_S));
+  atom.wait = d.twoPhoton ? 3.0 : Math.min(6, Math.max(0.9, d.delayNs / NS_PER_S));
   if (d.twoPhoton) log('2s can\'t give off a single photon. Skipping ahead about 0.12 s…');
+}
+// "far ultraviolet (Lyman-α, Lyman series)": what kind of radiation a photon is.
+function describe(lam, nLow, capture, cap = false) {
+  const c = P.classify(lam), line = P.lineName(lam);
+  const series = nLow ? (capture ? `${P.seriesName(nLow)} continuum` : `${P.seriesName(nLow)} series`) : '';
+  const tag = [line, series].filter(Boolean).join(', ');
+  const name = cap ? c.name[0].toUpperCase() + c.name.slice(1) : c.name;
+  return `${name}${tag ? ` (${tag})` : ''}`;
 }
 function updateAtoms(dt) {
   for (const a of S.atoms) {
-    a.fade = Math.min(1, a.fade + dt / 0.6);
-    a.p.glow = Math.max(0, a.p.glow - dt / 1.2);   // the electron's field cancels the proton's outside the atom
+    a.fade = Math.min(1, a.fade + dt / FALL_DUR);
+    a.p.glow = Math.max(0, a.p.glow - dt / FALL_DUR);   // the electron's field cancels the proton's outside the atom
     a.beat += dt * 2 * Math.PI * 2.5;
     if (a.trans) {
       a.trans.t += dt;
@@ -246,10 +270,11 @@ function updateAtoms(dt) {
       a.p.vel = v3.sub(a.p.vel, v3.scale(dir, (P.HC / lam) / P.C / P.MP));
     }
     a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton });
-    const names = d.photons.map(l => `${l.toFixed(1)} nm${P.lineName(l) ? ` (${P.lineName(l)})` : ''}`).join(' + ');
+    const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
+    S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
     const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
     log(`${P.stateName(a.st)} → ${P.stateName(d.to)} after ${when}: ${names}`, d.photons.some(l => P.lineName(l) === 'H-α') ? 'red' : '');
-    a.trans = { from: a.st, to: d.to, t: 0, dur: 0.45 };
+    a.trans = { from: a.st, to: d.to, t: 0, dur: 0.9 };
   }
   if (S.cascade) {
     const a = S.cascade.atom;
@@ -264,7 +289,9 @@ function updateAtoms(dt) {
 function showDone() {
   const a = S.atoms[0];
   const photons = a.steps.flatMap(s => [].concat(s.lam));
-  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'}. The atom gave off ${photons.length} photon${photons.length === 1 ? '' : 's'} on the way down: ${photons.map(l => `${l.toFixed(1)} nm`).join(', ')}.`;
+  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'}. The atom gave off ${photons.length} photon${photons.length === 1 ? '' : 's'} on the way down: ${photons.map(l => `${l.toFixed(1)} nm (${P.classify(l).name}${P.lineName(l) ? `, ${P.lineName(l)}` : ''})`).join(', ')}.`;
+  const kinds = [...new Set(photons.map(l => P.classify(l)))].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
+  $('doneKinds').textContent = kinds.join('. ') + '.';
   $('doneBox').hidden = false;
 }
 
@@ -291,21 +318,40 @@ function renderPasses() {
     : '<div class="miss">No passes yet.</div>';
 }
 
-function step(dt) {
+// How slow the clock should run: slower while an electron is close to a proton and moving fast.
+function slowTarget() {
+  let k = 1;
+  for (const e of freeElectrons()) for (const p of bareProtons()) {
+    const d = v3.len(v3.sub(e.pos, p.pos));
+    if (d > SLOW_NEAR) continue;
+    const screen = v3.len(v3.sub(e.vel, p.vel)) * FS_PER_S * SPEEDS[S.speed];   // nm per screen second
+    const want = Math.max(SLOW_MIN, Math.min(1, SLOW_TARGET / Math.max(screen, 1e-9)));
+    const x = Math.min(1, (SLOW_NEAR - d) / 1.5);   // fades in over the outer 1.5 nm
+    k = Math.min(k, 1 + (want - 1) * x * x * (3 - 2 * x));
+  }
+  return k;
+}
+function step(dtReal) {
+  const dt = dtReal * SPEEDS[S.speed];
   S.time += dt;
-  S.cooldown = Math.max(0, S.cooldown - dt);
+  S.cooldown = Math.max(0, S.cooldown - dtReal);
   if (!S.cascade) {
-    const dtFs = dt * FS_PER_S;
+    // Ease into slow motion quickly and back out gently, so a fly-by reads as one smooth swoop.
+    const want = slowTarget(), rate = want < S.slow ? 10 : 1.5;
+    S.slow += (want - S.slow) * (1 - Math.exp(-dtReal * rate));
+    const dtFs = dt * FS_PER_S * S.slow;
     S.simFs += dtFs;
     const res = P.stepCharges(S.ps, dtFs, S.enc);
     for (const ev of res.events) { onPass(ev); if (S.cascade) break; }
     for (const e of freeElectrons()) {
       e.trailT -= dt;
-      if (e.trailT <= 0) { e.trailT = 0.04; e.trail.push([...e.pos]); if (e.trail.length > 90) e.trail.shift(); }
+      if (e.trailT <= 0) { e.trailT = 0.04 * Math.max(S.slow, 0.15); e.trail.push([...e.pos]); if (e.trail.length > 90) e.trail.shift(); }
     }
     for (const a of S.atoms) a.p.pos = v3.add(a.p.pos, v3.scale(a.p.vel, dtFs));
     S.ps = S.ps.filter(x => x.active);
   }
+  for (const f of S.falling) f.t += dt;
+  S.falling = S.falling.filter(f => f.t < FALL_DUR);
   updateAtoms(dt);
   for (const ph of S.photons) {
     ph.age += dt;
@@ -356,6 +402,8 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyV') toggleField();
   if (e.code === 'BracketLeft') setDial(S.dial - 1);
   if (e.code === 'BracketRight') setDial(S.dial + 1);
+  if (e.code === 'Comma') setSpeed(S.speed - 1);
+  if (e.code === 'Period') setSpeed(S.speed + 1);
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -391,10 +439,15 @@ const hold = (btn, code) => {
   btn.addEventListener('pointerdown', () => keys.add(code));
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, () => keys.delete(code));
 };
-hold($('fwdBtn'), 'KeyW'); hold($('backBtn'), 'KeyS');
+hold($('fwdBtn'), 'KeyW'); hold($('backBtn'), 'KeyS'); hold($('brakeBtn'), 'KeyX');
+function setSpeed(i) {
+  S.speed = Math.max(0, Math.min(SPEEDS.length - 1, i));
+  $('speedBtn').textContent = `game speed ×${SPEEDS[S.speed]}`;
+}
+$('speedBtn').addEventListener('click', () => setSpeed(S.speed === SPEEDS.length - 1 ? 0 : S.speed + 1));
 
 function fly(dt) {
-  const B = flatBasis(), sp = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 24 : 8) * dt;
+  const B = flatBasis(), acc = keys.has('ShiftLeft') || keys.has('ShiftRight') ? THRUST_FAST : THRUST;
   let m = [0, 0, 0];
   if (keys.has('KeyW') || keys.has('ArrowUp')) m = v3.add(m, B.f);
   if (keys.has('KeyS') || keys.has('ArrowDown')) m = v3.sub(m, B.f);
@@ -403,20 +456,39 @@ function fly(dt) {
   if (keys.has('KeyR')) m = v3.add(m, [0, 1, 0]);
   if (keys.has('KeyF')) m = v3.sub(m, [0, 1, 0]);
   if (v3.len(m) > 0) {
-    cam.p = v3.add(cam.p, v3.scale(v3.norm(m), sp));
+    cam.v = v3.add(cam.v, v3.scale(v3.norm(m), acc * dt));
     S.b1.moved = true; S.autoCam = null;
   }
-  const r = v3.len(cam.p);
-  if (r > P.SPHERE_R - 1) cam.p = v3.scale(cam.p, (P.SPHERE_R - 1) / r);
+  if (keys.has('KeyX')) brake(dt);
+  coast(dt, 1);
   // On a capture, glide in to watch the cascade (any flying or looking hands control back).
   if (S.autoCam && !xr.session) {
     const c = S.autoCam.atom.p.pos, off = v3.sub(cam.p, c), d = v3.len(off);
     const want = 6, k = 1 - Math.exp(-dt * 1.8);
     if (d > want) cam.p = v3.add(c, v3.scale(off, (d + (want - d) * k) / d));
+    cam.v = v3.scale(cam.v, 1 - k);    // the glide-in takes over and gently stops the ship
     const f = v3.norm(v3.sub(c, cam.p));
     const yaw = Math.atan2(f[0], f[2]), pitch = Math.asin(f[1]);
     let dy = yaw - cam.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     cam.yaw += dy * k; cam.pitch += (pitch - cam.pitch) * k;
+  }
+}
+
+function brake(dt) {
+  const v = v3.len(cam.v), dv = BRAKE * dt;
+  cam.v = v <= dv ? [0, 0, 0] : v3.scale(cam.v, (v - dv) / v);
+}
+// Newton's first law: the ship keeps its velocity. The wall of the system bounces it back softly.
+function coast(dt, margin) {
+  cam.p = v3.add(cam.p, v3.scale(cam.v, dt));
+  const r = v3.len(cam.p), lim = P.SPHERE_R - margin;
+  if (r > lim) {
+    const n = v3.scale(cam.p, 1 / r), vr = v3.dot(cam.v, n);
+    cam.p = v3.scale(n, lim);
+    if (vr > 0) {
+      cam.v = v3.sub(cam.v, v3.scale(n, 1.5 * vr));   // keeps half the outward speed, reversed
+      if (vr > 2) S.flashes.push({ pos: v3.add(cam.p, v3.scale(n, margin)), col: [0.1, 0.9, 0.95], t: 0, life: 0.5, size: 1.2 });
+    }
   }
 }
 
@@ -446,9 +518,9 @@ $('startBtn').addEventListener('click', () => { $('startBox').hidden = true; });
 
 function restart() {
   S = newState();
-  cam.p = [0, 1.5, 24]; cam.yaw = Math.PI; cam.pitch = -0.06;
+  cam.p = [0, 1.5, 24]; cam.v = [0, 0, 0]; cam.yaw = Math.PI; cam.pitch = -0.06;
   logLines.length = 0; $('logBox').innerHTML = '';
-  renderPasses(); setDial(1); startBeat(1);
+  renderPasses(); setDial(1); setSpeed(S.speed); startBeat(1);
   $('fieldBtn').setAttribute('aria-pressed', 'false');
   panelDirty();
 }
@@ -470,8 +542,15 @@ function drawSpectro() {
     const lam = LMIN * Math.pow(LMAX / LMIN, x / W), [r, g, b] = P.lambdaRGB(lam);
     sctx.fillStyle = `rgba(${r * 255},${g * 255},${b * 255},0.16)`; sctx.fillRect(x, H - 14, 2, 14);
   }
-  sctx.font = '20px ui-monospace, monospace'; sctx.fillStyle = 'rgba(214,226,238,.5)';
-  sctx.fillText('UV', 8, 24); sctx.fillText('visible', x380 + 8, 24); sctx.fillText('IR', x750 + 8, 24);
+  sctx.font = '20px ui-monospace, monospace';
+  // Radiation zones along the top: extreme UV, far UV, near UV, visible, near IR, short-wave IR.
+  const zones = [[LMIN, 'EUV'], [100, 'far UV'], [200, 'near UV'], [380, 'visible'], [750, 'near IR'], [1400, 'SWIR']];
+  for (const [l0, name] of zones) {
+    const x = l0 === LMIN ? 0 : lx(l0, W);
+    sctx.fillStyle = 'rgba(214,226,238,.18)'; if (x > 0) sctx.fillRect(x, 0, 1, 30);
+    sctx.fillStyle = 'rgba(214,226,238,.5)'; sctx.fillText(name, x + 8, 22);
+  }
+  sctx.fillStyle = 'rgba(214,226,238,.5)';
   for (const t of [100, 200, 500, 1000, 2000]) { const x = lx(t, W); sctx.fillRect(x, H - 20, 2, 6); sctx.fillText(`${t}`, x + 4, H - 22); }
   // Lyman limit (91.2 nm): shorter than this means a capture straight to 1s.
   const xl = lx(91.18, W); sctx.fillStyle = 'rgba(214,226,238,.25)'; sctx.fillRect(xl, 30, 1, H - 50);
@@ -482,7 +561,7 @@ function drawSpectro() {
     sctx.fillStyle = `rgba(${r * 255},${g * 255},${b * 255},${Math.min(1, 0.85 * k)})`;
     sctx.fillRect(x - 2, 30, 4, H - 50);
     const name = P.lineName(s.lam);
-    if (name && !seen.has(name)) { seen.set(name, 1); sctx.fillStyle = 'rgba(255,255,255,.85)'; sctx.fillText(name, x + 6, 52); }
+    if (name && !seen.has(name)) { seen.set(name, 1); sctx.fillStyle = 'rgba(255,255,255,.85)'; sctx.fillText(name, x + 6, 52 + 22 * (seen.size % 2 === 0)); }
   }
 }
 const lad = $('ladder'), lctx = lad.getContext('2d');
@@ -512,7 +591,15 @@ function drawLadder() {
 function updateHud() {
   const nHp = bareProtons().length, nH = S.atoms.length, nE = freeElectrons().length;
   $('cHp').textContent = nHp; $('cH').textContent = nH; $('cE').textContent = nE;
-  $('timeOut').textContent = S.cascade ? `1 s = ${NS_PER_S} ns · others paused` : `1 s = ${FS_PER_S} fs`;
+  const sp = SPEEDS[S.speed], fs = FS_PER_S * sp * S.slow;
+  $('timeOut').textContent = S.cascade ? `1 s = ${+(NS_PER_S * sp).toPrecision(2)} ns · others paused`
+    : `1 s = ${fs < 10 ? fs.toFixed(1) : Math.round(fs)} fs${S.slow < 0.9 ? ' · slow motion' : ''}`;
+  const v = v3.len(cam.v);
+  $('shipOut').textContent = v < 0.05 ? 'still' : `${v.toFixed(1)} nm/s`;
+  if (S.lastPhoton) {
+    const L = S.lastPhoton, c = P.classify(L.lam);
+    $('photonOut').textContent = `Last photon: ${L.lam.toFixed(1)} nm · ${describe(L.lam, L.nLow, L.capture)} · ${c.visible ? 'visible: you could see this one' : c.note}${L.extra ? ` (+${L.extra} more)` : ''}`;
+  } else $('photonOut').textContent = '';
   renderGoals();
   const a = aimInfo();
   const ch = $('crosshair');
@@ -624,6 +711,14 @@ function coneLines(a) {
   }
 }
 
+// The caught electron spirals in from where it was caught and melts into its cloud.
+function fallPos(f, t = f.t) {
+  const x = Math.min(1, t / FALL_DUR), s = x * x * (3 - 2 * x);
+  const r0 = v3.len(f.off), r1 = P.A0 * f.atom.st.n * f.atom.st.n, r = r0 + (r1 - r0) * s;
+  const ang = 3 * Math.PI * s, u = v3.norm(f.off), w = v3.cross(f.axis, u);
+  const dir = v3.add(v3.scale(u, Math.cos(ang)), v3.scale(w, Math.sin(ang)));
+  return v3.add(f.atom.p.pos, v3.scale(dir, r * (1 - 0.7 * s * s)));
+}
 function flatViews() {
   const dpr = Math.min(devicePixelRatio || 1, 1.5);
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
@@ -640,6 +735,12 @@ function draw(views, panel) {
     if (p.kind === 'proton' && p.glow > 0.001) charges.push({ pos: p.pos, q: p.glow, smear: PROTON_SMEAR });
     if (p.kind === 'electron') charges.push({ pos: p.pos, q: -1, smear: Math.max(0.05, P.reducedWavelength(Math.max(0.01, p.E || 1))) });
   }
+  const fallGlows = [];
+  for (const f of S.falling) {
+    const pos = fallPos(f), k = 1 - f.t / FALL_DUR;
+    charges.push({ pos, q: -k, smear: 0.05 });
+    fallGlows.push({ pos, size: 0.008 + 0.02 * k, col: [0.45 * k, 0.65 * k, k] });
+  }
   const clouds = S.atoms.map(a => {
     const A = desc(a.st);
     if (a.trans) {
@@ -649,10 +750,17 @@ function draw(views, panel) {
         cB: [cb * Math.cos(-a.beat), cb * Math.sin(-a.beat)], invMax: 1 / pk, iso: ((1 - s) * A.iso + s * Bd.iso) / pk, fade: a.fade };
     }
     return { pos: a.p.pos, radius: extentBohr(a.st.n, 1) * P.A0, A, B: A, cA: [1, 0], cB: [0, 0], invMax: 1 / A.peak, iso: A.iso / A.peak, fade: a.fade };
+  }).map((c, i) => {
+    // Soap-bubble wobble: a gentle shimmer at rest, stronger while settling in or changing shape.
+    const a = S.atoms[i], tr = a.trans ? Math.sin(Math.PI * Math.min(1, a.trans.t / a.trans.dur)) : 0;
+    c.wobble = 0.06 + 0.14 * (1 - a.fade) + 0.12 * tr;
+    c.radius *= 1 + 2.5 * c.wobble;
+    return c;
   });
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
   for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
+  glows.push(...fallGlows);
   for (const f of S.flashes) {
     const x = f.t / f.life;
     glows.push({ pos: f.pos, size: f.size * (0.3 + Math.sqrt(x)) * 0.4, col: f.col.map(c => c * (1 - x) * 1.4) });
@@ -664,6 +772,11 @@ function draw(views, panel) {
   for (const e of freeElectrons()) {
     for (let i = 1; i < e.trail.length; i++) lines.seg(e.trail[i - 1], e.trail[i], [0.3, 0.5, 1], 0.08 + 0.4 * i / e.trail.length);
     if (e.trail.length) lines.seg(e.trail[e.trail.length - 1], e.pos, [0.3, 0.5, 1], 0.5);
+  }
+  for (const f of S.falling) {
+    const n = 40, pts = [];
+    for (let i = 0; i <= n; i++) pts.push(fallPos(f, f.t * i / n));
+    for (let i = 1; i <= n; i++) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], 0.5 * (i / n) * (1 - f.t / FALL_DUR));
   }
   for (const ph of S.photons) photonLines(ph);
   if (S.beat >= 2 && !S.cascade) coneLines(aimInfo());
@@ -691,6 +804,8 @@ function frame(now) {
 // VR (WebXR). In the headset, 1 metre is drawn as 1 nanometre, so the sphere is 80 m across.
 // Left stick: fly where you look. Right stick: turn (left/right) and rise or sink (up/down).
 // Trigger: fire along the right controller. A/B: faster/slower electrons. X: Field/Glow view.
+// The sticks fire thrusters: the ship keeps drifting until you brake (squeeze the left grip).
+// Y: game speed.
 // ---------------------------------------------------------------------------
 const xr = { session: null, ref: null, head: null, aim: null, buttons: {}, panelCanvas: document.createElement('canvas'), panelVersion: 0, panelT: 0 };
 xr.panelCanvas.width = 1024; xr.panelCanvas.height = 640;
@@ -754,6 +869,8 @@ function xrInput(frame, dt) {
     if (hand === 'left') {
       if (xr.head) move = v3.add(move, v3.add(v3.scale(xr.head.f, -dz(ax[1])), v3.scale(xr.head.r, dz(ax[0]))));
       if (edge('X', 4)) toggleField();
+      xr.brake = pressed(1);   // left grip squeeze: brake
+      if (edge('Y', 5)) setSpeed(S.speed === SPEEDS.length - 1 ? 0 : S.speed + 1);
     } else {
       cam.yaw -= dz(ax[0]) * 1.5 * dt;
       move = v3.add(move, [0, -dz(ax[1]), 0]);
@@ -762,11 +879,11 @@ function xrInput(frame, dt) {
     }
   }
   if (v3.len(move) > 0.01) {
-    cam.p = v3.add(cam.p, v3.scale(move, 8 * dt));
+    cam.v = v3.add(cam.v, v3.scale(move, THRUST * dt));
     S.b1.moved = true;
   }
-  const r = v3.len(cam.p);
-  if (r > P.SPHERE_R - 2) cam.p = v3.scale(cam.p, (P.SPHERE_R - 2) / r);
+  if (xr.brake) brake(dt);
+  coast(dt, 2);
 }
 function xrFrame(t, frame) {
   const session = frame.session;
@@ -836,7 +953,7 @@ function drawPanelCanvas() {
   y = wrap(g, `Electron gun ${$('dialOut').textContent} · ${$('aimOut').textContent}`, 28, y + 12, W - 56, 30, 2);
   g.fillStyle = '#8a9db1';
   for (const p of S.passes.slice(0, 2)) y = wrap(g, `${p.who}: ${fmtNm(p.rp)} · ${fmtChance(p.chance)} · ${p.caught ? 'CAUGHT' : 'missed'}`, 28, y + 4, W - 56, 28, 1);
-  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.fieldView ? 'Field view' : 'Glow view'} (X)   ·   A/B speed`, 28, H - 28);
+  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.fieldView ? 'Field view' : 'Glow view'} (X)   ·   A/B electron speed   ·   ship ${$('shipOut').textContent}`, 28, H - 28);
 }
 for (const id of ['vrBtn', 'vrBtn2']) $(id).addEventListener('click', toggleVR);
 vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).title = 'No VR headset found in this browser'; });
@@ -844,5 +961,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('rateTag').textContent = `rates ×${P.RATE_BOOST.toLocaleString('en-US')}`;
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, cam, fire, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, cam, fire, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);

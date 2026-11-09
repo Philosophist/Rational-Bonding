@@ -100,3 +100,15 @@ test('the wall keeps matter in', () => {
   assert.ok(Math.abs(Math.hypot(...e.vel) - 2) < 1e-9);   // no energy lost
   assert.ok(e.vel[0] < 0);                                   // heading back inside
 });
+
+test('classify names the radiation', () => {
+  assert.equal(P.classify(121.57).name, 'far ultraviolet');
+  assert.equal(P.classify(91).name, 'extreme ultraviolet');
+  assert.equal(P.classify(656.47).name, 'red light');
+  assert.equal(P.classify(486.27).name, 'cyan light');
+  assert.equal(P.classify(434.2).name, 'violet light');
+  assert.equal(P.classify(1875.6).name, 'short-wave infrared');
+  assert.equal(P.classify(0.005).name, 'gamma ray');
+  assert.equal(P.classify(2.1e8).name, 'microwave');   // the 21 cm hydrogen line
+  assert.equal(P.seriesName(2), 'Balmer');
+});
