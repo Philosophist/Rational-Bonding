@@ -4,7 +4,7 @@ Beats 1 and 2 of [`docs/levels/01-hydrogen-tutorial.md`](../../docs/levels/01-hy
 in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `rationalbonding.com/alchemfighter/tutorial/` once merged.
 
 - **Beat 1, meet the proton:** a lone proton drawn as the glow of its electric field (log scale,
-  capped), with Field view lines. A stray electron curves past it and keeps going.
+  capped), with Field view lines.
 - **Beat 2, first capture:** the electron gun, with an aim cone that is wider for slower electrons
   (the electron is a wave). Every pass is reported with its closest approach, its chance in the
   game and its real chance. On a capture the electron cloud appears in the level it landed in and
@@ -42,8 +42,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
 - **Time:** 1 screen second is 40 fs while particles fly, and 50 ns during a cascade (free
   particles wait meanwhile). Light is drawn slowed down so you can see it leave.
-- **Loose electrons:** missed electrons stay in the sphere. The gun allows three loose at once;
-  fly close to one to scoop it back.
+- **Free electrons:** missed electrons stay in the sphere. There is no limit on firing; above 12
+  free electrons the oldest is removed, to keep the simulation smooth.
 
 ## Views and controls
 

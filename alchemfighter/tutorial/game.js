@@ -1,6 +1,6 @@
 // Alchemfighter, Level 1 "Electromagnetic Stardust": beats 1 and 2 of docs/levels/01-hydrogen-tutorial.md.
 // Plays in the browser window or in a PC VR headset (WebXR); the VR button works from the start.
-// Beat 1: meet the proton (its field glow, a stray electron swinging past).
+// Beat 1: meet the proton (its field and glow). The system starts with only the proton in it.
 // Beat 2: catch an electron with the electron gun, then watch the cascade of light down to 1s.
 import * as P from './physics.js';
 import { waveDesc, extentBohr } from './orbitals.js';
@@ -28,9 +28,9 @@ const NS_PER_S = 50;
 const LIGHT_SPEED = 28;          // nm per screen second: light is drawn slowed down so you can see it
 const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
 const PROTON_SMEAR = 0.01;       // nm, keeps the glow's centre finite (log scale, capped)
-// Missed electrons stay in the sphere (matter can't leave), so the gun allows a few loose at once.
-// Fly close to a loose electron and the ship scoops it back into the gun.
-const MAX_LOOSE = 3, SCOOP_R = 3;
+// Missed electrons stay in the sphere (matter can't leave). Fire as many as you like; past this many
+// free electrons the oldest one is removed, to keep the simulation smooth.
+const MAX_FREE = 12;
 
 // ---------------------------------------------------------------------------
 // State
@@ -43,7 +43,7 @@ function newState() {
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], photons: [], flashes: [], spectrum: [],
     shots: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null,
-    b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false, strayAt: 3, stray: null, strayPassed: false },
+    b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false }, ended: false, said: '',
   };
 }
@@ -60,7 +60,6 @@ function flatBasis() {
 }
 const bareProtons = () => S.ps.filter(p => p.kind === 'proton' && p.q === 1 && p.active);
 const freeElectrons = () => S.ps.filter(p => p.kind === 'electron' && p.active);
-const looseShots = () => freeElectrons().filter(e => !e.stray);
 
 // ---------------------------------------------------------------------------
 // Tutor and beats
@@ -117,13 +116,6 @@ function addElectron(pos, vel, extra) {
   S.ps.push(e);
   return e;
 }
-// The stray in beat 1: drifts in, curves round the proton, swings past and leaves.
-function launchStray() {
-  const E = 1.0, start = [-36, 3.2, -6], target = [0, 3.2, -0.5];
-  const d = v3.norm(v3.sub(target, start));
-  const KEl = E + P.KE / v3.len(start);
-  S.b1.stray = addElectron(start, v3.scale(d, P.electronSpeed(KEl)), { stray: true, E });
-}
 
 // Where the crosshair points, and what the gun would do from here.
 function getAim() {
@@ -161,11 +153,6 @@ const launchKE = (E, dist) => E + P.KE / Math.max(dist, 0.5);
 
 function fire() {
   if (S.beat < 2 || S.cooldown > 0 || S.cascade) return;
-  if (looseShots().length >= MAX_LOOSE) {
-    say(`${MAX_LOOSE} of your electrons are loose in the sphere, and matter can't leave it. Fly close to one (its blue glow and trail) and the ship scoops it back into the gun.`);
-    S.cooldown = 0.5;
-    return;
-  }
   const a = aimInfo();
   const ax = v3.norm(v3.sub(a.aimPoint, a.muzzle));
   const e1 = v3.norm(v3.cross(ax, Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(ax, e1);
@@ -175,6 +162,14 @@ function fire() {
   const KEl = launchKE(a.E, near ? v3.len(v3.sub(a.muzzle, near.pos)) : 99);
   S.shots++;
   addElectron([...a.muzzle], v3.scale(dir, P.electronSpeed(KEl)), { shot: S.shots, E: a.E, born: S.time });
+  const free = freeElectrons();
+  if (free.length > MAX_FREE) {
+    const old = free[0];   // electrons are kept in the order they were fired
+    old.active = false;
+    S.ps = S.ps.filter(x => x.active);
+    S.flashes.push({ pos: [...old.pos], col: [0.3, 0.5, 1], t: 0, life: 0.5, size: 0.6 });
+    if (!S.trimSaid) { S.trimSaid = true; log(`More than ${MAX_FREE} free electrons: the oldest is removed each time you fire, to keep the game smooth.`); }
+  }
   S.cooldown = 0.35;
   S.flashes.push({ pos: v3.add(a.muzzle, v3.scale(ax, 0.3)), col: [0.3, 0.5, 1.0], t: 0, life: 0.25, size: 0.25 });
 }
@@ -283,16 +278,12 @@ function onPass(ev) {
   const E = Math.max(ev.E, 0.01);
   const chance = P.captureChanceGame(E, rp), real = P.captureChanceReal(E, rp);
   const caught = Math.random() < chance;
-  const who = e.stray ? 'stray' : `shot ${e.shot}`;
+  const who = `shot ${e.shot}`;
   S.passes.unshift({ who, pass: e.passes, rp, E, chance, real, caught });
   S.passes.length = Math.min(S.passes.length, 4);
   renderPasses();
-  if (e.stray && !S.b1.strayPassed && !caught) {
-    S.b1.strayPassed = true;
-    if (S.beat === 1) log('The stray swung round the proton and kept going: attracted, but too fast to be caught.');
-  }
   if (caught) { capture(e, p, E); return; }
-  if (!e.stray && E > 3 && rp < 1.5 && !S.b2.tooFastSaid) { S.b2.tooFastSaid = true; say('Too fast to catch. Try slower and closer.'); }
+  if (E > 3 && rp < 1.5 && !S.b2.tooFastSaid) { S.b2.tooFastSaid = true; say('Too fast to catch. Try slower and closer.'); }
 }
 function renderPasses() {
   $('passes').innerHTML = S.passes.length ? S.passes.map(p =>
@@ -303,7 +294,6 @@ function renderPasses() {
 function step(dt) {
   S.time += dt;
   S.cooldown = Math.max(0, S.cooldown - dt);
-  if (S.beat === 1 && !S.b1.stray && S.time > S.b1.strayAt) launchStray();
   if (!S.cascade) {
     const dtFs = dt * FS_PER_S;
     S.simFs += dtFs;
@@ -314,15 +304,6 @@ function step(dt) {
       if (e.trailT <= 0) { e.trailT = 0.04; e.trail.push([...e.pos]); if (e.trail.length > 90) e.trail.shift(); }
     }
     for (const a of S.atoms) a.p.pos = v3.add(a.p.pos, v3.scale(a.p.vel, dtFs));
-    // The ship scoops up loose electrons that come close (not ones it has only just fired).
-    for (const e of freeElectrons()) {
-      if (e.born !== undefined && S.time - e.born < 1.5) continue;
-      if (v3.len(v3.sub(e.pos, camBasis().p)) < SCOOP_R) {
-        e.active = false;
-        S.flashes.push({ pos: [...e.pos], col: [0.3, 0.5, 1], t: 0, life: 0.5, size: 0.8 });
-        log(`Scooped ${e.stray ? 'the stray electron' : `shot ${e.shot}'s electron`} back into the gun.`);
-      }
-    }
     S.ps = S.ps.filter(x => x.active);
   }
   updateAtoms(dt);
@@ -537,13 +518,12 @@ function updateHud() {
   const ch = $('crosshair');
   if (S.beat < 2) { $('aimOut').textContent = 'The gun unlocks in beat 2.'; ch.classList.remove('on'); return; }
   if (S.cascade) { $('aimOut').textContent = 'Watching the cascade…'; return; }
-  const nl = looseShots().length, loose = nl ? ` · <span class="${nl >= MAX_LOOSE ? 'fast' : 'fine'}">loose ${nl}/${MAX_LOOSE}</span>` : '';
   if (a.target && a.rp !== undefined) {
     ch.classList.toggle('on', a.chance > 0.05);
-    $('aimOut').innerHTML = `Aimed: closest pass ≈ ${fmtNm(a.rp)} · chance ${fmtChance(a.chance)} <span class="fine">(real ${fmtOdds(a.real)})</span> · cone ±${fmtNm(a.cone)}${loose}`;
+    $('aimOut').innerHTML = `Aimed: closest pass ≈ ${fmtNm(a.rp)} · chance ${fmtChance(a.chance)} <span class="fine">(real ${fmtOdds(a.real)})</span> · cone ±${fmtNm(a.cone)}`;
   } else {
     ch.classList.remove('on');
-    $('aimOut').innerHTML = `Not aimed at a proton · cone ±${fmtNm(a.cone)}${loose}`;
+    $('aimOut').innerHTML = `Not aimed at a proton · cone ±${fmtNm(a.cone)}`;
   }
 }
 
