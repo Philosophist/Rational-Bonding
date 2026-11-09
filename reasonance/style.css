@@ -214,8 +214,10 @@ body.home #home-btn { display: none; }
 .stance-buttons button.disagree { color: var(--disagree); border-color: rgba(255, 77, 94, 0.55); }
 .stance-buttons button.agree.on { background: var(--agree); color: #04130a; border-color: var(--agree); }
 .stance-buttons button.disagree.on { background: var(--disagree); color: #1a0306; border-color: var(--disagree); }
-.stance-buttons button.neither.on { color: var(--yellow); border-color: var(--yellow); }
-.stance-buttons .neither-row[hidden] { display: none; }
+.stance-buttons .neither-select { width: auto; border-radius: 999px; padding: 6px 10px; }
+.stance-buttons .neither-select.on { color: var(--yellow); border-color: var(--yellow); }
+.stance-buttons .other-text { width: 100%; box-sizing: border-box; }
+.stance-buttons .other-text[hidden] { display: none; }
 
 /* A post floating over the sea, with its inferences reaching off the screen. */
 .float { position: absolute; inset: 0; z-index: 3; background: rgba(7, 9, 15, 0.35); }

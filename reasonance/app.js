@@ -31,7 +31,7 @@ const GHOST = '#ff2fb4';
 const GHOST_PREFIX = 'ghost:';
 const isGhost = (id) => typeof id === 'string' && id.startsWith(GHOST_PREFIX);
 const ghostOwner = (id) => id.slice(GHOST_PREFIX.length);
-const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', noopinion: '#a5afc6', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
+const STANCE_COLORS = { agree: '#4dff88', disagree: '#ff4d5e', unknown: '#ffe94d', noopinion: '#a5afc6', other: '#a5afc6', incomprehensible: '#a5afc6', dontcare: '#a5afc6' };
 
 const $ = (id) => document.getElementById(id);
 const board = $('board'), world = $('world');
@@ -596,7 +596,7 @@ function shareToggle(it) {
 }
 function ratingBlock(it) {
   const r = it.rating ?? {};
-  const stance = stanceButtons(h, r.stance, (k) => doRate(it.id, { stance: k }));
+  const stance = stanceButtons(h, r.stance, (k, other) => doRate(it.id, { stance: k, other }), r.other);
   const conf = r.confidence ?? 50;
   const num = h('input', { class: 'num', type: 'number', min: 0, max: 100, step: 'any', value: r.confidence ?? '', placeholder: '–', 'aria-label': 'Confidence percent',
     onchange: (ev) => doRate(it.id, { confidence: ev.target.value === '' ? null : Number(ev.target.value) }) });
@@ -812,7 +812,7 @@ function postBoxParts(it) {
     h('p', { class: 'muted' }, h('strong', {}, by), ' ',
       !st ? '' : st.raters ? `So far: ${parts.join(' · ')}.` : 'Nobody has rated it yet.',
       yours && othersRated(it, st) ? ' Others have rated it, so its words are fixed.' : ''),
-    views.length ? h('p', { class: 'muted' }, 'Shared views: ', views.slice(0, 8).map((v) => `@${v.name ?? 'someone'} ${STANCES[v.stance].toLowerCase()}${v.confidence != null ? ` (${v.confidence}%)` : ''}`).join(' · ')) : null,
+    views.length ? h('p', { class: 'muted' }, 'Shared views: ', views.slice(0, 8).map((v) => `@${v.name ?? 'someone'} ${v.stance === 'other' && v.other ? `says "${v.other}"` : STANCES[v.stance].toLowerCase()}${v.confidence != null ? ` (${formatConfidence(v.confidence)})` : ''}`).join(' · ')) : null,
     !yours ? h('p', { class: 'muted' }, "Someone else's post, so the words are theirs. To say it another way, or narrow what it means, add a clarification.") : null,
     yours ? h('div', { class: 'row' }, anon) : null,
     isNode(it) ? h('div', { class: 'row' }, h('button', { onclick: () => bringReasons(it.id) }, 'Bring in its posted reasons')) : null,

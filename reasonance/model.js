@@ -42,9 +42,13 @@ export const STANCES = {
   noopinion: 'No opinion',
   incomprehensible: 'Incomprehensible',
   dontcare: "I don't care",
+  other: 'Other',
 };
 // Agree and Disagree are the two sides; the rest are "Neither".
-export const NEITHER = ['unknown', 'noopinion', 'incomprehensible', 'dontcare'];
+export const NEITHER = ['unknown', 'noopinion', 'incomprehensible', 'dontcare', 'other'];
+// "Other" carries the person's own words, up to this many characters.
+export const OTHER_MAX = 200;
+const cleanOther = (t) => (typeof t === 'string' && t.trim() ? t.trim().slice(0, OTHER_MAX) : null);
 
 // Relevance: how important it would be to know if the opposite of your
 // stance were proven true, to your own satisfaction.
@@ -253,7 +257,7 @@ export function standingContention(map, id) {
 
 // Ratings. Every change is kept with its time, so a map remembers when and
 // what you believed. Returns the flavor text to show, if any.
-export function rate(map, id, { stance, confidence, relevance } = {}, now = Date.now()) {
+export function rate(map, id, { stance, confidence, relevance, other } = {}, now = Date.now()) {
   const it = map.items[id];
   if (!it) return [];
   const prev = it.rating ?? { history: [] };
@@ -262,6 +266,8 @@ export function rate(map, id, { stance, confidence, relevance } = {}, now = Date
     confidence: confidence === undefined ? prev.confidence ?? null : clampConfidence(confidence),
     relevance: relevance === undefined ? prev.relevance ?? null : clampRelevance(relevance),
   };
+  // Your own words for "Other"; they go with that view only.
+  next.other = next.stance === 'other' ? cleanOther(other === undefined ? prev.other : other) : null;
   // Not caring about a claim means it matters little to you: one star, unless you've said otherwise.
   if (next.stance === 'dontcare' && stance !== undefined && next.relevance == null) next.relevance = 1;
   if (next.stance !== null && !STANCES[next.stance]) throw new Error(`Unknown stance: ${next.stance}`);
@@ -319,6 +325,14 @@ export function oddsPhrase(c) {
   if (c == null) return null;
   if (c >= 50) return { n: confidenceToOdds(c), side: 'wrong' };
   return { n: c <= 0 ? Infinity : roundOdds(100 / c), side: 'right' };
+}
+// A confidence for display, with enough decimals that 1 in a million
+// shows as 99.9999% rather than 100%.
+export function formatConfidence(c) {
+  if (c == null) return '';
+  if (c >= 100 || c <= 0) return `${c >= 100 ? 100 : 0}%`;
+  const d = c >= 99 ? Math.min(10, Math.ceil(-Math.log10(100 - c)) + 2) : 1;
+  return `${+c.toFixed(d)}%`;
 }
 // Turns a typed n back into a confidence, read on the side being shown.
 export function phraseToConfidence(n, side = 'wrong') {
@@ -454,6 +468,7 @@ function cleanRating(r) {
     stance: STANCES[x?.stance] ? x.stance : null,
     confidence: clampConfidence(x?.confidence ?? null),
     relevance: clampRelevance(x?.relevance ?? null),
+    other: x?.stance === 'other' ? cleanOther(x?.other) : null,
   });
   const { at, ...cur } = one(r);
   return { ...cur, history: Array.isArray(r.history) ? r.history.slice(-500).map(one) : [] };

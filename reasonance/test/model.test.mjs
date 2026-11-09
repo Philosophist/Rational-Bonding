@@ -144,6 +144,26 @@ test('below 50% the odds read as a chance of being right', async () => {
   assert.equal(phraseToConfidence(4, 'right'), 25);
 });
 
+test('"Other" keeps your own words, only while it is your view', async () => {
+  const { createMap, addNode, rate, parseMap, serialize } = await import('../model.js');
+  const m = createMap('t'); const a = addNode(m, { text: 'A God exists.' });
+  rate(m, a.id, { stance: 'other', other: '  Depends what you mean by God  ' });
+  assert.equal(m.items[a.id].rating.other, 'Depends what you mean by God');
+  assert.equal(parseMap(serialize(m)).items[a.id].rating.other, 'Depends what you mean by God');
+  rate(m, a.id, { stance: 'agree' });
+  assert.equal(m.items[a.id].rating.other, null);
+});
+
+test('a million to one reads as nearly certain', async () => {
+  const { oddsToConfidence, oddsPhrase, formatConfidence } = await import('../model.js');
+  const c = oddsToConfidence(1e6);
+  assert.equal(c, 99.9999);
+  assert.deepEqual(oddsPhrase(c), { n: 1e6, side: 'wrong' });
+  assert.equal(formatConfidence(c), '99.9999%');
+  assert.equal(formatConfidence(oddsToConfidence(1e8)), '99.999999%');
+  assert.equal(formatConfidence(33.3333), '33.3%');
+});
+
 test('maps round-trip through export, and bad data is refused', () => {
   const m = exampleMap(5);
   const back = parseMap(serialize(m));

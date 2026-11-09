@@ -3,7 +3,7 @@
 // three.js loads only when the home page first opens; without it, the feed
 // still works over a plain background.
 import * as cloud from './cloud.js';
-import { STANCES, EDGE_TYPES, RELEVANCE } from './model.js';
+import { STANCES, EDGE_TYPES, RELEVANCE, formatConfidence } from './model.js';
 import { stanceButtons, oddsLine } from './stances.js';
 
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -78,7 +78,7 @@ function card(r) {
     onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openFloat(r.id); } },
   h('p', { class: `text ${r.type}` }, postText(r)),
   h('div', { class: 'meta' }, [by, counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-  stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(r.id, k)),
+  stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(r.id, { stance: k, other }), my?.other),
   my?.stance ? h('div', { class: 'muted' }, my.public ? 'Your view is shared.' : 'Your view is private.') : null);
 }
 // A view from the feed or the floating post: a stance, or { confidence } or
@@ -86,7 +86,8 @@ function card(r) {
 async function rateFromFeed(pid, change) {
   const my = mine[pid] ?? {};
   const patch = typeof change === 'object' && change ? change : { stance: change };
-  const next = { stance: my.stance ?? null, confidence: my.confidence ?? null, relevance: my.relevance ?? null, ...patch };
+  const next = { stance: my.stance ?? null, confidence: my.confidence ?? null, relevance: my.relevance ?? null, other: my.other ?? null, ...patch };
+  if (next.stance !== 'other') next.other = null;
   if (patch.stance === 'dontcare' && next.relevance == null) next.relevance = 1; // not caring: one star
   const share = my.stance ? !!my.public : cloud.settings.share_views;
   try {
@@ -294,7 +295,7 @@ function drawFloat() {
     h('button', { class: 'fclose', 'aria-label': 'Back to the sea', title: 'Back to the sea (Esc)', onclick: closeFloat }, '×'),
     h('p', { class: 'text' }, postText(post)),
     h('div', { class: 'meta' }, [ab?.by ? `@${ab.by}` : 'anonymous', counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-    stanceButtons(h, my?.stance ?? null, (k) => rateFromFeed(post.id, k)),
+    stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(post.id, { stance: k, other }), my?.other),
     composeBox(post),
     ...viewDetails(post.id, my)));
   // Near: questions, clarifications, rewordings and fallacies it's called.
@@ -357,7 +358,7 @@ function viewDetails(pid, my = {}) {
   }
   if (conf != null || stars != null) {
     out.push(h('div', { class: 'given' },
-      conf != null ? h('div', {}, `${+conf.toFixed(conf >= 99 ? 4 : 1)}% · `, oddsLine(h, conf, (v) => rateFromFeed(pid, { confidence: v })).el) : null,
+      conf != null ? h('div', {}, `${formatConfidence(conf)} · `, oddsLine(h, conf, (v) => rateFromFeed(pid, { confidence: v })).el) : null,
       stars != null ? h('div', { class: 'stars-given', title: RELEVANCE[stars].text },
         h('button', { class: 'plain', title: 'Change how much it matters', onclick: (ev) => ev.currentTarget.replaceWith(starRow()) }, '★'.repeat(stars) + '☆'.repeat(5 - stars))) : null));
   }
