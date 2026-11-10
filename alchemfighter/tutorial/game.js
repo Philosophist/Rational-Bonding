@@ -291,7 +291,7 @@ function planAbsorption(ph, I, avgI) {
       .filter(o => o.r > 0.05).sort((x, y) => x.r - y.r);
     for (const o of near) {
       const w = I(v3.dot(v3.scale(o.d, 1 / o.r), ph.axis)) / avgI;
-      if (Math.random() < Math.min(1, sigma * w / (4 * Math.PI * o.r * o.r))) { ph.absorbAt = o.r; ph.target = o.a; return; }
+      if (Math.random() < Math.min(1, sigma * w / (4 * Math.PI * o.r * o.r))) { ph.absorbAt = o.r; ph.target = o.a; ph.hitDir = v3.scale(o.d, 1 / o.r); return; }
     }
     // After the wall the light fills the sphere: each crossing, chance Σσ / πR².
     const n = Math.max(1, S.atoms.filter(idle1s).length);
@@ -306,9 +306,11 @@ function absorbPhotons() {
     if (!ph.absorbAt || ph.gone || LIGHT_SPEED * ph.age < ph.absorbAt) continue;
     const free = S.atoms.filter(idle1s);
     const a = ph.target && free.includes(ph.target) ? ph.target : free[Math.floor(Math.random() * free.length)];
+    const hitDir = ph.target === a && ph.hitDir ? ph.hitDir : randomDir();   // after bouncing, light comes from anywhere
     ph.target = null;
     if (!a) { ph.absorbAt += ph.ionizing ? ION_MEAN : CHORD; continue; }   // nobody to take it yet
     ph.gone = true;
+    a.p.vel = v3.add(a.p.vel, v3.scale(hitDir, (P.HC / ph.lam) / P.C / P.MP));   // the photon's push
     if (ph.lyman) reExcite(a, ph); else ionize(a, ph);
   }
   S.photons = S.photons.filter(ph => !ph.gone);
@@ -332,6 +334,7 @@ function ionize(a, ph) {
   const dir = randomDir(), r0 = 0.5;
   addElectron(v3.add(p.pos, v3.scale(dir, r0)), v3.add(p.vel, v3.scale(dir, P.electronSpeed(extra + P.KE / r0))),
     { freed: true, E: extra, born: S.time });
+  p.vel = v3.sub(p.vel, v3.scale(dir, P.electronSpeed(extra) * P.ME / P.MP));   // the proton recoils from the electron
   S.ionized++;
   S.flashes.push({ pos: [...p.pos], col: ph.col, t: 0, life: 1.2, size: 1.0 });
   log(`H + ${ph.lam.toFixed(1)} nm light → H⁺ + e⁻: the light knocked the electron free with ${extra.toFixed(2)} eV to spare.`, 'red');
@@ -349,8 +352,11 @@ function capture(e, p, E) {
   p.q = 0;                                  // the pair is neutral now: no more Coulomb force
   const atom = { p, st, trans: null, fade: 0, beat: 0, wait: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
   S.atoms.push(atom);
+  // Momentum is kept: the atom moves on with the pair's shared momentum, minus the photon's kick.
+  p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
   // The photon leaves from where the electron is when it is caught.
-  emitPhoton(e.pos, lam, 'lin');
+  const pdir = emitPhoton(e.pos, lam, 'lin');
+  p.vel = v3.sub(p.vel, v3.scale(pdir, (P.HC / lam) / P.C / P.MP));
   S.flashes.push({ pos: [...e.pos], col: [0.55, 0.6, 0.75], t: 0, life: 1.2, size: 0.8 });
   const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
   let axis = v3.cross(off, rel); axis = v3.len(axis) > 1e-12 ? v3.norm(axis) : [0, 1, 0];

@@ -69,6 +69,10 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   most catches land above 1s, whose light can't ionize, the loop dies out. Visible and infrared
   light only fits atoms that are already excited, so it is left bouncing. Acid Neutrality ends
   once every proton holds an electron and no ionizing light is left loose.
+- **Momentum:** a capture keeps the pair's momentum, every emitted or absorbed photon kicks the
+  atom by hν/c (about 3 m/s for Lyman-α), and a freed electron's proton recoils. Not modelled
+  yet: electrons colliding with neutral atoms (they pass straight through), atoms colliding with
+  each other, and the slow heating of the gas that a sealed mirror would really cause.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   wall-hit flashes were removed and the capture flash dimmed.
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
