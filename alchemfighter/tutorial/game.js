@@ -59,7 +59,7 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], photons: [], flashes: [], spectrum: [],
-    shots: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
+    shots: 0, absorbed: 0, ionized: 0, oldSteps: [], passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0 }, b3: { spawned: false, doneAt: 0 }, ended: false, said: '',
   };
@@ -125,7 +125,8 @@ function goals() {
     ];
   }
   const left = acidLeft();
-  return [[`Neutralize the protons (${ACID_N - left} of ${ACID_N})`, left === 0]];
+  const all = protonCount();
+  return [[`Neutralize the protons (${all - left} of ${all})`, left === 0]];
 }
 let lastGoals = '';
 function renderGoals() {
@@ -145,7 +146,8 @@ function startBeat(n) {
   if (n === 3 && !S.b3.spawned) spawnAcid();
   panelDirty();
 }
-const acidLeft = () => S.ps.filter(p => p.acid && p.q === 1).length;
+const acidLeft = () => bareProtons().length;
+const protonCount = () => S.ps.filter(p => p.kind === 'proton').length;
 // Scatter the acid's protons through the sphere, not too close to each other, the atom or you.
 function spawnAcid() {
   S.b3.spawned = true;
@@ -247,11 +249,93 @@ function desc(s) {
 const randomDir = () => { const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z); return [rr * Math.cos(th), z, rr * Math.sin(th)]; };
 function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir()) {
   const I = pattern === 'lin' ? c => 1 - c * c : pattern === 'circ' ? c => 0.5 * (1 + c * c) : () => 1;
+  const avgI = pattern === 'iso' ? 1 : 2 / 3;
   let dir;   // the direction the photon's momentum goes (sets the atom's recoil), drawn from the pattern
   do dir = randomDir(); while (Math.random() > I(v3.dot(dir, axis)));
   const wallDist = P.SPHERE_R - v3.len(pos);
-  S.photons.push({ src: [...pos], axis, I, dir, lam, age: 0, wallDist, detected: false, col: photonColor(lam) });
+  const ph = { src: [...pos], axis, I, dir, lam, age: 0, wallDist, detected: false, col: photonColor(lam) };
+  planAbsorption(ph, I, avgI);
+  S.photons.push(ph);
   return dir;
+}
+
+// ---------------------------------------------------------------------------
+// Light meeting atoms. The wall is a perfect mirror, so light never leaves and sooner or later
+// meets an atom that can take it:
+// - Lyman light (121.6, 102.6, 97.3 nm) is exactly the colour a 1s atom needs to lift its electron
+//   to 2p, 3p or 4p. For that colour an atom's target area is huge (σ below, bigger than the whole
+//   sphere's cross-section, πR² ≈ 5,000 nm²), so the light is swallowed on the first crossing. The
+//   atom then gives the same light back: it is passed from atom to atom (radiation trapping).
+// - Light above 13.6 eV (from a capture straight to 1s) can knock the electron off a 1s atom.
+//   Each crossing has only about a 1 in 8 million chance (σ ≈ 6.3e-4 nm²), but real light crosses
+//   the sphere millions of times a nanosecond, so it happens within about a nanosecond. The game
+//   squeezes that into a few seconds.
+// - Visible and infrared light only fits atoms that are already excited, which are rare, so it
+//   keeps bouncing.
+// ---------------------------------------------------------------------------
+const LYMAN_SIGMA = { 2: 7057, 3: 4424, 4: 3793 };     // nm², resonant absorption from 1s (λ²/2π · g · branch)
+const CAVITY = Math.PI * P.SPHERE_R ** 2, CHORD = 4 * P.SPHERE_R / 3;   // cross-section, mean chord
+const ION_MEAN = 80;                                    // nm of travel, the squeezed photoionization wait
+const ION_MAX = 0.9 * LIGHT_SPEED * PHOTON_LIFE;
+const expo = () => -Math.log(1 - Math.random());
+const lymanUpper = lam => [2, 3, 4].find(n => Math.abs(lam - P.lambdaFor(1, n)) / lam < 1e-4) || 0;
+// An atom can take light only when it is resting in 1s and not the one you are watching.
+const idle1s = a => !a.trans && !a.pending && a.st.n === 1 && a.fade >= 1 && !(S.cascade && S.cascade.atom === a);
+function planAbsorption(ph, I, avgI) {
+  const nUp = lymanUpper(ph.lam);
+  if (nUp) {
+    const sigma = LYMAN_SIGMA[nUp];
+    ph.lyman = { nUp, sigma };
+    // On its way out the wave sweeps every atom once: chance σ·w / (4πr²), w = how bright the pattern is that way.
+    const near = S.atoms.filter(idle1s).map(a => ({ a, d: v3.sub(a.p.pos, ph.src) })).map(o => ({ ...o, r: v3.len(o.d) }))
+      .filter(o => o.r > 0.05).sort((x, y) => x.r - y.r);
+    for (const o of near) {
+      const w = I(v3.dot(v3.scale(o.d, 1 / o.r), ph.axis)) / avgI;
+      if (Math.random() < Math.min(1, sigma * w / (4 * Math.PI * o.r * o.r))) { ph.absorbAt = o.r; ph.target = o.a; return; }
+    }
+    // After the wall the light fills the sphere: each crossing, chance Σσ / πR².
+    const n = Math.max(1, S.atoms.filter(idle1s).length);
+    ph.absorbAt = ph.wallDist + CHORD * expo() / Math.min(1, n * sigma / CAVITY);
+  } else if (P.HC / ph.lam > P.RY) {
+    ph.ionizing = true;
+    ph.absorbAt = Math.min(ION_MAX, ph.wallDist + ION_MEAN * expo());
+  }
+}
+function absorbPhotons() {
+  for (const ph of S.photons) {
+    if (!ph.absorbAt || ph.gone || LIGHT_SPEED * ph.age < ph.absorbAt) continue;
+    const free = S.atoms.filter(idle1s);
+    const a = ph.target && free.includes(ph.target) ? ph.target : free[Math.floor(Math.random() * free.length)];
+    ph.target = null;
+    if (!a) { ph.absorbAt += ph.ionizing ? ION_MEAN : CHORD; continue; }   // nobody to take it yet
+    ph.gone = true;
+    if (ph.lyman) reExcite(a, ph); else ionize(a, ph);
+  }
+  S.photons = S.photons.filter(ph => !ph.gone);
+}
+function reExcite(a, ph) {
+  const to = { n: ph.lyman.nUp, l: 1, m: 0 };
+  a.trans = { from: a.st, to, t: 0, dur: STEP_MORPH };
+  a.reex = true;
+  a.absorbed = (a.absorbed || 0) + 1;
+  S.absorbed++;
+  S.flashes.push({ pos: [...a.p.pos], col: ph.col.map(x => x * 0.5), t: 0, life: 1.2, size: 0.3 });   // soft: this happens often
+  if (S.absorbed <= 3) log(`A 1s atom swallowed ${ph.lam.toFixed(1)} nm ${P.lineName(ph.lam) || 'Lyman'} light and jumped to ${P.stateName(to)}. It will give the same light back.`);
+  if (S.absorbed === 1) say('See that atom light up? Bouncing Lyman light hit a resting hydrogen atom and lifted its electron back up. It drops straight back, giving the same light out again. In a sealed mirror this light is passed from atom to atom forever. Physicists call it radiation trapping.');
+}
+function ionize(a, ph) {
+  const p = a.p, extra = P.HC / ph.lam - P.RY;   // what's left after paying the 13.6 eV
+  S.atoms = S.atoms.filter(x => x !== a);
+  S.oldSteps.push(...a.steps);
+  p.q = 1; p.glow = 1;
+  // The freed electron starts 0.5 nm out with the speed it needs to end up with `extra` far away.
+  const dir = randomDir(), r0 = 0.5;
+  addElectron(v3.add(p.pos, v3.scale(dir, r0)), v3.add(p.vel, v3.scale(dir, P.electronSpeed(extra + P.KE / r0))),
+    { freed: true, E: extra, born: S.time });
+  S.ionized++;
+  S.flashes.push({ pos: [...p.pos], col: ph.col, t: 0, life: 1.2, size: 1.0 });
+  log(`H + ${ph.lam.toFixed(1)} nm light → H⁺ + e⁻: the light knocked the electron free with ${extra.toFixed(2)} eV to spare.`, 'red');
+  if (S.ionized === 1) say('Uh oh! The ultraviolet light from a capture straight to 1s bounced around and knocked the electron off a hydrogen atom. Light can break atoms apart as well as come out of them. That proton is bare again, and its slow electron is drifting nearby, so catch it again.');
 }
 function photonColor(lam) {
   const c = P.lambdaRGB(lam), k = P.band(lam) === 'visible' ? 1 : 0.8;
@@ -305,7 +389,7 @@ function updateAtoms(dt) {
     a.beat += dt * 2 * Math.PI * 2.5;
     if (a.trans) {
       a.trans.t += dt;
-      if (a.trans.t >= a.trans.dur) { a.st = a.trans.to; a.trans = null; scheduleDecay(a); }
+      if (a.trans.t >= a.trans.dur) { a.st = a.trans.to; a.trans = null; if (a.st.n === 1) a.reex = false; scheduleDecay(a); }
       continue;
     }
     if (!a.pending) continue;
@@ -317,7 +401,8 @@ function updateAtoms(dt) {
       // Each photon carries momentum hν/c, so the atom recoils (about 3 m/s for Lyman-α).
       a.p.vel = v3.sub(a.p.vel, v3.scale(dir, (P.HC / lam) / P.C / P.MP));
     }
-    a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton });
+    a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
+    if (a.reex && S.absorbed > 3) { a.trans = { from: a.st, to: d.to, t: 0, dur: STEP_MORPH }; continue; }   // keep the log quiet
     const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
     S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
     const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
@@ -331,23 +416,26 @@ function updateAtoms(dt) {
       const red = a.steps.some(s => [].concat(s.lam).some(l => P.lineName(l) === 'H-α'));
       say(`You just made a hydrogen atom. The electron dropped down an energy staircase and every step came out as light${red ? ', including the red H-alpha line that makes hydrogen nebulae glow' : ''}. It stops at the bottom step, called 1s. It can't fall any further and never lands on the proton: 1s is the lowest energy an electron can have here.`);
       if (S.beat === 2 && !S.b2.nextAt) S.b2.nextAt = S.time + 7;   // time to read, then Acid Neutrality
-      if (S.beat === 3 && acidLeft() === 0 && !S.b3.doneAt) {
-        S.b3.doneAt = S.time;
-        say('The acid is neutral: every proton now holds an electron. Eleven hydrogen atoms float in your system, and all the light they gave off is still bouncing around inside it.');
-        setTimeout(showDone, 3000);
-      }
     }
+  }
+  // Done when every proton holds an electron and no light that could knock one off is still loose.
+  if (S.beat === 3 && !S.b3.doneAt && !S.cascade && acidLeft() === 0 && !S.photons.some(ph => ph.ionizing)) {
+    S.b3.doneAt = S.time;
+    say(`The acid is neutral: every proton now holds an electron. ${S.atoms.length} hydrogen atoms float in your system, and the light they gave off is still inside it, passed from atom to atom or bouncing off the wall.`);
+    setTimeout(showDone, 3000);
   }
 }
 function showDone() {
-  const photons = S.atoms.flatMap(a => a.steps.flatMap(s => [].concat(s.lam)));
+  const photons = [...S.oldSteps, ...S.atoms.flatMap(a => a.steps)].filter(s => !s.reemit).flatMap(s => [].concat(s.lam));
   const count = new Map();
   const cls = new Map();
   for (const l of photons) { const c = P.classify(l); cls.set(c.name, c); count.set(c.name, (count.get(c.name) || 0) + 1); }
   $('doneTitle').textContent = 'You neutralized the acid';
   $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${photons.length} photons: ${[...count].map(([name, k]) => `${k} ${name}`).join(', ')}.`;
   const kinds = [...cls.values()].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
-  $('doneKinds').textContent = kinds.join('. ') + '.';
+  const extra = [S.absorbed ? ` Atoms swallowed bouncing Lyman light and gave it back ${S.absorbed} time${S.absorbed === 1 ? '' : 's'}.` : '',
+    S.ionized ? ` Ultraviolet light knocked an electron free ${S.ionized} time${S.ionized === 1 ? '' : 's'}, and you caught it again.` : ''].join('');
+  $('doneKinds').textContent = kinds.join('. ') + '.' + extra;
   $('doneBox').hidden = false;
 }
 
@@ -361,7 +449,7 @@ function onPass(ev) {
   const E = Math.max(ev.E, 0.01);
   const chance = P.captureChanceGame(E, rp), real = P.captureChanceReal(E, rp);
   const caught = Math.random() < chance;
-  const who = `shot ${e.shot}`;
+  const who = e.freed ? 'freed electron' : `shot ${e.shot}`;
   S.passes.unshift({ who, pass: e.passes, rp, E, chance, real, caught });
   S.passes.length = Math.min(S.passes.length, 4);
   renderPasses();
@@ -409,6 +497,7 @@ function step(dtReal) {
   for (const f of S.falling) f.t += dt;
   S.falling = S.falling.filter(f => f.t < FALL_DUR);
   updateAtoms(dt);
+  absorbPhotons();
   for (const ph of S.photons) {
     ph.age += dt;
     // The wall is a mirror: the wave reflects (see wavePoint). The spectrometer in the wall
@@ -416,7 +505,10 @@ function step(dtReal) {
     if (!ph.detected && LIGHT_SPEED * ph.age >= ph.wallDist) { ph.detected = true; S.spectrum.push({ lam: ph.lam, t: S.time }); }
   }
   S.photons = S.photons.filter(ph => ph.age < PHOTON_LIFE);
-  if (S.photons.length > MAX_PHOTONS) S.photons.splice(0, S.photons.length - MAX_PHOTONS);
+  while (S.photons.length > MAX_PHOTONS) {   // drop the oldest, but keep light that can still ionize
+    const i = S.photons.findIndex(ph => !ph.ionizing);
+    S.photons.splice(Math.max(0, i), 1);
+  }
   if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
   for (const f of S.flashes) f.t += dt;
   S.flashes = S.flashes.filter(f => f.t < f.life);

@@ -8,8 +8,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Beat 2, first capture:** the electron gun, with an aim cone that is wider for slower electrons
   (the electron is a wave). Every pass is reported with its closest approach, its chance in the
   game and its real chance. On a capture the electron cloud appears in the level it landed in and
-  steps down to 1s, giving off one photon per step, which flies out through the wall of the
-  sealed sphere and onto the spectrometer.
+  steps down to 1s, giving off one photon per step, which the spectrometer in the sphere's wall
+  records as it reflects back in.
 
 ## Files
 
@@ -53,6 +53,22 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   grid folds into caustics. The spectrometer records the photon when the wave first touches the
   wall. Waves fade after 12 s, at most 16 at once. The atom's recoil uses one direction drawn
   from the same pattern. Atoms never store photons: each is made when the electron drops.
+- **Light meeting atoms:** nothing escapes the mirror, so bouncing light does what it really
+  would. Lyman light (121.6, 102.6, 97.3 nm) is exactly the colour that lifts a 1s electron to
+  2p, 3p or 4p, and for that colour an atom's target area (λ²/2π times the degeneracy ratio and
+  branching, about 7,000, 4,400 and 3,800 nm²) is bigger than the sphere's whole cross-section
+  (πR² ≈ 5,000 nm²). On its way out the wave meets each resting atom with chance σ·w/(4πr²);
+  after the wall, each crossing (mean chord 4R/3) has chance Σσ/πR². The atom morphs up, then
+  steps back down and gives the light out again, so Lyman light is passed between atoms forever
+  (radiation trapping). Light above 13.6 eV, from captures straight to 1s, can knock the
+  electron off a 1s atom (photoionization, σ ≈ 6.3e-4 nm² × (13.6 eV/E)³). One crossing has
+  only about a 1 in 8 million chance, but real light crosses millions of times a nanosecond, so
+  in a perfect mirror it happens within about a nanosecond. The game squeezes that wait into
+  an exponential with a mean of 80 nm of drawn travel. The freed electron keeps the energy left
+  over (the same as the captured electron had), so it is slow and easy to catch again, and since
+  most catches land above 1s, whose light can't ionize, the loop dies out. Visible and infrared
+  light only fits atoms that are already excited, so it is left bouncing. Acid Neutrality ends
+  once every proton holds an electron and no ionizing light is left loose.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   wall-hit flashes were removed and the capture flash dimmed.
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
