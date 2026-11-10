@@ -668,21 +668,25 @@ let lockFresh = false;
 canvas.addEventListener('dblclick', e => {
   if (!$('startBox').hidden || !$('doneBox').hidden || xr.session) return;
   if (locked()) { document.exitPointerLock(); return; }
-  try {
-    const p = canvas.requestPointerLock({ unadjustedMovement: true });
-    if (p && p.catch) p.catch(() => { try { canvas.requestPointerLock(); } catch { /* not allowed here */ } });
-  } catch { /* not allowed here */ }
+  try { canvas.requestPointerLock(); } catch { /* not allowed here */ }
 });
 document.addEventListener('pointerlockchange', () => {
   lockFresh = locked();
   dragging = null;
   document.body.classList.toggle('mouselook', locked());
 });
+// Some setups report a small, steady movement while the mouse sits still (it showed up as the view
+// sinking). A hand never repeats exactly the same tiny step many times in a row, so a run of
+// identical small readings is treated as noise and dropped.
+let lastMove = '', sameRun = 0;
 document.addEventListener('mousemove', e => {
   if (!locked()) return;
   if (lockFresh) { lockFresh = false; return; }
   const dx = e.movementX || 0, dy = e.movementY || 0;
   if (Math.abs(dx) > 250 || Math.abs(dy) > 250) return;
+  const key = `${dx},${dy}`;
+  sameRun = key === lastMove ? sameRun + 1 : 0; lastMove = key;
+  if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2 && sameRun >= 2) return;
   look(dx * 1.6, dy * 1.6);
 });
 canvas.addEventListener('lostpointercapture', endDrag);
