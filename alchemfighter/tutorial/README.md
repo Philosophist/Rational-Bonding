@@ -9,7 +9,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   (the electron is a wave). Every pass is reported with its closest approach, its chance in the
   game and its real chance. On a capture the electron cloud appears in the level it landed in and
   steps down to 1s, giving off one photon per step, which the spectrometer in the sphere's wall
-  records as it reflects back in.
+  records as it passes out.
 
 ## Files
 
@@ -38,59 +38,60 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   l in proportion to 2l + 1 (a statistical simplification), then real lifetimes and branching
   ratios down to 1s. Capture into n ≥ 5 is left out for now, so the red H-alpha line shows up in
   about 1 capture in 6, fewer than in a real nebula.
-- **2s** decays by two photons sharing 10.2 eV after about 0.12 s, shown as a labelled time skip.
+- **2s** decays by two photons sharing 10.2 eV after about 0.12 s, cut short to 120 fs (logged).
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
-- **Time:** 1 screen second is 40 fs while particles fly, and 25 ns during a cascade (free
-  particles wait meanwhile). Light moves at its real speed on the same clock (c × real time), so
-  it crosses the sphere in a blink, as it really does next to slow matter. The player can
-  pick a game speed (×0.1 to ×2), and the clock slows automatically (down to ×0.03) while an
-  electron is within 4 nm of a proton, so it never moves faster than about 2.5 nm per screen
-  second there. Capture odds are per pass, so slow motion doesn't change them.
-- **Light as a wave:** light is about 1,600 times faster than a 0.1 eV electron, so relative to
-  light all matter is practically frozen. Bouncing off the mirror, a photon soon fills the whole
-  sphere, so loose light is drawn as faint crossed E and B strokes scattered through the sphere,
-  one set per photon, until an atom takes it. The replay (L key or ▶ light) freezes matter and
-  redraws the last wave spreading at 20 nm per second. The replayed wave is a grid on the expanding
-  wavefront, a few ripples deep. Lines from pole to pole follow the electric field (photon colour);
-  rings around the axis follow the magnetic field (green). Brightness follows the dipole pattern
-  (sin²θ for Δm = 0, (1 + cos²θ)/2 for Δm = ±1) and fades as the wave spreads. The wall is a
-  mirror: every bit of wavefront reflects like a ray (geometric optics), so after a bounce the
-  grid folds into caustics. The spectrometer records the photon when the wave first touches the
-  wall. The atom's recoil uses one direction drawn
-  from the same pattern. Atoms never store photons: each is made when the electron drops.
-- **The sealed box:** nothing escapes the mirror, so the energy from every catch stays inside.
-  The game keeps a record of every photon in the box, separate from the drawn waves, which fade.
-  - *Lyman light* (121.6, 102.6, 97.3 nm) is exactly the colour that lifts a 1s electron to 2p,
-    3p or 4p. For that colour an atom's target area (about 7,000, 4,400 and 3,800 nm²) is bigger
-    than the sphere's cross-section (πR² ≈ 5,000 nm²). On its way out the wave meets each resting
-    atom with chance σ·w/(4πr²); after the wall, each crossing (mean chord 4R/3) has chance Σσ/πR².
-    The atom gives the light back, so it is passed between atoms forever (radiation trapping).
+- **Time: one clock, nothing pauses.** At full speed 1 screen second is 40 fs. The player picks
+  a game speed (×0.1 to ×2). When something worth watching happens, the whole system slows down
+  together:
+  - an electron within 4 nm of a proton: until it moves at most about 1.5 nm per screen second;
+  - an electron settling into its new cloud, or an atom changing shape: ×0.01;
+  - an excited atom waiting to step down: until its (sped-up) delay fits about 1.5 s on screen;
+  - a light wave out: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
+    passed from atom to atom (radiation trapping) slows things less, to 300 nm per second.
+  Rare events (captures, steps down, collisions) all run RATE_BOOST = 600,000 times faster than in
+  nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. 2s, which
+  really lives 0.12 s, is cut short to 120 fs.
+- **Light as a wave:** light moves at its real speed on the same clock. It is about 1,600 times
+  faster than a 0.1 eV electron, which is why matter looks almost frozen while a wave is out.
+  The wave is a grid on the expanding wavefront, a few ripples deep. Lines from pole to pole follow
+  the electric field (photon colour); rings around the axis follow the magnetic field (green).
+  Brightness follows the dipole pattern (sin²θ for Δm = 0, (1 + cos²θ)/2 for Δm = ±1) and fades
+  as the wave spreads.
+- **Light passes out through the edge** in this level (matter still bounces off it). Each photon
+  gets one pass. Where its wave reaches an atom, the atom takes the whole photon or none of it,
+  with chance σ·w/(4πr²): target area × the pattern's brightness that way ÷ the sphere the wave
+  has spread over. When a photon is taken, by an atom or by the wall, its whole wave is gone at
+  once. If no atom takes it, it is found at the wall in a direction drawn from the pattern (the
+  same direction sets the atom's recoil), and the spectrometer records it there.
+  - *Lyman light* (121.6, 102.6, 97.3 nm) lifts a resting 1s atom to 2p, 3p or 4p. Its target
+    area is huge (about 7,000, 4,400 and 3,800 nm²), so nearby atoms usually take it and give it
+    back (radiation trapping) before it gets out. Closer than about 20 nm (a fraction of the
+    wavelength) the plane-wave formula breaks down and neighbours share the excitation, so one
+    atom's chance is capped at 50%.
   - *Photoionization:* any photon with more energy than an atom's electron is bound by (13.6 eV
     from 1s, 3.4 from n = 2, 1.5 from n = 3, 0.85 from n = 4) can knock it free. Kramers'
-    cross-section, σ = 7.9e-4 nm² · n · (I/E)³ (6.3e-4 nm² measured for 1s); a photon loose in
-    the box meets a given atom at rate c·σ/V. Excited atoms are drawn for far longer than they
-    live, so for them the clock runs at their real lifetime.
+    cross-section, σ = 7.9e-4 nm² · n · (I/E)³ (6.3e-4 nm² measured for 1s), is tiny, so on one
+    pass this is very rare.
+  - *Free electrons* can't absorb light (they can't take its energy and its push together) and
+    scatter it about 100 million times less often than an atom absorbs it, so they ignore it here.
   - *Collisions:* an electron faster than 10.2 eV can bump a 1s atom to n = 2 (σ ≈ 0.02 ln x / x
-    nm², x = E/10.2 eV) and one faster than 13.6 eV can ionize it (Lotz formula), at rate n·σ·v.
-  - These rare events run on the capture clock (RATE_BOOST, about 24 ns of real time per second
-    of play), so their balance with capture is kept.
+    nm², x = E/10.2 eV), and one faster than 13.6 eV can ionize it (Lotz formula), at rate n·σ·v.
   - *Momentum:* a capture keeps the pair's momentum, every photon given off or absorbed kicks the
     atom by hν/c (about 3 m/s for Lyman-α), and an ionized atom's proton recoils from its electron.
-  - *The gauge* under the counts shows the free electrons' average energy and where the box would
-    settle once its energy is shared out: the Saha balance, solved from the total energy (motion,
-    Coulomb, binding and loose light), with one electron per proton counted. For 11 protons it is
-    about 75% ionized near 15,000 °C. That is the lesson of Acid Neutrality: it ends after you
-    neutralize every proton and watch for 20 s, or after 10 catches and 3 re-ionizations.
+  - *The gauge* under the counts shows the free electrons' average energy and the photons and
+    energy that have left through the edge.
+  - `physics.js` also has what a sealed mirror box would need (photoionization rates, Saha
+    balance). With a perfect mirror, 11 protons would settle about 75% ionized near 15,000 °C,
+    which is why light has to leave for hydrogen to stay neutral.
   - *Not modelled:* elastic electron–atom and atom–atom collisions (tiny energy exchange),
-    free–free absorption, and capture into n ≥ 5. Three-body recombination happens only as far
-    as the classical Coulomb motion produces it.
+    free–free absorption, two-photon absorption and capture into n ≥ 5.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
-  wall-hit flashes were removed and the capture flash dimmed.
+  the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
-  7 nm apart). The goal is to give every one an electron, then see whether it stays neutral (see "The sealed box"). Protons this far apart barely move:
+  7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the electron spirals in over 3 s, and each step down holds its shape
-  for at least 1.5 s and then morphs over 1.5 s, so each photon comes out about 3 s apart.
+  for at least 1.5 s and then morphs over 1.5 s (re-emitted trapped light: 0.3 s and 0.6 s).
 - **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
   then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
   jump; the spiral only shows which electron went where.
