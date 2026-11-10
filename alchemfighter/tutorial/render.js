@@ -236,7 +236,7 @@ export function createRenderer(canvas) {
     const nq = Math.min(MAX_CHARGES, scene.charges.length);
     qArr.fill(0); qsArr.fill(0);
     for (let i = 0; i < nq; i++) { const c = scene.charges[i]; qArr.set([...c.pos, c.q], i * 4); qsArr[i] = c.smear; }
-    gl.uniform4fv(U.uQ, qArr); gl.uniform1fv(U.uQs, qsArr); gl.uniform1i(U.uQN, nq); gl.uniform1f(U.uFieldGain, 6.0);
+    gl.uniform4fv(U.uQ, qArr); gl.uniform1fv(U.uQs, qsArr); gl.uniform1i(U.uQN, nq); gl.uniform1f(U.uFieldGain, 2.0);   // glow brightens inside about 0.3 nm, the capture range
 
     const na = Math.min(MAX_CLOUDS, scene.clouds.length);
     for (let i = 0; i < na; i++) {

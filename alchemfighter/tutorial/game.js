@@ -84,7 +84,7 @@ const freeElectrons = () => S.ps.filter(p => p.kind === 'electron' && p.active);
 const BEATS = {
   1: {
     title: 'Meet the proton',
-    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field: the lines show it. If the lines feel busy, press V for the calmer Glow view. Your ship drifts like anything in space: the keys fire thrusters, and X brakes.',
+    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field: the lines show it. They fade as the field weakens with distance, so the bright part shows where it is strong enough to catch an electron. If the lines feel busy, press V for the calmer Glow view. Your ship drifts like anything in space: the keys fire thrusters, and X brakes.',
   },
   2: {
     title: 'First capture',
@@ -699,6 +699,11 @@ const fib = n => Array.from({ length: n }, (_, i) => {
   return [rr * Math.cos(th), y, rr * Math.sin(th)];
 });
 const SEEDS_P = fib(30), SEEDS_P_CROWD = fib(12), SEEDS_E = fib(10);
+// Field lines fade with the field's real strength, which falls as 1/r². They are at full strength
+// within FIELD_REACH nm, about the closest approach a capture needs (10% at 0.2 nm, 2.5% at 0.5 nm
+// for a slow electron), so what you see is roughly the range where catching can happen.
+const FIELD_REACH = 0.5, FIELD_ALPHA = 0.75;
+const fieldAlpha = mag => Math.min(FIELD_ALPHA, FIELD_ALPHA * FIELD_REACH * FIELD_REACH * mag);
 function fieldLines() {
   for (const p of S.ps) {
     if (!p.active || !p.q) continue;
@@ -711,10 +716,11 @@ function fieldLines() {
         const mag = v3.len(F);
         if (mag < 1e-9) break;
         F = v3.scale(F, (pos ? 1 : -1) / mag);
-        const r = v3.len(v3.sub(x, p.pos)), ds = 0.04 + 0.12 * r;
+        const r = v3.len(v3.sub(x, p.pos)), ds = 0.02 + 0.1 * r;
         x = v3.add(x, v3.scale(F, ds));
         if (v3.len(x) > P.SPHERE_R) break;
-        const a = 0.55 * strength / (1 + 0.08 * r) * Math.min(1, 0.25 + r / 0.8);   // thinner near the charge, where lines crowd
+        const a = fieldAlpha(mag) * Math.min(1, 0.35 + r / 0.4);   // a little thinner right at the charge, where lines crowd
+        if (a < 0.004) break;                                       // too weak to see: stop the line here
         lines.seg(prev, x, pos ? [1, 0.62, 0.18] : [0.3, 0.5, 1], a);
         prev = x;
         // stop at an opposite charge
@@ -733,8 +739,9 @@ function magneticRings(e) {
   if (beta <= 0) return;
   const d = v3.scale(e.vel, 1 / v);
   const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(d, e1);
-  for (const [R, off] of [[0.35, 0], [0.7, -0.5], [0.7, 0.5], [1.2, 0]]) {
-    const a = Math.min(0.7, B_BOOST * beta / (R * R)) * 0.6;
+  // B = v × E / c² falls off as 1/r² like the electric field, so the rings fade the same way.
+  for (const [R, off] of [[0.15, 0], [0.3, -0.25], [0.3, 0.25], [0.55, 0]]) {
+    const a = Math.min(1, B_BOOST * beta) * fieldAlpha(1 / (R * R)) * 0.8;
     const c = v3.add(e.pos, v3.scale(d, off));
     let prev = null;
     for (let i = 0; i <= 24; i++) {
@@ -835,7 +842,7 @@ function draw(views, panel) {
   for (const p of S.ps) {
     if (!p.active) continue;
     if (p.kind === 'proton' && p.glow > 0.001) charges.push({ pos: p.pos, q: p.glow, smear: PROTON_SMEAR });
-    if (p.kind === 'electron') charges.push({ pos: p.pos, q: -1, smear: Math.max(0.05, P.reducedWavelength(Math.max(0.01, p.E || 1))) });
+    if (p.kind === 'electron') charges.push({ pos: p.pos, q: -1, smear: Math.min(0.25, Math.max(0.05, P.reducedWavelength(Math.max(0.01, p.E || 1)))) });
   }
   const fallGlows = [];
   for (const f of S.falling) {
