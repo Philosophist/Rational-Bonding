@@ -38,7 +38,7 @@ const FALL_DUR = 3.0;
 const STEP_HOLD = 1.5, STEP_MORPH = 1.5;
 // Photons bounce off the system's wall (it is a mirror for light). Each one fades out after
 // PHOTON_LIFE screen seconds so the sphere doesn't fill up; at most MAX_PHOTONS fly at once.
-const PHOTON_LIFE = 12, MAX_PHOTONS = 40;
+const PHOTON_LIFE = 12, MAX_PHOTONS = 16;
 // Acid Neutrality: this many fresh protons appear for the player to neutralize.
 const ACID_N = 10;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
@@ -239,15 +239,18 @@ function desc(s) {
   if (!descCache.has(k)) descCache.set(k, waveDesc(s.n, s.l, s.m, 1, true));
   return descCache.get(k);
 }
-function emitPhoton(pos, lam, weight) {
-  let dir;
-  for (;;) {   // random direction, optionally weighted by the dipole's radiation pattern
-    const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z);
-    dir = [rr * Math.cos(th), z, rr * Math.sin(th)];
-    if (!weight || Math.random() < weight(dir)) break;
-  }
-  S.photons.push({ pos: [...pos], dir, lam, age: 0, escaped: false, col: photonColor(lam) });
-  S.flashes.push({ pos: [...pos], col: photonColor(lam), t: 0, life: 0.7, size: 0.9 });
+// Light leaves as a wave: a shell of electromagnetic ripple spreading out from the atom at the
+// speed of light (slowed down here), brightest where the radiation pattern is strongest. A dipole
+// whose charge swings along an axis (Δm = 0) sends most light out sideways (sin²θ); one that turns
+// in a circle (Δm = ±1) sends (1 + cos²θ)/2. The photon's energy is spread over the whole shell
+// until it is detected somewhere, which the spectrometer does at the wall.
+const randomDir = () => { const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z); return [rr * Math.cos(th), z, rr * Math.sin(th)]; };
+function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir()) {
+  const I = pattern === 'lin' ? c => 1 - c * c : pattern === 'circ' ? c => 0.5 * (1 + c * c) : () => 1;
+  let dir;   // the direction the photon's momentum goes (sets the atom's recoil), drawn from the pattern
+  do dir = randomDir(); while (Math.random() > I(v3.dot(dir, axis)));
+  const wallDist = P.SPHERE_R - v3.len(pos);
+  S.photons.push({ src: [...pos], axis, I, dir, lam, age: 0, wallDist, detected: false, col: photonColor(lam) });
   return dir;
 }
 function photonColor(lam) {
@@ -263,8 +266,8 @@ function capture(e, p, E) {
   const atom = { p, st, trans: null, fade: 0, beat: 0, wait: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
   S.atoms.push(atom);
   // The photon leaves from where the electron is when it is caught.
-  emitPhoton(e.pos, lam);
-  S.flashes.push({ pos: [...e.pos], col: [1, 1, 1], t: 0, life: 1.2, size: 1.0 });
+  emitPhoton(e.pos, lam, 'lin');
+  S.flashes.push({ pos: [...e.pos], col: [0.55, 0.6, 0.75], t: 0, life: 1.2, size: 0.8 });
   const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
   let axis = v3.cross(off, rel); axis = v3.len(axis) > 1e-12 ? v3.norm(axis) : [0, 1, 0];
   S.falling.push({ e, atom, off, axis, t: 0 });
@@ -309,9 +312,8 @@ function updateAtoms(dt) {
     a.wait -= dt;
     if (a.wait > 0) continue;
     const d = a.pending; a.pending = null;
-    const pattern = d.dm === 0 ? dir => 1 - dir[1] * dir[1] : dir => 0.5 * (1 + dir[1] * dir[1]);
     for (const lam of d.photons) {
-      const dir = emitPhoton(a.p.pos, lam, d.twoPhoton ? null : pattern);
+      const dir = emitPhoton(a.p.pos, lam, d.twoPhoton ? 'iso' : d.dm === 0 ? 'lin' : 'circ', [0, 1, 0]);
       // Each photon carries momentum hν/c, so the atom recoils (about 3 m/s for Lyman-α).
       a.p.vel = v3.sub(a.p.vel, v3.scale(dir, (P.HC / lam) / P.C / P.MP));
     }
@@ -409,17 +411,9 @@ function step(dtReal) {
   updateAtoms(dt);
   for (const ph of S.photons) {
     ph.age += dt;
-    ph.pos = v3.add(ph.pos, v3.scale(ph.dir, LIGHT_SPEED * dt));
-    const r = v3.len(ph.pos);
-    if (r >= P.SPHERE_R) {
-      // The wall is a mirror for light: reflect, and record the photon on the spectrometer the first time.
-      const n = v3.scale(ph.pos, 1 / r);
-      ph.dir = v3.sub(ph.dir, v3.scale(n, 2 * v3.dot(ph.dir, n)));
-      ph.pos = v3.scale(n, 2 * P.SPHERE_R - r);
-      ph.bounces = (ph.bounces || 0) + 1;
-      if (ph.bounces === 1) S.spectrum.push({ lam: ph.lam, t: S.time });
-      S.flashes.push({ pos: v3.scale(n, P.SPHERE_R), col: ph.col, t: 0, life: 0.6, size: ph.bounces === 1 ? 1.6 : 0.8 });
-    }
+    // The wall is a mirror: the wave reflects (see wavePoint). The spectrometer in the wall
+    // records the photon when the wave first reaches it.
+    if (!ph.detected && LIGHT_SPEED * ph.age >= ph.wallDist) { ph.detected = true; S.spectrum.push({ lam: ph.lam, t: S.time }); }
   }
   S.photons = S.photons.filter(ph => ph.age < PHOTON_LIFE);
   if (S.photons.length > MAX_PHOTONS) S.photons.splice(0, S.photons.length - MAX_PHOTONS);
@@ -583,6 +577,7 @@ $('restartBtn').addEventListener('click', restart);
 $('againBtn').addEventListener('click', () => { $('doneBox').hidden = true; restart(); });
 $('keepBtn').addEventListener('click', () => { $('doneBox').hidden = true; });
 $('startBtn').addEventListener('click', () => { $('startBox').hidden = true; });
+$('startCalmBtn').addEventListener('click', () => { $('startBox').hidden = true; if (S.fieldView) toggleField(); });
 
 function restart() {
   S = newState();
@@ -751,20 +746,58 @@ function magneticRings(e) {
 }
 const drawnWavelength = lam => 0.25 + 1.2 * Math.log(lam / LMIN) / Math.log(LMAX / LMIN);
 const photonFade = ph => Math.max(0, Math.min(1, (PHOTON_LIFE - ph.age) / 3));
+// Where a bit of wavefront that left the source along d is after travelling s nm, bouncing off the
+// mirrored wall like a ray of light (geometric optics).
+function wavePoint(c, d, s) {
+  let p = c, dir = d, rem = s;
+  const R = P.SPHERE_R;
+  for (let k = 0; k < 8; k++) {
+    const b = v3.dot(p, dir), cc = v3.dot(p, p) - R * R, t = -b + Math.sqrt(Math.max(0, b * b - cc));
+    if (rem <= t) return v3.add(p, v3.scale(dir, rem));
+    p = v3.scale(v3.add(p, v3.scale(dir, t)), 1 - 1e-7);
+    const n = v3.scale(p, 1 / R);
+    dir = v3.sub(dir, v3.scale(n, 2 * v3.dot(dir, n)));
+    rem -= t;
+  }
+  return p;
+}
+// The light wave drawn as a grid on its wavefront, a few ripples deep. In Field view the grid lines
+// that run pole to pole follow the electric field (photon colour) and the rings around the axis
+// follow the magnetic field (green), at 90° to each other and to the direction of travel. Brightness
+// follows the radiation pattern and thins out as the wave spreads (it is drawn far brighter than 1/r²).
+const WAVE_MER = 10, WAVE_PAR = [0.2, 0.35, 0.5, 0.65, 0.8], WAVE_STEPS = 28;
 function photonLines(ph) {
-  const lw = drawnWavelength(ph.lam), L = 8 * lw, N = 96, A = 0.35, d = ph.dir;
-  const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(d, e1);
-  const k = Math.min(1, ph.age * 5) * photonFade(ph);
-  // Light is an electric wave (photon colour) and a magnetic wave (green) at 90° to it and to the
-  // direction of travel, rising and falling together.
-  let prev = null, prevB = null;
-  for (let i = 0; i <= N; i++) {
-    const s = -L / 2 + L * i / N, env = Math.cos(Math.PI * s / L) ** 2 * A, w = Math.cos(2 * Math.PI * s / lw) * env;
-    const base = v3.add(ph.pos, v3.scale(d, s - L / 2));
-    const pt = v3.add(base, v3.scale(e1, w)), pb = v3.add(base, v3.scale(e2, w * 0.8));
-    if (prev) { lines.seg(prev, pt, ph.col, k); if (S.fieldView) lines.seg(prevB, pb, [0.36, 0.95, 0.6], 0.45 * k); }
-    if (S.fieldView && i % 4 === 0) lines.seg(base, pt, ph.col, 0.25 * k);
-    prev = pt; prevB = pb;
+  const lw = 1.2 * drawnWavelength(ph.lam), s0 = LIGHT_SPEED * ph.age;
+  const a = ph.axis, e1 = v3.norm(v3.cross(a, Math.abs(a[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(a, e1);
+  const dirOf = (th, ph2) => v3.add(v3.scale(a, Math.cos(th)), v3.add(v3.scale(e1, Math.sin(th) * Math.cos(ph2)), v3.scale(e2, Math.sin(th) * Math.sin(ph2))));
+  const base = Math.min(1, ph.age * 4) * photonFade(ph) * Math.min(1, 4 / Math.sqrt(1 + s0));
+  const ripples = S.fieldView ? 3 : 1;
+  for (let k = 0; k < ripples; k++) {
+    const s = s0 - k * lw;
+    if (s <= 0.05) continue;
+    const kk = base * (k === 0 ? 1 : k === 1 ? 0.55 : 0.3) * (S.fieldView ? 1.4 : 0.6);
+    // E lines: from pole to pole
+    for (let m = 0; m < WAVE_MER; m++) {
+      const phi = 2 * Math.PI * m / WAVE_MER;
+      let prev = null, prevI = 0;
+      for (let i = 0; i <= WAVE_STEPS; i++) {
+        const th = 0.08 + (Math.PI - 0.16) * i / WAVE_STEPS, d = dirOf(th, phi), I = ph.I(Math.cos(th));
+        const pt = wavePoint(ph.src, d, s);
+        if (prev) lines.seg(prev, pt, ph.col, kk * 0.5 * (I + prevI));
+        prev = pt; prevI = I;
+      }
+    }
+    if (!S.fieldView) continue;
+    // B lines: rings around the axis
+    for (const f of WAVE_PAR) {
+      const th = Math.PI * f, I = ph.I(Math.cos(th));
+      let prev = null;
+      for (let i = 0; i <= 36; i++) {
+        const pt = wavePoint(ph.src, dirOf(th, 2 * Math.PI * i / 36), s);
+        if (prev) lines.seg(prev, pt, [0.36, 0.95, 0.6], kk * 0.6 * I);
+        prev = pt;
+      }
+    }
   }
 }
 function coneLines(a) {
@@ -834,7 +867,6 @@ function draw(views, panel) {
     const x = f.t / f.life;
     glows.push({ pos: f.pos, size: f.size * (0.3 + Math.sqrt(x)) * 0.4, col: f.col.map(c => c * (1 - x) * 1.4) });
   }
-  for (const ph of S.photons) glows.push({ pos: v3.add(ph.pos, v3.scale(ph.dir, 0)), size: 0.08, col: ph.col.map(c => c * 0.9 * photonFade(ph)) });
 
   lines.begin();
   if (S.fieldView) { fieldLines(); for (const e of freeElectrons()) magneticRings(e); }

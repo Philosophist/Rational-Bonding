@@ -45,9 +45,16 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   pick a game speed (×0.1 to ×2), and the clock slows automatically (down to ×0.03) while an
   electron is within 4 nm of a proton, so it never moves faster than about 2.5 nm per screen
   second there. Capture odds are per pass, so slow motion doesn't change them.
-- **Light and the wall:** the wall is a mirror for light. Photons bounce around inside, and each
-  is recorded on the spectrometer the first time it reaches the wall. Each fades out after 12 s,
-  and at most 40 fly at once, to keep the scene readable.
+- **Light as a wave:** each photon is drawn as its electromagnetic wave: a grid on the expanding
+  wavefront, a few ripples deep. Lines from pole to pole follow the electric field (photon colour);
+  rings around the axis follow the magnetic field (green). Brightness follows the dipole pattern
+  (sin²θ for Δm = 0, (1 + cos²θ)/2 for Δm = ±1) and fades as the wave spreads. The wall is a
+  mirror: every bit of wavefront reflects like a ray (geometric optics), so after a bounce the
+  grid folds into caustics. The spectrometer records the photon when the wave first touches the
+  wall. Waves fade after 12 s, at most 16 at once. The atom's recoil uses one direction drawn
+  from the same pattern. Atoms never store photons: each is made when the electron drops.
+- **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
+  wall-hit flashes were removed and the capture flash dimmed.
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
   7 nm apart). The goal is to give every one an electron. Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.

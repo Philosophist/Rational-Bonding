@@ -93,9 +93,11 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 #crosshair { position: fixed; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; pointer-events: none; color: rgba(214,226,238,.7); }
 #crosshair.on { color: var(--good); }
 .overlay { position: fixed; inset: 0; z-index: 3; display: grid; place-items: center; padding: 16px; background: rgba(2,4,10,.45); }
-.overlay .panel { max-width: 460px; padding: 20px 22px; }
+.overlay .panel { max-width: 460px; padding: 20px 22px; max-height: calc(100dvh - 32px); overflow: auto; }
 .overlay h2 { font-size: 22px; }
 .fine { font-size: 11px; color: var(--muted); }
+.warn { font-size: 12px; border: 1px solid rgba(255,233,77,.45); background: rgba(255,233,77,.07); border-radius: 4px; padding: 7px 9px; margin: 8px 0 0; }
+.warn b { color: var(--gold); }
 a { color: var(--cyan); }
 /* Phones: one slim bar on top (tap ⓘ for the tutor and options), a small gun panel bottom right,
    the flight pad bottom left, and the middle of the screen left clear. */
@@ -206,7 +208,8 @@ a { color: var(--cyan); }
     <h1>Alchemfighter</h1>
     <h2>Level 1: Electromagnetic Stardust</h2>
     <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. In this level, the edge of the system reflects everything, including photons (light).</p>
-    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="vrBtn2">Enter VR</button></div>
+    <p class="warn" role="note"><b>Photosensitivity warning.</b> This game has flashes of light and moving patterns. If you have photosensitive epilepsy, or flashing lights have ever affected you, please talk to a doctor before playing, and stop at once if you feel unwell. Glow view (V, or ⓘ on phones) is the calmer view.</p>
+    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="startCalmBtn" title="Start in Glow view: no field lines or light waves">Start in Glow view</button><button type="button" id="vrBtn2">Enter VR</button></div>
     <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>
   </div>
 </div>
