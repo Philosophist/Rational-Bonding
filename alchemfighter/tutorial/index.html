@@ -158,9 +158,9 @@ a { color: var(--cyan); }
         <div class="row"><span id="moveBtns"><button type="button" id="fwdBtn">▲ fly</button><button type="button" id="backBtn">▼ back</button><button type="button" id="brakeBtn">■ brake</button></span><button type="button" class="fire" id="fireBtn">FIRE</button></div>
       </div>
       <div class="data" id="aimOut"></div>
-      <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that leaves the sphere, at its real wavelength"></canvas>
+      <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that reaches the wall, at its real wavelength"></canvas>
       <div class="data fine" id="photonOut" aria-live="polite"></div>
-      <div class="fine" id="spectroNote">Spectrometer: each photon that escapes the sphere, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
+      <div class="fine" id="spectroNote">Spectrometer: each photon when it first reaches the wall, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
       <div class="keys">Drag to look · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
       <div class="keys touch">Drag to look · FIRE to shoot · ▲ ▼ to thrust · ■ to brake</div>
     </section>
@@ -179,10 +179,10 @@ a { color: var(--cyan); }
 <div class="overlay" id="doneBox" hidden>
   <div class="panel">
     <h1>Goal reached</h1>
-    <h2>You made a hydrogen atom</h2>
+    <h2 id="doneTitle">You made a hydrogen atom</h2>
     <p id="doneText"></p>
     <p class="fine" id="doneKinds"></p>
-    <p class="fine">Next in this level: the photon gun lights up the atom. That part isn't built yet.</p>
+    <p class="fine">More of this level is on the way.</p>
     <div class="row" style="margin-top:10px"><button type="button" id="keepBtn">Keep playing</button><button type="button" id="againBtn">Play again</button></div>
   </div>
 </div>

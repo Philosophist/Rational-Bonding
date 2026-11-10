@@ -2,7 +2,7 @@
 // the glow of their electric field, electron clouds (ray-marched wavefunctions, as in the prototype),
 // point glows for flashes, and a line pass for photons, field lines, trails and the aim cone.
 
-export const MAX_CHARGES = 16, MAX_CLOUDS = 2, MAX_GLOWS = 24;
+export const MAX_CHARGES = 32, MAX_CLOUDS = 12, MAX_GLOWS = 48;
 
 const VERT = `#version 300 es
 in vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -138,7 +138,7 @@ void main(){
   // A steep curve keeps the bright part of each glow well inside a 1s atom (about 0.1 nm).
   col += vec3(1.0, 0.62, 0.18) * 1.1 * pow(fp, 5.0) + vec3(0.3, 0.5, 1.0) * 1.3 * pow(fn, 5.0);
 
-  // Electron clouds, front to back (at most two here).
+  // Electron clouds (small and far apart, so their order doesn't matter much).
   float T = 1.0; vec3 acc = vec3(0.0);
   for (int i = 0; i < ${MAX_CLOUDS}; i++) {
     if (i >= uNA) break;

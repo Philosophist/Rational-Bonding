@@ -30,10 +30,17 @@ const LIGHT_SPEED = 20;          // nm per screen second: light is drawn slowed 
 // close to a proton: there it speeds up a lot, so the clock slows until it moves at most
 // SLOW_TARGET nm per screen second. Odds per pass don't depend on the clock.
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2];
-const SLOW_NEAR = 4, SLOW_TARGET = 2.5, SLOW_MIN = 0.03;
+const SLOW_NEAR = 4, SLOW_TARGET = 1.5, SLOW_MIN = 0.02;
 // After a capture the electron's glow is drawn melting into its new cloud over this many seconds.
 // (In nature the change is a sudden quantum jump; this lets you see which electron went where.)
-const FALL_DUR = 2.2;
+const FALL_DUR = 3.0;
+// Each step down the ladder: the shape holds for at least STEP_HOLD s, then morphs over STEP_MORPH s.
+const STEP_HOLD = 1.5, STEP_MORPH = 1.5;
+// Photons bounce off the system's wall (it is a mirror for light). Each one fades out after
+// PHOTON_LIFE screen seconds so the sphere doesn't fill up; at most MAX_PHOTONS fly at once.
+const PHOTON_LIFE = 12, MAX_PHOTONS = 40;
+// Acid Neutrality: this many fresh protons appear for the player to neutralize.
+const ACID_N = 10;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
 const THRUST = 5, THRUST_FAST = 15, BRAKE = 10;   // nm/s²
 const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
@@ -54,7 +61,7 @@ function newState() {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], photons: [], flashes: [], spectrum: [],
     shots: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
-    b2: { tooFastSaid: false, captured: false, doneShown: false }, ended: false, said: '',
+    b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0 }, b3: { spawned: false, doneAt: 0 }, ended: false, said: '',
   };
 }
 // The player's eye: the flat camera, or the VR headset placed in the ship.
@@ -83,6 +90,10 @@ const BEATS = {
     title: 'First capture',
     say: 'Your gun fires electrons. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy, and it does that by giving off light. Fire a slow electron at the proton.',
   },
+  3: {
+    title: 'Acid Neutrality',
+    say: `Ten more protons have appeared. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Light now bounces off the wall of the system, so watch it ricochet.`,
+  },
 };
 function say(text) {
   if (S.said === text) return;
@@ -96,10 +107,14 @@ function goals() {
       ['Try Glow view and back (V)', S.b1.toggled],
     ];
   }
-  return [
-    ['Fire electrons at the proton', S.shots > 0],
-    ['Catch one: make a neutral hydrogen atom', S.b2.captured],
-  ];
+  if (S.beat === 2) {
+    return [
+      ['Fire electrons at the proton', S.shots > 0],
+      ['Catch one: make a neutral hydrogen atom', S.b2.captured],
+    ];
+  }
+  const left = acidLeft();
+  return [[`Neutralize the protons (${ACID_N - left} of ${ACID_N})`, left === 0]];
 }
 let lastGoals = '';
 function renderGoals() {
@@ -113,8 +128,29 @@ function startBeat(n) {
   $('beatTitle').textContent = BEATS[n].title;
   say(BEATS[n].say);
   $('fireBtn').disabled = n < 2;
-  $('skipBtn').hidden = n >= 2;
+  $('skipBtn').hidden = n >= 3;
+  $('skipBtn').textContent = n === 1 ? 'Skip to the gun' : 'Skip to Acid Neutrality';
   lastGoals = '';
+  if (n === 3 && !S.b3.spawned) spawnAcid();
+  panelDirty();
+}
+const acidLeft = () => S.ps.filter(p => p.acid && p.q === 1).length;
+// Scatter the acid's protons through the sphere, not too close to each other, the atom or you.
+function spawnAcid() {
+  S.b3.spawned = true;
+  const taken = [...S.ps.filter(p => p.kind === 'proton').map(p => p.pos), cam.p];
+  for (let i = 0; i < ACID_N; i++) {
+    let pos;
+    for (let tries = 0; tries < 400; tries++) {
+      const r = 8 + 20 * Math.cbrt(Math.random()), z = Math.random() * 2 - 1, th = Math.random() * 2 * Math.PI, rr = Math.sqrt(1 - z * z);
+      pos = [r * rr * Math.cos(th), r * z * 0.6, r * rr * Math.sin(th)];
+      if (taken.every(q => v3.len(v3.sub(q, pos)) > 7)) break;
+    }
+    taken.push(pos);
+    S.ps.push({ id: `p${nextId++}`, kind: 'proton', q: 1, m: P.MP, pos, vel: [0, 0, 0], active: true, glow: 1, acid: true });
+    S.flashes.push({ pos: [...pos], col: [1, 0.8, 0.5], t: 0, life: 1.2, size: 1.4 });
+  }
+  log(`${ACID_N} protons (H⁺) appeared. Acid Neutrality: neutralize them all.`, 'hit');
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +203,7 @@ function fire() {
   const e1 = v3.norm(v3.cross(ax, Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(ax, e1);
   const off = v3.add(v3.scale(e1, P.gaussian() * a.cone), v3.scale(e2, P.gaussian() * a.cone));
   const dir = v3.norm(v3.sub(v3.add(a.aimPoint, off), a.muzzle));
-  const near = bareProtons()[0];
+  const near = a.target && a.target.p.q === 1 ? a.target.p : bareProtons()[0];
   const KEl = launchKE(a.E, near ? v3.len(v3.sub(a.muzzle, near.pos)) : 99);
   S.shots++;
   addElectron([...a.muzzle], v3.scale(dir, P.electronSpeed(KEl)), { shot: S.shots, E: a.E, born: S.time });
@@ -237,7 +273,7 @@ function scheduleDecay(atom) {
   const d = P.pickDecay(atom.st);
   atom.pending = d;
   if (!d) return;
-  atom.wait = d.twoPhoton ? 3.0 : Math.min(6, Math.max(0.9, d.delayNs / NS_PER_S));
+  atom.wait = d.twoPhoton ? 3.0 : Math.min(6, Math.max(STEP_HOLD, d.delayNs / NS_PER_S));
   if (d.twoPhoton) log('2s can\'t give off a single photon. Skipping ahead about 0.12 s…');
 }
 // "far ultraviolet (Lyman-α, Lyman series)": what kind of radiation a photon is.
@@ -273,23 +309,31 @@ function updateAtoms(dt) {
     S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
     const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
     log(`${P.stateName(a.st)} → ${P.stateName(d.to)} after ${when}: ${names}`, d.photons.some(l => P.lineName(l) === 'H-α') ? 'red' : '');
-    a.trans = { from: a.st, to: d.to, t: 0, dur: 0.9 };
+    a.trans = { from: a.st, to: d.to, t: 0, dur: STEP_MORPH };
   }
   if (S.cascade) {
     const a = S.cascade.atom;
-    if (!a.trans && !a.pending && a.st.n === 1) {
+    if (!a.trans && !a.pending && a.st.n === 1 && a.fade >= 1) {
       S.cascade = null; S.autoCam = null;
       const red = a.steps.some(s => [].concat(s.lam).some(l => P.lineName(l) === 'H-α'));
       say(`You just made a hydrogen atom. The electron dropped down an energy staircase and every step came out as light${red ? ', including the red H-alpha line that makes hydrogen nebulae glow' : ''}. It stops at the bottom step, called 1s. It can't fall any further and never lands on the proton: 1s is the lowest energy an electron can have here.`);
-      if (!S.b2.doneShown) { S.b2.doneShown = true; setTimeout(showDone, 2500); }
+      if (S.beat === 2 && !S.b2.nextAt) S.b2.nextAt = S.time + 7;   // time to read, then Acid Neutrality
+      if (S.beat === 3 && acidLeft() === 0 && !S.b3.doneAt) {
+        S.b3.doneAt = S.time;
+        say('The acid is neutral: every proton now holds an electron. Eleven hydrogen atoms float in your system, and all the light they gave off is still bouncing around inside it.');
+        setTimeout(showDone, 3000);
+      }
     }
   }
 }
 function showDone() {
-  const a = S.atoms[0];
-  const photons = a.steps.flatMap(s => [].concat(s.lam));
-  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'}. The atom gave off ${photons.length} photon${photons.length === 1 ? '' : 's'} on the way down: ${photons.map(l => `${l.toFixed(1)} nm (${P.classify(l).name}${P.lineName(l) ? `, ${P.lineName(l)}` : ''})`).join(', ')}.`;
-  const kinds = [...new Set(photons.map(l => P.classify(l)))].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
+  const photons = S.atoms.flatMap(a => a.steps.flatMap(s => [].concat(s.lam)));
+  const count = new Map();
+  const cls = new Map();
+  for (const l of photons) { const c = P.classify(l); cls.set(c.name, c); count.set(c.name, (count.get(c.name) || 0) + 1); }
+  $('doneTitle').textContent = 'You neutralized the acid';
+  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${photons.length} photons: ${[...count].map(([name, k]) => `${k} ${name}`).join(', ')}.`;
+  const kinds = [...cls.values()].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
   $('doneKinds').textContent = kinds.join('. ') + '.';
   $('doneBox').hidden = false;
 }
@@ -355,13 +399,20 @@ function step(dtReal) {
   for (const ph of S.photons) {
     ph.age += dt;
     ph.pos = v3.add(ph.pos, v3.scale(ph.dir, LIGHT_SPEED * dt));
-    if (!ph.escaped && v3.len(ph.pos) >= P.SPHERE_R) {
-      ph.escaped = true;
-      S.spectrum.push({ lam: ph.lam, t: S.time });
-      S.flashes.push({ pos: [...ph.pos], col: ph.col, t: 0, life: 0.8, size: 1.6 });
+    const r = v3.len(ph.pos);
+    if (r >= P.SPHERE_R) {
+      // The wall is a mirror for light: reflect, and record the photon on the spectrometer the first time.
+      const n = v3.scale(ph.pos, 1 / r);
+      ph.dir = v3.sub(ph.dir, v3.scale(n, 2 * v3.dot(ph.dir, n)));
+      ph.pos = v3.scale(n, 2 * P.SPHERE_R - r);
+      ph.bounces = (ph.bounces || 0) + 1;
+      if (ph.bounces === 1) S.spectrum.push({ lam: ph.lam, t: S.time });
+      S.flashes.push({ pos: v3.scale(n, P.SPHERE_R), col: ph.col, t: 0, life: 0.6, size: ph.bounces === 1 ? 1.6 : 0.8 });
     }
   }
-  S.photons = S.photons.filter(ph => v3.len(ph.pos) < P.SPHERE_R + 12);
+  S.photons = S.photons.filter(ph => ph.age < PHOTON_LIFE);
+  if (S.photons.length > MAX_PHOTONS) S.photons.splice(0, S.photons.length - MAX_PHOTONS);
+  if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
   for (const f of S.flashes) f.t += dt;
   S.flashes = S.flashes.filter(f => f.t < f.life);
 
@@ -509,7 +560,7 @@ $('fieldBtn').addEventListener('click', toggleField);
 $('dialDown').addEventListener('click', () => setDial(S.dial - 1));
 $('dialUp').addEventListener('click', () => setDial(S.dial + 1));
 $('fireBtn').addEventListener('click', fire);
-$('skipBtn').addEventListener('click', () => startBeat(2));
+$('skipBtn').addEventListener('click', () => startBeat(Math.min(3, S.beat + 1)));
 $('restartBtn').addEventListener('click', restart);
 $('againBtn').addEventListener('click', () => { $('doneBox').hidden = true; restart(); });
 $('keepBtn').addEventListener('click', () => { $('doneBox').hidden = true; });
@@ -572,7 +623,7 @@ function drawLadder() {
   lctx.font = '20px ui-monospace, monospace';
   lctx.fillStyle = 'rgba(90,140,255,.12)'; lctx.fillRect(0, 0, W, top - 6);
   lctx.fillStyle = 'rgba(214,226,238,.55)'; lctx.fillText('free (E > 0)', 10, 26);
-  const a = S.atoms[0], cur = a ? (a.trans ? a.trans.to : a.st) : null;
+  const a = S.cascade ? S.cascade.atom : S.atoms[S.atoms.length - 1], cur = a ? (a.trans ? a.trans.to : a.st) : null;
   for (let n = 1; n <= 4; n++) {
     const yy = y(P.levelE(n)), lit = cur && cur.n === n;
     lctx.fillStyle = lit ? '#ffe94d' : 'rgba(214,226,238,.35)';
@@ -634,13 +685,13 @@ const fib = n => Array.from({ length: n }, (_, i) => {
   const y = 1 - 2 * (i + 0.5) / n, rr = Math.sqrt(1 - y * y), th = i * 2.399963;
   return [rr * Math.cos(th), y, rr * Math.sin(th)];
 });
-const SEEDS_P = fib(30), SEEDS_E = fib(10);
+const SEEDS_P = fib(30), SEEDS_P_CROWD = fib(12), SEEDS_E = fib(10);
 function fieldLines() {
   for (const p of S.ps) {
     if (!p.active || !p.q) continue;
     const pos = p.kind === 'proton', strength = pos ? p.glow : 1;
     if (strength < 0.05) continue;
-    for (const s of pos ? SEEDS_P : SEEDS_E) {
+    for (const s of pos ? (bareProtons().length > 2 ? SEEDS_P_CROWD : SEEDS_P) : SEEDS_E) {
       let x = v3.add(p.pos, v3.scale(s, 0.12)), prev = x;
       for (let i = 0; i < 140; i++) {
         let F = fieldAt(x);
@@ -681,10 +732,11 @@ function magneticRings(e) {
   }
 }
 const drawnWavelength = lam => 0.25 + 1.2 * Math.log(lam / LMIN) / Math.log(LMAX / LMIN);
+const photonFade = ph => Math.max(0, Math.min(1, (PHOTON_LIFE - ph.age) / 3));
 function photonLines(ph) {
   const lw = drawnWavelength(ph.lam), L = 8 * lw, N = 96, A = 0.35, d = ph.dir;
   const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(d, e1);
-  const k = Math.min(1, ph.age * 5);
+  const k = Math.min(1, ph.age * 5) * photonFade(ph);
   // Light is an electric wave (photon colour) and a magnetic wave (green) at 90° to it and to the
   // direction of travel, rising and falling together.
   let prev = null, prevB = null;
@@ -764,7 +816,7 @@ function draw(views, panel) {
     const x = f.t / f.life;
     glows.push({ pos: f.pos, size: f.size * (0.3 + Math.sqrt(x)) * 0.4, col: f.col.map(c => c * (1 - x) * 1.4) });
   }
-  for (const ph of S.photons) glows.push({ pos: v3.add(ph.pos, v3.scale(ph.dir, 0)), size: 0.08, col: ph.col.map(c => c * 0.9) });
+  for (const ph of S.photons) glows.push({ pos: v3.add(ph.pos, v3.scale(ph.dir, 0)), size: 0.08, col: ph.col.map(c => c * 0.9 * photonFade(ph)) });
 
   lines.begin();
   if (S.fieldView) { fieldLines(); for (const e of freeElectrons()) magneticRings(e); }

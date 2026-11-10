@@ -45,6 +45,14 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   pick a game speed (×0.1 to ×2), and the clock slows automatically (down to ×0.03) while an
   electron is within 4 nm of a proton, so it never moves faster than about 2.5 nm per screen
   second there. Capture odds are per pass, so slow motion doesn't change them.
+- **Light and the wall:** the wall is a mirror for light. Photons bounce around inside, and each
+  is recorded on the spectrometer the first time it reaches the wall. Each fades out after 12 s,
+  and at most 40 fly at once, to keep the scene readable.
+- **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
+  7 nm apart). The goal is to give every one an electron. Protons this far apart barely move:
+  their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
+- **Pacing of a capture:** the electron spirals in over 3 s, and each step down holds its shape
+  for at least 1.5 s and then morphs over 1.5 s, so each photon comes out about 3 s apart.
 - **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
   then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
   jump; the spiral only shows which electron went where.
@@ -74,5 +82,5 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   switches Field / Glow view. The tutor text and odds are on a panel above the left hand.
   Tested only with a simulated headset so far.
 
-Not in this slice yet: beats 3 to 5, the potential-landscape grid, field quenching of 2s,
+Not in this slice yet: the photon gun, H2, the potential-landscape grid, field quenching of 2s,
 and the deuterium "Heavy Find".
