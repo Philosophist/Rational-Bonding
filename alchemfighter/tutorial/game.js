@@ -92,7 +92,7 @@ const BEATS = {
   },
   3: {
     title: 'Acid Neutrality',
-    say: `Ten more protons have appeared. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Light now bounces off the wall of the system, so watch it ricochet.`,
+    say: `Ten more protons have appeared. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Light bounces off the wall of the system, so watch it ricochet.`,
   },
 };
 function say(text) {
