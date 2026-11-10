@@ -76,6 +76,9 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Glow view** (V): the calmer view, glows only.
 - **Window:** drag to look, click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
   [ ] or the wheel for electron speed, , and . for game speed.
+- **Phones and tablets:** a flight pad bottom left (thrust ▲ ▼ ◀ ▶, rise, sink, ■ brake) and the
+  gun bottom right. On small screens the tutor folds into one bar showing the next goal; ⓘ opens
+  it (a yellow dot means new tutor text). The ladder, spectrometer and side panels are hidden there.
 - **VR:** 1 metre in the headset is drawn as 1 nm. Left stick thrusts where you look (the ship keeps drifting;
   squeeze the left grip to brake; Y changes game speed); right stick turns
   and rises or sinks; trigger fires along the right controller; A / B change electron speed; X
