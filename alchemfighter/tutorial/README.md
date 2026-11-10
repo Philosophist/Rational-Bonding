@@ -41,17 +41,22 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **2s** decays by two photons sharing 10.2 eV after about 0.12 s, shown as a labelled time skip.
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
 - **Time:** 1 screen second is 40 fs while particles fly, and 25 ns during a cascade (free
-  particles wait meanwhile). Light is drawn slowed down so you can see it leave. The player can
+  particles wait meanwhile). Light moves at its real speed on the same clock (c × real time), so
+  it crosses the sphere in a blink, as it really does next to slow matter. The player can
   pick a game speed (×0.1 to ×2), and the clock slows automatically (down to ×0.03) while an
   electron is within 4 nm of a proton, so it never moves faster than about 2.5 nm per screen
   second there. Capture odds are per pass, so slow motion doesn't change them.
-- **Light as a wave:** each photon is drawn as its electromagnetic wave: a grid on the expanding
+- **Light as a wave:** light is about 1,600 times faster than a 0.1 eV electron, so relative to
+  light all matter is practically frozen. Bouncing off the mirror, a photon soon fills the whole
+  sphere, so loose light is drawn as faint crossed E and B strokes scattered through the sphere,
+  one set per photon, until an atom takes it. The replay (L key or ▶ light) freezes matter and
+  redraws the last wave spreading at 20 nm per second. The replayed wave is a grid on the expanding
   wavefront, a few ripples deep. Lines from pole to pole follow the electric field (photon colour);
   rings around the axis follow the magnetic field (green). Brightness follows the dipole pattern
   (sin²θ for Δm = 0, (1 + cos²θ)/2 for Δm = ±1) and fades as the wave spreads. The wall is a
   mirror: every bit of wavefront reflects like a ray (geometric optics), so after a bounce the
   grid folds into caustics. The spectrometer records the photon when the wave first touches the
-  wall. Waves fade after 12 s, at most 16 at once. The atom's recoil uses one direction drawn
+  wall. The atom's recoil uses one direction drawn
   from the same pattern. Atoms never store photons: each is made when the electron drops.
 - **The sealed box:** nothing escapes the mirror, so the energy from every catch stays inside.
   The game keeps a record of every photon in the box, separate from the drawn waves, which fade.

@@ -25,7 +25,11 @@ const fmtNm = r => (r < 0.1 ? `${(r * 1000).toFixed(0)} pm` : `${r.toFixed(2)} n
 // clock switches to nanoseconds and the free particles wait (shown as "paused" in the HUD).
 const FS_PER_S = 40;
 const NS_PER_S = 25;
-const LIGHT_SPEED = 20;          // nm per screen second: light is drawn slowed down so you can see it
+// Light moves at its real speed against the same clock as everything else: about 1,600 times faster
+// than a slow electron, so it crosses the sphere in a blink and then fills it, bouncing off the
+// mirror. The replay (L key) freezes matter and redraws the last wave at REPLAY_SPEED so you can
+// watch it spread.
+const REPLAY_SPEED = 20;         // nm per screen second, in the replay only
 // Game speed the player picks (, and . keys), and automatic slow motion when an electron dives in
 // close to a proton: there it speeds up a lot, so the clock slows until it moves at most
 // SLOW_TARGET nm per screen second. Odds per pass don't depend on the clock.
@@ -36,9 +40,6 @@ const SLOW_NEAR = 4, SLOW_TARGET = 1.5, SLOW_MIN = 0.02;
 const FALL_DUR = 3.0;
 // Each step down the ladder: the shape holds for at least STEP_HOLD s, then morphs over STEP_MORPH s.
 const STEP_HOLD = 1.5, STEP_MORPH = 1.5;
-// Photons bounce off the system's wall (it is a mirror for light). Each one fades out after
-// PHOTON_LIFE screen seconds so the sphere doesn't fill up; at most MAX_PHOTONS fly at once.
-const PHOTON_LIFE = 12, MAX_PHOTONS = 16;
 // Acid Neutrality: this many fresh protons appear for the player to neutralize.
 const ACID_N = 10;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
@@ -58,7 +59,7 @@ let nextId = 1;
 function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
-    time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], photons: [], flashes: [], spectrum: [],
+    time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], lastWave: null, replay: null, flashes: [], spectrum: [],
     shots: 0, absorbed: 0, ionized: 0, bumped: 0, oldSteps: [], light: [], passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0 }, b3: { spawned: false, doneAt: 0, allAt: 0, caught: 0 }, ended: false, said: '',
@@ -242,7 +243,7 @@ function desc(s) {
   return descCache.get(k);
 }
 // Light leaves as a wave: a shell of electromagnetic ripple spreading out from the atom at the
-// speed of light (slowed down here), brightest where the radiation pattern is strongest. A dipole
+// speed of light, brightest where the radiation pattern is strongest. A dipole
 // whose charge swings along an axis (Δm = 0) sends most light out sideways (sin²θ); one that turns
 // in a circle (Δm = ±1) sends (1 + cos²θ)/2. The photon's energy is spread over the whole shell
 // until it is detected somewhere, which the spectrometer does at the wall.
@@ -257,7 +258,9 @@ function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir()) {
   const L = { lam, E: P.HC / lam, src: [...pos], x: 0, wallDist, col };
   planLyman(L, I, avgI);
   S.light.push(L);
-  S.photons.push({ src: [...pos], axis, I, dir, lam, age: 0, wallDist, detected: false, col, L });
+  L.born = S.time;
+  S.lastWave = { src: [...pos], axis, I, lam, col, wallDist };
+  if (!S.replaySaid && S.beat >= 2) { S.replaySaid = true; log('Light crosses the sphere in a blink: it is about 1,600 times faster than a slow electron. Press L (or ▶ light) to replay the last wave with everything else frozen.'); }
   return dir;
 }
 
@@ -306,8 +309,12 @@ function takeLight(L, a, hitDir = randomDir()) {
   a.p.vel = v3.add(a.p.vel, v3.scale(hitDir, L.E / P.C / P.MP));   // the photon's push
 }
 // dtNs: real nanoseconds that pass for the rare events this step.
-function updateLight(dt, dtNs) {
-  for (const L of S.light) L.x += LIGHT_SPEED * dt;
+function updateLight(dt, dtNs, dLight) {
+  for (const L of S.light) {
+    L.x += dLight;
+    // The spectrometer in the wall records each photon when its wave first reaches it.
+    if (!L.detected && L.x >= L.wallDist) { L.detected = true; S.spectrum.push({ lam: L.lam, t: S.time }); }
+  }
   // Lyman light finds a resting 1s atom.
   for (const L of S.light) {
     if (!L.lyman || L.gone || L.x < L.absorbAt) continue;
@@ -340,7 +347,6 @@ function updateLight(dt, dtNs) {
       : `Uh oh! Bouncing light knocked the electron off an excited atom. Up on step n = ${a.st.n} it only takes ${P.ionE(a.st.n).toFixed(1)} eV, so even ordinary light can do it. Nothing can leave this system, so the energy you put in keeps coming back.`);
   }
   S.light = S.light.filter(L => !L.gone);
-  S.photons = S.photons.filter(ph => !ph.L.gone);
 }
 // Fast electrons hitting resting atoms: n = 2 excitation above 10.2 eV, ionization above 13.6 eV.
 function collisions(dtNs) {
@@ -556,7 +562,20 @@ function slowTarget() {
   }
   return k;
 }
+// Replay the last light wave at a watchable speed, with matter frozen (relative to light, it is).
+function startReplay() {
+  if (!S.lastWave || xr.session) return;
+  if (S.replay) { stopReplay(); return; }
+  S.replay = { ...S.lastWave, s: 0, end: S.lastWave.wallDist + 2 * P.SPHERE_R };
+  document.body.classList.add('replaying');
+}
+function stopReplay() { S.replay = null; document.body.classList.remove('replaying'); }
 function step(dtReal) {
+  if (S.replay) {   // matter frozen: only the replayed wave moves
+    S.replay.s += REPLAY_SPEED * dtReal;
+    if (S.replay.s > S.replay.end) stopReplay();
+    return;
+  }
   const dt = dtReal * SPEEDS[S.speed];
   S.time += dt;
   S.cooldown = Math.max(0, S.cooldown - dtReal);
@@ -579,16 +598,10 @@ function step(dtReal) {
   updateAtoms(dt);
   // Rare events run on the capture clock (sped up by RATE_BOOST), or the cascade clock while you watch one.
   const dtNs = S.cascade ? dt * NS_PER_S : dt * FS_PER_S * S.slow * P.RATE_BOOST * 1e-6;
-  updateLight(dt, dtNs);
+  // Light covers c × (real time): the cascade clock runs in nanoseconds, the flight clock in femtoseconds.
+  const dLight = P.C * (S.cascade ? dt * NS_PER_S * 1e6 : dt * FS_PER_S * S.slow);
+  updateLight(dt, dtNs, dLight);
   if (!S.cascade) collisions(dtNs);
-  for (const ph of S.photons) {
-    ph.age += dt;
-    // The wall is a mirror: the wave reflects (see wavePoint). The spectrometer in the wall
-    // records the photon when the wave first reaches it.
-    if (!ph.detected && LIGHT_SPEED * ph.age >= ph.wallDist) { ph.detected = true; S.spectrum.push({ lam: ph.lam, t: S.time }); }
-  }
-  S.photons = S.photons.filter(ph => ph.age < PHOTON_LIFE);
-  if (S.photons.length > MAX_PHOTONS) S.photons.splice(0, S.photons.length - MAX_PHOTONS);   // drawn waves only
   if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
   for (const f of S.flashes) f.t += dt;
   S.flashes = S.flashes.filter(f => f.t < f.life);
@@ -627,6 +640,7 @@ addEventListener('keydown', e => {
   keys.add(e.code);
   if (e.code === 'Space') { e.preventDefault(); fire(); }
   if (e.code === 'KeyV') toggleField();
+  if (e.code === 'KeyL') startReplay();
   if (e.code === 'BracketLeft') setDial(S.dial - 1);
   if (e.code === 'BracketRight') setDial(S.dial + 1);
   if (e.code === 'Comma') setSpeed(S.speed - 1);
@@ -770,6 +784,7 @@ function setDial(i) {
   $('speedOut').textContent = `${Math.round(P.electronSpeed(E) * 1e3).toLocaleString('en-US')} km/s · ${E <= 0.2 ? 'slow' : E < 2 ? 'medium' : 'fast'}`;
 }
 $('fieldBtn').addEventListener('click', toggleField);
+$('replayBtn').addEventListener('click', startReplay);
 $('dialDown').addEventListener('click', () => setDial(S.dial - 1));
 $('dialUp').addEventListener('click', () => setDial(S.dial + 1));
 $('fireBtn').addEventListener('click', fire);
@@ -863,7 +878,7 @@ function updateHud() {
       + `Sealed, it settles at: <b>${Math.round(100 * b.fraction)}% H⁺</b>, ${fmtC(b.kelvin)}`;
   }
   const sp = SPEEDS[S.speed], fs = FS_PER_S * sp * S.slow;
-  $('timeOut').textContent = S.cascade ? `1 s = ${+(NS_PER_S * sp).toPrecision(2)} ns · others paused`
+  $('timeOut').textContent = S.replay ? 'light replay · matter frozen' : S.cascade ? `1 s = ${+(NS_PER_S * sp).toPrecision(2)} ns · others paused`
     : `1 s = ${fs < 10 ? fs.toFixed(1) : Math.round(fs)} fs${S.slow < 0.9 ? ' · slow motion' : ''}`;
   const v = v3.len(cam.v);
   $('shipOut').textContent = v < 0.05 ? 'still' : `${v.toFixed(1)} nm/s`;
@@ -960,7 +975,6 @@ function magneticRings(e) {
   }
 }
 const drawnWavelength = lam => 0.25 + 1.2 * Math.log(lam / LMIN) / Math.log(LMAX / LMIN);
-const photonFade = ph => Math.max(0, Math.min(1, (PHOTON_LIFE - ph.age) / 3));
 // Where a bit of wavefront that left the source along d is after travelling s nm, bouncing off the
 // mirrored wall like a ray of light (geometric optics).
 function wavePoint(c, d, s) {
@@ -982,10 +996,10 @@ function wavePoint(c, d, s) {
 // follows the radiation pattern and thins out as the wave spreads (it is drawn far brighter than 1/r²).
 const WAVE_MER = 10, WAVE_PAR = [0.2, 0.35, 0.5, 0.65, 0.8], WAVE_STEPS = 28;
 function photonLines(ph) {
-  const lw = 1.2 * drawnWavelength(ph.lam), s0 = LIGHT_SPEED * ph.age;
+  const lw = 1.2 * drawnWavelength(ph.lam), s0 = ph.s;
   const a = ph.axis, e1 = v3.norm(v3.cross(a, Math.abs(a[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(a, e1);
   const dirOf = (th, ph2) => v3.add(v3.scale(a, Math.cos(th)), v3.add(v3.scale(e1, Math.sin(th) * Math.cos(ph2)), v3.scale(e2, Math.sin(th) * Math.sin(ph2))));
-  const base = Math.min(1, ph.age * 4) * photonFade(ph) * Math.min(1, 4 / Math.sqrt(1 + s0));
+  const base = Math.min(1, s0 / 2) * Math.max(0, Math.min(1, (ph.end - s0) / 25)) * Math.min(1, 4 / Math.sqrt(1 + s0));
   const ripples = S.fieldView ? 3 : 1;
   for (let k = 0; k < ripples; k++) {
     const s = s0 - k * lw;
@@ -1011,6 +1025,39 @@ function photonLines(ph) {
         const pt = wavePoint(ph.src, dirOf(th, 2 * Math.PI * i / 36), s);
         if (prev) lines.seg(prev, pt, [0.36, 0.95, 0.6], kk * 0.6 * I);
         prev = pt;
+      }
+    }
+  }
+}
+// Light trapped in the mirrored sphere fills all of it: each loose photon is drawn as faint little
+// crossed E (photon colour) and B (green) strokes scattered through the sphere, drifting slowly.
+const hash = x => { const v = Math.sin(x * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+function lightShimmer() {
+  const R = P.SPHERE_R * 0.95;
+  for (const L of S.light) {
+    if (L.gone) continue;
+    if (L.id === undefined) L.id = Math.random() * 1000;
+    const fadeIn = Math.min(1, (S.time - (L.born || 0)) * 2), k = fadeIn * (S.fieldView ? 0.35 : 0.18);
+    for (let j = 0; j < 7; j++) {
+      const t = S.time * 0.15 + hash(L.id + j) * 10, ep = Math.floor(t), fr = t - ep;
+      const seed = L.id * 7.31 + j * 13.7 + ep * 3.1;
+      const z = 2 * hash(seed) - 1, th = 2 * Math.PI * hash(seed + 1), r = R * Math.cbrt(hash(seed + 2)), rr = Math.sqrt(1 - z * z);
+      const p = [r * rr * Math.cos(th), r * z, r * rr * Math.sin(th)];
+      const a = k * Math.sin(Math.PI * fr);   // each stroke fades in and out, then reappears elsewhere
+      const kd = v3.norm([hash(seed + 3) - 0.5, hash(seed + 4) - 0.5, hash(seed + 5) - 0.5]);
+      const e1 = v3.norm(v3.cross(kd, Math.abs(kd[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(kd, e1);
+      const len = 0.6 * drawnWavelength(L.lam);
+      // A short wiggle along the travel direction: E swings along e1, B along e2.
+      let pe = null, pb = null;
+      for (let i = 0; i <= 8; i++) {
+        const u = (i / 8 - 0.5) * 3 * len, w = Math.sin(2 * Math.PI * i / 8) * len * 0.35;
+        const ce = v3.add(p, v3.add(v3.scale(kd, u), v3.scale(e1, w)));
+        if (pe) lines.seg(pe, ce, L.col, a);
+        pe = ce;
+        if (!S.fieldView) continue;
+        const cb = v3.add(p, v3.add(v3.scale(kd, u), v3.scale(e2, w)));
+        if (pb) lines.seg(pb, cb, [0.36, 0.95, 0.6], a * 0.6);
+        pb = cb;
       }
     }
   }
@@ -1094,7 +1141,7 @@ function draw(views, panel) {
     for (let i = 0; i <= n; i++) pts.push(fallPos(f, f.t * i / n));
     for (let i = 1; i <= n; i++) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], 0.5 * (i / n) * (1 - f.t / FALL_DUR));
   }
-  for (const ph of S.photons) photonLines(ph);
+  if (S.replay) photonLines(S.replay); else lightShimmer();
   if (S.beat >= 2 && !S.cascade) coneLines(aimInfo());
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 

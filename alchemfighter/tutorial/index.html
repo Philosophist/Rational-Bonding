@@ -94,6 +94,9 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 #moveBtns { display: none; }   /* replaced by the flight pad; kept for older touch layouts */
 #crosshair { position: fixed; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; pointer-events: none; color: rgba(214,226,238,.7); }
 #crosshair.on { color: var(--good); }
+#replayBanner { display: none; position: fixed; left: 50%; top: calc(50% + 48px); transform: translateX(-50%); max-width: min(520px, calc(100vw - 32px)); padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: 13px; text-align: center; pointer-events: none; z-index: 2; }
+body.replaying #replayBanner { display: block; }
+#replayBtn { padding: 1px 6px; font-size: 11px; margin-left: 4px; }
 .overlay { position: fixed; inset: 0; z-index: 3; display: grid; place-items: center; padding: 16px; background: rgba(2,4,10,.45); }
 .overlay .panel { max-width: 460px; padding: 20px 22px; max-height: calc(100dvh - 32px); overflow: auto; }
 .overlay h2 { font-size: 22px; }
@@ -134,6 +137,7 @@ a { color: var(--cyan); }
 </head>
 <body>
 <canvas id="gl" aria-label="The system sphere: a proton's electric field glow, electrons and light"></canvas>
+<div id="replayBanner" role="status">Light replay: everything else is frozen, because light is about 1,600 times faster than a slow electron. Press L to go on.</div>
 <div id="crosshair" aria-hidden="true"><svg viewBox="-18 -18 36 36" width="36" height="36"><circle r="8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M-16 0h5M11 0h5M0-16v5M0 11v5" stroke="currentColor" stroke-width="1.4"/><circle r="1.1" fill="currentColor"/></svg></div>
 
 <div class="hud">
@@ -153,7 +157,7 @@ a { color: var(--cyan); }
     <section class="panel">
       <div class="row" style="justify-content:space-between"><span class="label">Time</span><span class="data" id="timeOut"></span></div>
       <div class="row" style="justify-content:space-between;margin-top:4px"><button type="button" id="speedBtn" title="Game speed (, and . keys)">game speed ×1</button><span class="data fine">ship <span id="shipOut">still</span></span></div>
-      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Every capture chance is multiplied by this same factor, so the shape of the odds stays real">rates ×</span><span class="fine" id="lightNote">light drawn slowed down</span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Every capture chance is multiplied by this same factor, so the shape of the odds stays real">rates ×</span><span class="fine" id="lightNote">light at real speed <button type="button" id="replayBtn" title="Replay the last light wave slowly, with everything else frozen (L)">▶ light</button></span></div>
       <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
       <div class="legend"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--good))"></span>magnetic field (drawn ×400)</div>
       <div class="fine">Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).</div>
