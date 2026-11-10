@@ -45,12 +45,13 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   together:
   - an electron within 4 nm of a proton: until it moves at most about 1.5 nm per screen second;
   - an electron settling into its new cloud, or an atom changing shape: ×0.01;
-  - an excited atom waiting to step down: until its (sped-up) delay fits about 1.5 s on screen;
   - a light wave out: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
     passed from atom to atom (radiation trapping) slows things less, to 300 nm per second.
   Rare events (captures, steps down, collisions) all run RATE_BOOST = 600,000 times faster than in
-  nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. 2s, which
-  really lives 0.12 s, is cut short to 120 fs.
+  nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. An
+  excited atom waits its sampled real lifetime with no fixed hold, so 2p steps down almost at once
+  and 3s (159 ns) lingers about 100 times longer. 2s, which really lives 0.12 s, is cut short to
+  120 fs.
 - **Light as a wave:** light moves at its real speed on the same clock. It is about 1,600 times
   faster than a 0.1 eV electron, which is why matter looks almost frozen while a wave is out.
   The wave is a grid on the expanding wavefront, a few ripples deep. Lines from pole to pole follow
@@ -65,9 +66,14 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   same direction sets the atom's recoil), and the spectrometer records it there.
   - *Lyman light* (121.6, 102.6, 97.3 nm) lifts a resting 1s atom to 2p, 3p or 4p. Its target
     area is huge (about 7,000, 4,400 and 3,800 nm²), so nearby atoms usually take it and give it
-    back (radiation trapping) before it gets out. Closer than about 20 nm (a fraction of the
-    wavelength) the plane-wave formula breaks down and neighbours share the excitation, so one
-    atom's chance is capped at 50%.
+    back (radiation trapping) before it gets out. Just outside the near field the plane-wave
+    formula still overestimates, so one atom's chance is capped at 50%.
+  - *Near-field hand-over:* closer than λ/2π (19 nm for Lyman-α) there is no travelling light
+    between two atoms yet. An excited np atom about to step down to 1s hands its energy straight
+    to the nearest resting 1s neighbour instead (resonant energy transfer, like FRET): one cloud
+    shrinks as the other swells over 1.2 s, with a wavy link drawn between them and no light. The
+    coupling grows as (λ/2πr)³; the energy swings across up to 4 times (0.75·(λ/2πr)³, at least
+    1), sharing one lifetime, and then the last atom lets the light out.
   - *Photoionization:* any photon with more energy than an atom's electron is bound by (13.6 eV
     from 1s, 3.4 from n = 2, 1.5 from n = 3, 0.85 from n = 4) can knock it free. Kramers'
     cross-section, σ = 7.9e-4 nm² · n · (I/E)³ (6.3e-4 nm² measured for 1s), is tiny, so on one
@@ -91,7 +97,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the electron spirals in over 3 s, and each step down holds its shape
-  for at least 1.5 s and then morphs over 1.5 s (re-emitted trapped light: 0.3 s and 0.6 s).
+  for its real (sped-up) lifetime and then morphs over 1.5 s (re-emitted light: 0.6 s).
 - **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
   then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
   jump; the spiral only shows which electron went where.

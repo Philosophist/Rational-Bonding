@@ -34,8 +34,12 @@ const FS_PER_S = 40;
 const LIGHT_SHOW = 25, LIGHT_QUICK = 300;
 const lightSlow = show => show / (299.792458 * FS_PER_S);
 const LIGHT_SLOW = lightSlow(LIGHT_SHOW);
-// An atom that took light and gives it back steps down quickly (it is the same light, again).
-const REEMIT_HOLD = 0.3, REEMIT_MORPH = 0.6;
+// An atom that took light and gives it back changes shape quicker (it is the same light, again).
+const REEMIT_MORPH = 0.6;
+// Neighbours closer than λ/2π (about 19 nm for Lyman-α) are inside each other's near field: an
+// excited atom hands its energy straight to a resting neighbour, with no light in between
+// (resonant energy transfer, like FRET in biology). Each hand-over is drawn over SWAP_MORPH s.
+const SWAP_MORPH = 1.2;
 // While an electron falls in or an atom changes shape, everything slows to EVENT_SLOW.
 const EVENT_SLOW = 0.01;
 // Game speed the player picks (, and . keys), and automatic slow motion when an electron dives in
@@ -46,8 +50,10 @@ const SLOW_NEAR = 4, SLOW_TARGET = 1.5, SLOW_MIN = 0.02;
 // After a capture the electron's glow is drawn melting into its new cloud over this many seconds.
 // (In nature the change is a sudden quantum jump; this lets you see which electron went where.)
 const FALL_DUR = 3.0;
-// Each step down the ladder: the shape holds for at least STEP_HOLD s, then morphs over STEP_MORPH s.
-const STEP_HOLD = 1.5, STEP_MORPH = 1.5;
+// Each step down the ladder: the atom waits its real lifetime (sped up like every rare event, so
+// the lifetimes keep their real proportions: 2p 1.6 ns, 3s 159 ns, ...), then the shape morphs
+// over STEP_MORPH s while everything slows.
+const STEP_MORPH = 1.5;
 // Acid Neutrality: this many fresh protons appear for the player to neutralize.
 const ACID_N = 10;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
@@ -68,7 +74,7 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
-    shots: 0, absorbed: 0, ionized: 0, bumped: 0, oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
+    shots: 0, absorbed: 0, ionized: 0, bumped: 0, swapped: 0, handOvers: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0 }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
   };
@@ -289,9 +295,8 @@ function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir(), from = null, 
 //   can knock its electron off (collisions, rate n·σ·v, on the rare-event clock).
 // ---------------------------------------------------------------------------
 const LYMAN_SIGMA = { 2: 7057, 3: 4424, 4: 3793 };     // nm², resonant absorption from 1s (λ²/2π · g · branch)
-// σ/(4πr²) counts the wave as a plane wave. Closer than about 20 nm (a fraction of the 122 nm
-// wavelength) that breaks down: neighbours share the excitation and give it out together. One atom
-// can take at most about half of a wave from a single neighbour, so the chance is capped there.
+// σ/(4πr²) counts the wave as a plane wave. Just outside the near field (λ/2π) that still
+// overestimates, so one atom's chance from a single neighbour's wave is capped at about half.
 const NEAR_CAP = 0.5;
 const lymanUpper = lam => [2, 3, 4].find(n => Math.abs(lam - P.lambdaFor(1, n)) / lam < 1e-4) || 0;
 const watched = a => S.cascade && S.cascade.atom === a;
@@ -304,7 +309,8 @@ function planLight(L, avgI, from) {
   const near = S.atoms.filter(a => a !== from && resting(a)).map(a => ({ a, d: v3.sub(a.p.pos, L.src) }))
     .map(o => ({ ...o, r: v3.len(o.d) })).filter(o => o.r > 0.05 && o.r < L.exitAt).sort((x, y) => x.r - y.r);
   for (const o of near) {
-    const sLy = nUp && idle1s(o.a) ? LYMAN_SIGMA[nUp] : 0, sIon = P.photoionSigma(o.a.st.n, L.E);
+    // Inside λ/2π a neighbour is coupled, not absorbing (see handOver), so only farther atoms take Lyman light.
+    const sLy = nUp && idle1s(o.a) && o.r >= L.lam / (2 * Math.PI) ? LYMAN_SIGMA[nUp] : 0, sIon = P.photoionSigma(o.a.st.n, L.E);
     if (!sLy && !sIon) continue;
     const w = L.I(v3.dot(v3.scale(o.d, 1 / o.r), L.axis)) / avgI;
     if (Math.random() < Math.min(NEAR_CAP, (sLy + sIon) * w / (4 * Math.PI * o.r * o.r))) {
@@ -430,16 +436,34 @@ function capture(e, p, E) {
     ? 'Caught! This one went straight to the bottom step in one go, so a single ultraviolet flash carried off all the energy.'
     : `Caught! It landed on step n = ${st.n}. Now watch it step down, giving off light at each step.`);
 }
-// The next step down happens after its real (sped-up) delay on the shared clock, and is shown for
-// at least STEP_HOLD screen seconds; the clock slows so the delay fits that time.
+// The next step down happens after its real (sped-up) delay on the shared clock. An excitation
+// being handed back and forth between near neighbours shares one lifetime over its hand-overs.
 const TWO_PHOTON_FS = 120;   // 2s really lives 0.12 s, far too long to wait even sped up
 function scheduleDecay(atom) {
   const d = P.pickDecay(atom.st);
   atom.pending = d;
   if (!d) return;
-  atom.waitFs = d.twoPhoton ? TWO_PHOTON_FS : d.delayNs * 1e6 / P.RATE_BOOST;
-  atom.hold = atom.reex ? REEMIT_HOLD : STEP_HOLD;
+  atom.waitFs = (d.twoPhoton ? TWO_PHOTON_FS : d.delayNs * 1e6 / P.RATE_BOOST) / (atom.share || 1);
+  atom.hold = 0;
   if (d.twoPhoton) log('2s can\'t give off a single photon. It really waits about 0.12 s; here it is cut short.');
+}
+// Near-field hand-over: a goes down to 1s while b goes up to a's level, with no light. The
+// coupling grows as (λ/2πr)³, and the stronger it is the more times the energy swings back and
+// forth before the pair finally lets the light out (drawn as at most 4 hand-overs).
+function handOver(a, b, d, r, nearR) {
+  if (a.swaps === undefined) {
+    const n = Math.max(1, Math.min(4, Math.round(0.75 * (nearR / r) ** 3)));
+    a.swaps = n; a.share = n + 1;
+  }
+  const up = { n: a.st.n, l: 1, m: 0 };
+  a.trans = { from: a.st, to: d.to, t: 0, dur: SWAP_MORPH };
+  b.trans = { from: b.st, to: up, t: 0, dur: SWAP_MORPH };
+  b.reex = true; b.swaps = a.swaps - 1; b.share = a.share;
+  a.swaps = undefined; a.share = undefined;
+  S.handOvers.push({ a, b, t: 0, col: photonColor(P.lambdaFor(1, up.n)) });
+  S.swapped++;
+  if (S.swapped <= 2) log(`${P.stateName(up)} energy passed to a neighbour ${r.toFixed(1)} nm away with no light: inside ${nearR.toFixed(0)} nm their fields are coupled (resonant energy transfer).`);
+  if (S.swapped === 1) say('Watch those two atoms: one shrinks back to 1s as its neighbour swells up. They are closer than the light\'s wavelength, so the energy crosses straight through their electric fields without ever becoming light. Biologists use the same effect (FRET) to measure distances inside cells.');
 }
 // "far ultraviolet (Lyman-α, Lyman series)": what kind of radiation a photon is.
 function describe(lam, nLow, capture, cap = false) {
@@ -463,6 +487,14 @@ function updateAtoms(dt, dtFs) {
     a.waitFs -= dtFs; a.hold -= dt;
     if (a.waitFs > 0 || a.hold > 0) continue;
     const d = a.pending; a.pending = null;
+    // A Lyman step with a resting neighbour in the near field: hand the energy over instead.
+    if (!d.twoPhoton && d.to.n === 1 && a.st.l === 1 && (a.swaps === undefined || a.swaps > 0)) {
+      const nearR = P.lambdaFor(1, a.st.n) / (2 * Math.PI);
+      const b = S.atoms.filter(o => o !== a && idle1s(o)).map(o => ({ o, r: v3.len(v3.sub(o.p.pos, a.p.pos)) }))
+        .filter(x => x.r < nearR).sort((x, y) => x.r - y.r)[0];
+      if (b) { handOver(a, b.o, d, b.r, nearR); continue; }
+    }
+    a.swaps = undefined; a.share = undefined;
     for (const lam of d.photons) {
       const dir = emitPhoton(a.p.pos, lam, d.twoPhoton ? 'iso' : d.dm === 0 ? 'lin' : 'circ', [0, 1, 0], a, a.reex && !watched(a) ? LIGHT_QUICK : LIGHT_SHOW);
       // Each photon carries momentum hν/c, so the atom recoils (about 3 m/s for Lyman-α).
@@ -543,7 +575,6 @@ function slowTarget() {
   if (S.falling.length) k = Math.min(k, EVENT_SLOW);               // an electron is settling in
   for (const a of S.atoms) {
     if (a.trans) k = Math.min(k, EVENT_SLOW);                      // an atom is changing shape
-    else if (a.pending && a.hold > 0) k = Math.min(k, Math.max(EVENT_SLOW, a.waitFs / (FS_PER_S * Math.max(a.hold, 0.3))));
   }
   return k;
 }
@@ -565,6 +596,8 @@ function step(dtReal) {
   S.ps = S.ps.filter(x => x.active);
   for (const f of S.falling) f.t += dt;
   S.falling = S.falling.filter(f => f.t < FALL_DUR);
+  for (const h of S.handOvers) h.t += dt;
+  S.handOvers = S.handOvers.filter(h => h.t < SWAP_MORPH);
   updateAtoms(dt, dtFs);
   // Light: c × the real time that passed. Rare events: the same real time, sped up by RATE_BOOST.
   updateLight(P.C * dt * FS_PER_S * S.slow);
@@ -1065,6 +1098,18 @@ function draw(views, panel) {
     for (let i = 1; i <= n; i++) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], 0.5 * (i / n) * (1 - f.t / FALL_DUR));
   }
   for (const L of S.light) photonLines(L);
+  for (const h of S.handOvers) {   // the coupled fields: a faint wavy link that carries the energy across
+    const A = h.a.p.pos, B = h.b.p.pos, ab = v3.sub(B, A), len = v3.len(ab), k = h.t / SWAP_MORPH;
+    const side = v3.norm(v3.cross(ab, Math.abs(ab[1]) < 0.9 * len ? [0, 1, 0] : [1, 0, 0]));
+    let prev = null;
+    for (let i = 0; i <= 48; i++) {
+      const u = i / 48, w = Math.sin(u * Math.PI * 10 - h.t * 12) * 0.25 * Math.sin(Math.PI * u);
+      const pt = v3.add(A, v3.add(v3.scale(ab, u), v3.scale(side, w)));
+      const glow = Math.exp(-((u - k) ** 2) / 0.02);   // brightest where the energy is on its way
+      if (prev) lines.seg(prev, pt, h.col, (0.12 + 0.5 * glow) * (S.fieldView ? 1 : 0.6));
+      prev = pt;
+    }
+  }
   if (S.beat >= 2) coneLines(aimInfo());
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
