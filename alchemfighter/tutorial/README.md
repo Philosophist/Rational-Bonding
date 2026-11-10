@@ -53,30 +53,36 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   grid folds into caustics. The spectrometer records the photon when the wave first touches the
   wall. Waves fade after 12 s, at most 16 at once. The atom's recoil uses one direction drawn
   from the same pattern. Atoms never store photons: each is made when the electron drops.
-- **Light meeting atoms:** nothing escapes the mirror, so bouncing light does what it really
-  would. Lyman light (121.6, 102.6, 97.3 nm) is exactly the colour that lifts a 1s electron to
-  2p, 3p or 4p, and for that colour an atom's target area (λ²/2π times the degeneracy ratio and
-  branching, about 7,000, 4,400 and 3,800 nm²) is bigger than the sphere's whole cross-section
-  (πR² ≈ 5,000 nm²). On its way out the wave meets each resting atom with chance σ·w/(4πr²);
-  after the wall, each crossing (mean chord 4R/3) has chance Σσ/πR². The atom morphs up, then
-  steps back down and gives the light out again, so Lyman light is passed between atoms forever
-  (radiation trapping). Light above 13.6 eV, from captures straight to 1s, can knock the
-  electron off a 1s atom (photoionization, σ ≈ 6.3e-4 nm² × (13.6 eV/E)³). One crossing has
-  only about a 1 in 8 million chance, but real light crosses millions of times a nanosecond, so
-  in a perfect mirror it happens within about a nanosecond. The game squeezes that wait into
-  an exponential with a mean of 80 nm of drawn travel. The freed electron keeps the energy left
-  over (the same as the captured electron had), so it is slow and easy to catch again, and since
-  most catches land above 1s, whose light can't ionize, the loop dies out. Visible and infrared
-  light only fits atoms that are already excited, so it is left bouncing. Acid Neutrality ends
-  once every proton holds an electron and no ionizing light is left loose.
-- **Momentum:** a capture keeps the pair's momentum, every emitted or absorbed photon kicks the
-  atom by hν/c (about 3 m/s for Lyman-α), and a freed electron's proton recoils. Not modelled
-  yet: electrons colliding with neutral atoms (they pass straight through), atoms colliding with
-  each other, and the slow heating of the gas that a sealed mirror would really cause.
+- **The sealed box:** nothing escapes the mirror, so the energy from every catch stays inside.
+  The game keeps a record of every photon in the box, separate from the drawn waves, which fade.
+  - *Lyman light* (121.6, 102.6, 97.3 nm) is exactly the colour that lifts a 1s electron to 2p,
+    3p or 4p. For that colour an atom's target area (about 7,000, 4,400 and 3,800 nm²) is bigger
+    than the sphere's cross-section (πR² ≈ 5,000 nm²). On its way out the wave meets each resting
+    atom with chance σ·w/(4πr²); after the wall, each crossing (mean chord 4R/3) has chance Σσ/πR².
+    The atom gives the light back, so it is passed between atoms forever (radiation trapping).
+  - *Photoionization:* any photon with more energy than an atom's electron is bound by (13.6 eV
+    from 1s, 3.4 from n = 2, 1.5 from n = 3, 0.85 from n = 4) can knock it free. Kramers'
+    cross-section, σ = 7.9e-4 nm² · n · (I/E)³ (6.3e-4 nm² measured for 1s); a photon loose in
+    the box meets a given atom at rate c·σ/V. Excited atoms are drawn for far longer than they
+    live, so for them the clock runs at their real lifetime.
+  - *Collisions:* an electron faster than 10.2 eV can bump a 1s atom to n = 2 (σ ≈ 0.02 ln x / x
+    nm², x = E/10.2 eV) and one faster than 13.6 eV can ionize it (Lotz formula), at rate n·σ·v.
+  - These rare events run on the capture clock (RATE_BOOST, about 24 ns of real time per second
+    of play), so their balance with capture is kept.
+  - *Momentum:* a capture keeps the pair's momentum, every photon given off or absorbed kicks the
+    atom by hν/c (about 3 m/s for Lyman-α), and an ionized atom's proton recoils from its electron.
+  - *The gauge* under the counts shows the free electrons' average energy and where the box would
+    settle once its energy is shared out: the Saha balance, solved from the total energy (motion,
+    Coulomb, binding and loose light), with one electron per proton counted. For 11 protons it is
+    about 75% ionized near 15,000 °C. That is the lesson of Acid Neutrality: it ends after you
+    neutralize every proton and watch for 20 s, or after 10 catches and 3 re-ionizations.
+  - *Not modelled:* elastic electron–atom and atom–atom collisions (tiny energy exchange),
+    free–free absorption, and capture into n ≥ 5. Three-body recombination happens only as far
+    as the classical Coulomb motion produces it.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   wall-hit flashes were removed and the capture flash dimmed.
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
-  7 nm apart). The goal is to give every one an electron. Protons this far apart barely move:
+  7 nm apart). The goal is to give every one an electron, then see whether it stays neutral (see "The sealed box"). Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the electron spirals in over 3 s, and each step down holds its shape
   for at least 1.5 s and then morphs over 1.5 s, so each photon comes out about 3 s apart.
@@ -101,7 +107,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   each photon's electric and magnetic waves at 90° to each other. The magnetic field is drawn 400×
   brighter than its true share (it is about v/c ≈ 1/1000 of the electric field at these speeds).
 - **Glow view** (V): the calmer view, glows only.
-- **Window:** drag to look, click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
+- **Window:** drag to look, or double-click for mouse look (double-click again or Esc frees the cursor; raw movement, first reading and big jumps skipped to stop drift), click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
   [ ] or the wheel for electron speed, , and . for game speed.
 - **Phones and tablets:** a flight pad bottom left (thrust ▲ ▼ ◀ ▶, rise, sink, ■ brake) and the
   gun bottom right. On small screens the tutor folds into one bar showing the next goal; ⓘ opens

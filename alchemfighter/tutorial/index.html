@@ -64,6 +64,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .fire { font: 700 14px var(--font-display); letter-spacing: .12em; padding: 9px 18px; border-color: var(--minus); background: rgba(90,140,255,.2); }
 .tag { display: inline-block; font: 500 11px var(--font-data); border: 1px solid rgba(255,233,77,.5); color: var(--gold); border-radius: 3px; padding: 1px 6px; }
 #census { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; }
+#heat { margin-top: 6px; line-height: 1.35; }
+#heat b { display: inline; font: inherit; color: var(--gold); }
 #census b { display: block; font: 700 20px/1.1 var(--font-data); }
 .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .swatch { width: 34px; height: 8px; border-radius: 4px; }
@@ -146,6 +148,7 @@ a { color: var(--cyan); }
     <section class="panel" id="statusBox">
       <div class="label">Census</div>
       <div id="census" class="data"><div><b id="cHp">1</b><span class="label">H⁺</span></div><div><b id="cH">0</b><span class="label">H</span></div><div><b id="cE">0</b><span class="label">free e⁻</span></div></div>
+      <div id="heat" class="fine" title="If all the energy in this sealed system were shared out evenly (Saha balance): how much hydrogen would be ionized, and how hot it would be."></div>
     </section>
     <section class="panel">
       <div class="row" style="justify-content:space-between"><span class="label">Time</span><span class="data" id="timeOut"></span></div>
@@ -185,7 +188,7 @@ a { color: var(--cyan); }
       <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that reaches the wall, at its real wavelength"></canvas>
       <div class="data fine" id="photonOut" aria-live="polite"></div>
       <div class="fine" id="spectroNote">Spectrometer: each photon when it first reaches the wall, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
-      <div class="keys">Drag to look · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
+      <div class="keys">Drag to look, or double-click for mouse look (double-click or Esc to free the cursor) · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
       <div class="keys touch">Drag to look · FIRE to shoot · pad: thrust · ■ brake</div>
     </section>
   </div>

@@ -112,3 +112,25 @@ test('classify names the radiation', () => {
   assert.equal(P.classify(2.1e8).name, 'microwave');   // the 21 cm hydrogen line
   assert.equal(P.seriesName(2), 'Balmer');
 });
+
+test('photoionization and collision cross-sections', () => {
+  assert.equal(P.photoionSigma(1, 13), 0);
+  assert.ok(Math.abs(P.photoionSigma(1, P.RY) - 6.3e-4) < 1e-9);
+  assert.ok(P.photoionSigma(2, 3.5) > P.photoionSigma(2, 10.2));
+  // A 13.7 eV photon loose in the box finds a given 1s atom in about 1.4 ns.
+  const t = 1 / P.photoRate(1, 13.7);
+  assert.ok(t > 1 && t < 2, t);
+  assert.equal(P.collExciteSigma(5), 0);
+  assert.ok(P.collExciteSigma(20) > 0.005 && P.collExciteSigma(20) < 0.01);
+  assert.ok(P.collIonSigma(40) > 0.005 && P.collIonSigma(40) < 0.012);
+});
+
+test('a sealed box of 11 freshly made atoms settles mostly ionized', () => {
+  // 11 protons and 11 electrons fired in at 0.1 eV each.
+  const b = P.sahaBalance(11, 11, 11 * 0.1);
+  assert.ok(b.fraction > 0.6 && b.fraction < 0.9, b.fraction);
+  assert.ok(b.kelvin > 10000 && b.kelvin < 20000, b.kelvin);
+  // With all the energy drained out (light escaped), it stays neutral.
+  const cold = P.sahaBalance(11, 11, -11 * P.RY + 0.3);
+  assert.ok(cold.fraction < 0.05, cold.fraction);
+});

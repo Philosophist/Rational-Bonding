@@ -347,3 +347,56 @@ export function totalEnergy(ps) {
   }
   return E;
 }
+
+// ---------------------------------------------------------------------------
+// A sealed box: light and fast electrons breaking atoms apart, and where the box ends up.
+// ---------------------------------------------------------------------------
+export const BOX_V = 4 / 3 * Math.PI * SPHERE_R ** 3;   // nm³
+export const ionE = n => RY / (n * n);                  // eV to free an electron from level n
+// Photoionization from level n by a photon of energy E (Kramers; 1s scaled to its measured 6.3e-18 cm²).
+export function photoionSigma(n, E) {
+  const I = ionE(n);
+  if (E < I) return 0;
+  return (n === 1 ? 6.3e-4 : 7.91e-4 * n) * (I / E) ** 3;   // nm²
+}
+// One photon loose in the box hits a given atom at rate c·σ/V (it fills the box evenly).
+export const photoRate = (n, E, V = BOX_V) => C * 1e6 * photoionSigma(n, E) / V;   // per ns
+// Electron impact on 1s hydrogen: excitation to n = 2 (Bethe-like fit, peak ≈ 0.7e-16 cm²) and
+// ionization (Lotz formula). E is the electron's kinetic energy in eV; cross-sections in nm².
+export const EXCITE_E = RY * 0.75;
+export const collExciteSigma = E => (E <= EXCITE_E ? 0 : 0.02 * Math.log(E / EXCITE_E) / (E / EXCITE_E));
+export const collIonSigma = E => (E <= RY ? 0 : 4.5 * Math.log(E / RY) / (E * RY));
+// Rate for one electron to hit any of nAtoms atoms spread through the box.
+export const collRate = (sigma, E, nAtoms, V = BOX_V) => (nAtoms / V) * sigma * electronSpeed(E) * 1e6;   // per ns
+
+// Where a sealed box with Np protons and Ne electrons in all, and total energy Etot (eV, counting
+// binding energy as negative and light as positive), settles once the energy is shared out: the
+// Saha balance, with the heat split between free particles (3/2 kT each) and blackbody light.
+const RAD_A = 7.5657e-16 * 1e-27 / 1.602176634e-19;   // eV per nm³ per K⁴
+const K_B = 8.617333e-5;                               // eV per K
+const thermalWavelength = kT => HC / Math.sqrt(2 * Math.PI * MEC2 * kT);   // nm
+function kTFor(x, Np, Ne, Etot, V) {
+  const heat = Etot + RY * (Np - x), parts = Ne + x;   // free e⁻ + free p⁺ + atoms = Ne + x
+  if (heat <= 0) return 0;
+  let lo = 0, hi = heat / (1.5 * parts) + 1;
+  for (let i = 0; i < 60; i++) {
+    const kT = (lo + hi) / 2, T = kT / K_B;
+    if (1.5 * kT * parts + RAD_A * T ** 4 * V > heat) hi = kT; else lo = kT;
+  }
+  return (lo + hi) / 2;
+}
+export function sahaBalance(Np, Ne, Etot, V = BOX_V) {
+  const xMin = Math.max(0, Np - Ne);
+  const f = x => {
+    const kT = kTFor(x, Np, Ne, Etot, V);
+    const rhs = kT > 0 ? V / thermalWavelength(kT) ** 3 * Math.exp(-RY / kT) : 0;
+    return x * (Ne - Np + x) / Math.max(Np - x, 1e-9) - rhs;
+  };
+  let lo = xMin, hi = Np;
+  if (f(lo) >= 0) hi = lo;
+  else if (f(hi) <= 0) lo = hi;
+  else for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (f(m) > 0) hi = m; else lo = m; }
+  const x = (lo + hi) / 2, kT = kTFor(x, Np, Ne, Etot, V);
+  return { ionized: x, fraction: Np ? x / Np : 0, kT, kelvin: kT / K_B };
+}
+export const kelvin = kT => kT / K_B;
