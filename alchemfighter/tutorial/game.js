@@ -98,7 +98,18 @@ const BEATS = {
 function say(text) {
   if (S.said === text) return;
   S.said = text; $('tutorText').textContent = text;
+  if ($('tutor').classList.contains('collapsed')) $('tutor').dataset.unread = '1';
 }
+// On phones the tutor panel starts folded into one slim bar; ⓘ opens it.
+const phone = matchMedia('(max-width: 900px)');
+function setTutorOpen(open) {
+  $('tutor').classList.toggle('collapsed', !open);
+  $('tutorToggle').setAttribute('aria-expanded', String(open));
+  if (open) delete $('tutor').dataset.unread;
+}
+$('tutorToggle').addEventListener('click', () => setTutorOpen($('tutor').classList.contains('collapsed')));
+setTutorOpen(!phone.matches);
+phone.addEventListener && phone.addEventListener('change', e => setTutorOpen(!e.matches));
 function goals() {
   if (S.beat === 1) {
     return [
@@ -490,6 +501,13 @@ const hold = (btn, code) => {
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, () => keys.delete(code));
 };
 hold($('fwdBtn'), 'KeyW'); hold($('backBtn'), 'KeyS'); hold($('brakeBtn'), 'KeyX');
+// The touch flight pad: each button is held like its key.
+for (const b of document.querySelectorAll('#dpad button')) {
+  const code = b.dataset.key;
+  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch { /* synthetic or already released */ } keys.add(code); b.classList.add('held'); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => { keys.delete(code); b.classList.remove('held'); });
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
 function setSpeed(i) {
   S.speed = Math.max(0, Math.min(SPEEDS.length - 1, i));
   $('speedBtn').textContent = `game speed ×${SPEEDS[S.speed]}`;
