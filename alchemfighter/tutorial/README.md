@@ -15,7 +15,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 
 | File | Role |
 |---|---|
-| `physics.js` | Pure physics, no DOM: constants, Kramers capture cross sections, per-pass capture odds, aim cone, hydrogen decay table, Coulomb motion in the sphere |
+| `physics.js` | Pure physics, no DOM: constants, Kramers capture cross sections, per-pass capture odds, aim cone, hydrogen decay table, Coulomb motion in the sphere, Stark mixing, atoms sharing an excitation (pairs and groups) |
 | `orbitals.js` | Hydrogen wavefunctions, ported unchanged from the rebuild's `prototype/index.html` |
 | `render.js` | WebGL2: stars, the sphere's wall, field glows, ray-marched electron clouds, lines, the VR panel; draws once per eye in VR |
 | `mat4.js` | Small matrix helpers for the flat camera and the headset's eyes |
@@ -57,12 +57,12 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - an atom starting to send light: until one swing of its charge takes 2 screen seconds, held
     for 5 s the first two times (2 s after), then easing back up (e-fold per second);
   - a photon in flight: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
-    passed from atom to atom (radiation trapping) slows things less, to 300 nm per second.
+    from an atom a fast electron bumped up slows things less, to 300 nm per second.
   Rare events (captures, steps down, collisions) all run RATE_BOOST = 600,000 times faster than in
   nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. An
   excited atom waits its sampled real lifetime with no fixed hold, so 2p steps down almost at once
   and 3s (159 ns) lingers about 100 times longer. 2s keeps its real 0.12 s too (see above).
-  - two atoms swinging an excitation between them (below): until one swing there and back takes
+  - atoms swinging an excitation between them (below): until one swing there and back takes
     3 screen seconds. That is held for 6 s the first two times (2.5 s after), then the clock eases
     back up and the swinging speeds up into a blur.
 - **Light is Maxwell's exact field** (`light.js`). An atom changing level swings its charge like
@@ -79,29 +79,30 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - *Circular swing (Δm = ±1):* electric field lines are followed out from the atom in 3D and wind
     into spirals; magnetic lines are followed round as loops.
   - *Envelope:* the swing starts the moment the atom is in the upper level and fades as e^(−t/2τ)
+    (its own rate of change is included in ṗ and p̈, so even a one-cycle pulse is exact)
     (the single-atom result of quantum electrodynamics, Wigner–Weisskopf), τ the level's lifetime
     on the game's clock. When the photon is found, the swing stops and the rest of the wave, now
     empty, runs out at c.
-  - *No flicker:* a swing faster than 1.2 per screen second is drawn as its average instead
+  - *No flicker:* a swing faster than 1.2 per screen second blends into its average
     (nested surfaces of equal average field strength), fully so above 2.2 per second. Glow view
     always shows the average, dimmer.
-- **Electron clouds follow Schrödinger's equation live.** While an atom sends light, its cloud is
-  part upper shape and part lower, beating at the light's real frequency (that beat is what swings
-  the charge); its share in the upper level fades as e^(−t/τ). A resting 1s atom that a Lyman wave
-  washes over answers it: a little p shape mixes in, beating with the wave. To first order the
-  share grows with the square of the field that has passed, P·(1 − e^(−t/2τ))², reaching P (that
-  atom's chance of taking the photon) once the whole photon has gone by. It keeps the p shape only
-  if the photon arrives; otherwise the borrowed share fades. When the beat is too fast to show, the
-  two shapes are drawn added together (the average). Spontaneous emission itself (why an excited
-  atom starts to radiate, and when its photon leaves) is not in Schrödinger's equation: it needs
-  the quantum theory of light, so it keeps the measured lifetimes.
+- **Electron clouds follow Schrödinger's equation live.** While a lone atom sends light, its cloud
+  is part upper shape and part lower, beating at the light's real frequency (that beat is what
+  swings the charge); its share in the upper level fades as e^(−t/τ). When the beat is too fast
+  to show, it blends into the two shapes added together (the average). This beat is the
+  semiclassical picture; in full quantum theory the atom is entangled with its photon and the
+  beat only shows in the field. Spontaneous emission itself (why an excited atom starts to
+  radiate, and when its photon leaves) is not in Schrödinger's equation: it needs the quantum
+  theory of light, so it keeps the measured lifetimes. Resting atoms answering Lyman light is the
+  group model below.
 - **Pilot-wave view (on by default; P, the "Photon particle" button, or the left stick click in
   VR):** each photon is also drawn as a particle riding its wave, as in de Broglie–Bohm theory.
   It leaves when the atom's sampled lifetime is up, along a straight path drawn from the wave's
   brightness (averaged over a cycle a dipole's energy flows straight out), at c. An atom takes it
   only if the path runs through its target, a cone of solid angle σ/R² around the direction to it
   (widened where the pattern dims, so each atom's chance is exactly σ·w/(4πR²), the wave
-  picture's). With the view off only the wave is drawn; the physics is the same either way.
+  picture's; where two cones overlap the nearer atom wins). In this level the only thing a
+  photon in flight can do to an atom is knock its electron off. With the view off only the wave is drawn; the physics is the same either way.
   Pilot waves are well established for electrons and still debated for photons, so the game
   calls it a view.
 - **Light passes out through the edge** in this level (matter still bounces off it). Each photon
@@ -109,31 +110,38 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   × the pattern's brightness that way ÷ the sphere the wave has spread over (settled by the
   photon's path, above). If no atom takes it, it is found at the wall along its path (the same
   direction sets the atom's recoil), and the spectrometer records it there.
-  - *Lyman light* (121.6, 102.6, 97.3 nm) lifts a resting 1s atom to 2p, 3p or 4p. Its target
-    area is huge (about 7,000, 4,400 and 3,800 nm²), so nearby atoms usually take it and give it
-    back (radiation trapping) before it gets out. Just outside the near field the plane-wave
-    formula still overestimates, so one atom's chance is capped at 50%.
-  - *Two atoms sharing one excitation:* closer than λ/2π (19 nm for Lyman-α) there is no
-    travelling light between two atoms yet; their electric fields couple them directly. An atom
-    in 2p, 3p or 4p and its nearest resting 1s neighbour then share the excitation. The game
-    follows the pair's two amplitudes (excitation on A, on B) exactly, with the standard two-atom
-    result (x = 2πr/λ, p = (dipole · direction to the other atom)², Γ = one atom's decay rate):
-    swinging rate J = (3Γ/4)[−(1−p)cos x/x + (1−3p)(sin x/x² + cos x/x³)] and shared decay
-    F = (3/2)[(1−p)sin x/x + (1−3p)(cos x/x² − sin x/x³)]. The excitation swings smoothly from one
-    atom to the other and back every π/J, with no limit on how many times. Each cloud is drawn as
-    part 1s and part p shape, by its share (the densities add; there is no sloshing between the
-    two shapes, because they belong to different joint states of the pair), with a faint link
-    for the coupled fields. The pair's light leaves at Γ(1+F) when the two atoms' waves are in
-    step and at Γ(1−F) when out of step, so the in-step share goes first and what remains is a
-    steady shape, half on each atom, that can hardly radiate (subradiance). It lasts until its
-    photon finally gets out, or until a loose charge's field shifts one atom's level against the
-    other's (linear Stark shift, up to (3/2)·n(n−1)·e·a₀·F), which stops the even sharing and lets
-    the light out. With bare protons or free electrons about, that shift is often larger than the
-    coupling, so clear swinging is mostly seen once the system is nearly neutral or the atoms are
-    very close. The photon leaves when the chance that it is still there, |c|², falls below a
-    random draw (the usual quantum-jump method). Simplified: only the nearest neighbour is
-    coupled, the p orbital keeps its direction, the shift uses the field along the orbital's own
-    axis, and below 1 nm (where real atoms would start to bond) the coupling is held constant.
+  - *Atoms sharing one excitation (groups):* Lyman light (121.6, 102.6, 97.3 nm) is exactly
+    the colour that lifts a resting 1s atom to 2p, 3p or 4p, and the whole system is smaller than
+    its wavelength. So there is no photon flying from atom to atom in here: an atom in 2p, 3p or
+    4p is coupled through its electric field to every resting 1s atom in the system, strongly
+    inside λ/2π (19 nm for Lyman-α) and weakly beyond, and the group shares the excitation.
+    The game follows one amplitude per atom, exactly, with the standard N-atom result
+    (`groupMatrix`, `groupPropagator` in `physics.js`): i·dc/dt = H·c, H_ii = D_i − iΓ/2,
+    H_ij = Γr·(J_ij − i·F_ij/2), where for each pair (x = 2πr/λ, p = (dipole · direction to the
+    other atom)²) J = (3/4)[−(1−p)cos x/x + (1−3p)(sin x/x² + cos x/x³)] is the swinging rate and
+    F = (3/2)[(1−p)sin x/x + (1−3p)(cos x/x² − sin x/x³)] the shared decay. Each frame is one
+    exact step (matrix exponential), so nothing is capped however fast the swinging.
+    - The excitation swings between close atoms and is passed around the group. Each cloud is
+      drawn as part 1s and part p shape, by its share |c_i|² (the densities add: the shapes
+      belong to different joint states of the group), each sharing atom's antenna field is drawn
+      at its share's size and phase, and close atoms are joined by a faint link.
+    - Light leaves at Γr·Σ F_ij·Re(c_i* c_j): up to N times one atom's rate when the atoms swing
+      in step (they flash together, superradiance), far slower when they swing against each other
+      (subradiance), so the in-step part goes first and what remains is a steady shape spread
+      over close atoms that can hardly radiate. It lasts until its photon finally gets out, or
+      until a loose charge's field shifts one atom's level against the others' (linear Stark
+      shift, up to (3/2)·n(n−1)·e·a₀·F), which upsets the sharing and lets the light out. With
+      bare protons or free electrons about, that shift is often larger than the coupling, so clear
+      swinging is mostly seen once the system is nearly neutral or the atoms are very close.
+    - The photon leaves when the chance that it is still there, Σ|c|², falls below a random draw
+      (the usual quantum-jump method). Its direction is drawn from the atom's dipole pattern
+      times |Σ c_i·e^(−ik·r_i)|²: the atoms' waves add up in some directions and cancel in others.
+      Atoms far from all others take only a small share, so a lone far atom behaves as before.
+    - Resting atoms join a group as they appear. Simplified: one excitation per group (a second
+      excited atom starts its own group with the resting atoms that are left), the p orbital
+      keeps its direction, the shift uses the field along the orbital's own axis, the photon is
+      drawn leaving from one atom (picked by share), and below 1 nm (where real atoms would start
+      to bond) the coupling is held constant.
   - *Photoionization:* any photon with more energy than an atom's electron is bound by (13.6 eV
     from 1s, 3.4 from n = 2, 1.5 from n = 3, 0.85 from n = 4) can knock it free. Kramers'
     cross-section, σ = 7.9e-4 nm² · n · (I/E)³ (6.3e-4 nm² measured for 1s), is tiny, so on one

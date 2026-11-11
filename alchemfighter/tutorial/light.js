@@ -31,27 +31,38 @@ export const perpBasis = a => { const e1 = norm(cross(a, Math.abs(a[1]) < 0.9 ? 
 // One emission. pattern 'lin': the charge swings along `axis` (Δm = 0). 'circ': it turns in a circle
 // about `axis` (Δm = ±1), which is two swings at right angles, a quarter cycle apart.
 // t0: when the swing starts (fs); tau: the envelope's lifetime (fs); tEnd: when it stops (fs).
-export function makeEmission({ src, lam, pattern = 'lin', axis = [0, 1, 0], t0 = 0, tau = Infinity, tEnd = Infinity }) {
+// gain and phase: the swing's size and where in its cycle it is, for an atom that holds only a
+// share of an excitation (a group sharing one; these are set from its amplitude as it changes).
+export function makeEmission({ src, lam, pattern = 'lin', axis = [0, 1, 0], t0 = 0, tau = Infinity, tEnd = Infinity, gain = 1, phase = 0 }) {
   const k = 2 * Math.PI / lam, w = k * C;
   const [e1, e2] = perpBasis(axis);
-  return { src: [...src], lam, k, w, pattern, axis: norm(axis), e1, e2, t0, tau, tEnd };
+  return { src: [...src], lam, k, w, pattern, axis: norm(axis), e1, e2, t0, tau, tEnd, gain, phase };
 }
 // Envelope of the swing at time t (0 before it starts and after it stops).
 export function envelope(em, t) {
   if (t < em.t0 || t > em.tEnd) return 0;
-  return em.tau === Infinity ? 1 : Math.exp(-(t - em.t0) / (2 * em.tau));
+  return em.gain * (em.tau === Infinity ? 1 : Math.exp(-(t - em.t0) / (2 * em.tau)));
 }
-// p, ṗ, p̈ at time t. The envelope changes slowly next to the swing itself (at least 6 cycles per
-// lifetime here), so its own rate of change is left out of ṗ and p̈.
+// The swing and its first two rates of change at time t, as [cos-like, sin-like] parts:
+// z = A·e^{(iω−γ)(t−t0)+iφ} with γ = 1/2τ, so ż = (iω−γ)·z and z̈ = (iω−γ)²·z, exactly.
+function swing(em, t) {
+  const A = envelope(em, t);
+  if (!A) return null;
+  const ph = em.w * (t - em.t0) + em.phase, zr = A * Math.cos(ph), zi = A * Math.sin(ph);
+  const g = em.tau === Infinity ? 0 : 1 / (2 * em.tau), w = em.w;
+  const dr = -g * zr - w * zi, di = -g * zi + w * zr;
+  return { zr, zi, dr, di, ddr: -g * dr - w * di, ddi: -g * di + w * dr };
+}
+// p, ṗ, p̈ at time t.
 export function dipole(em, t) {
-  const A = envelope(em, t), ph = em.w * (t - em.t0), c = Math.cos(ph), s = Math.sin(ph), w = em.w;
+  const z = swing(em, t);
+  if (!z) return { p: [0, 0, 0], pd: [0, 0, 0], pdd: [0, 0, 0] };
   if (em.pattern === 'circ') {
-    const p = [0, 1, 2].map(i => A * (em.e1[i] * c + em.e2[i] * s));
-    const pd = [0, 1, 2].map(i => A * w * (-em.e1[i] * s + em.e2[i] * c));
-    return { p, pd, pdd: p.map(x => -w * w * x) };
+    const mk = (r, i) => [0, 1, 2].map(k => em.e1[k] * r + em.e2[k] * i);
+    return { p: mk(z.zr, z.zi), pd: mk(z.dr, z.di), pdd: mk(z.ddr, z.ddi) };
   }
   const a = em.axis;
-  return { p: a.map(x => A * x * c), pd: a.map(x => -A * w * x * s), pdd: a.map(x => -A * w * w * x * c) };
+  return { p: a.map(x => x * z.zr), pd: a.map(x => x * z.dr), pdd: a.map(x => x * z.ddr) };
 }
 // The exact E and B at point x and time t.
 export function field(em, x, t) {
@@ -70,15 +81,8 @@ export function field(em, x, t) {
 // so E_R = ∂Ψ/∂θ / (R² sinθ) and E_θ = −∂Ψ/∂R / (R sinθ). Equal steps in Ψ carry equal amounts of
 // field between neighbouring lines, so where lines crowd the field is strong.
 export function psiLin(em, R, cosT, t) {
-  const tr = t - R / C, A = envelope(em, tr);
-  if (!A) return 0;
-  const ph = em.w * (tr - em.t0);
-  return (1 - cosT * cosT) * A * (Math.cos(ph) / R - em.k * Math.sin(ph));
-}
-// Its size averaged over a cycle (used when the swing is too fast to show, see game.js).
-export function psiLinAvg(em, R, cosT, t) {
-  const A = envelope(em, t - R / C);
-  return A ? (1 - cosT * cosT) * A * Math.hypot(1 / R, em.k) : 0;
+  const z = swing(em, t - R / C);
+  return z ? (1 - cosT * cosT) * (z.zr / R + z.dr / C) : 0;
 }
 
 // Contour lines of f(R, θ) on a grid that is even in log R and in θ (fine close to the atom,
@@ -166,15 +170,5 @@ export const inCone = (dir, toward, omega) => dot(dir, toward) >= 1 - omega / (2
 // fades as exp(−t/τ), so the time is drawn from that (the level's real lifetime).
 export const sampleLaunch = (tau, rand = Math.random) => -tau * Math.log(1 - rand());
 
-// ---------------------------------------------------------------------------
-// The electron's own wave, live (Schrödinger's equation for the atom, with the light's field).
-// An atom in 1s that light of exactly its colour (Lyman) washes over starts to answer it: a little
-// of the p shape mixes in, swinging at the light's own frequency, growing as long as the wave keeps
-// coming. To first order the amount mixed in grows with the field that has passed (the integral of
-// the envelope), and once the whole photon has gone by it reaches the chance that this atom takes
-// the photon. Whether it actually does is settled when the photon arrives (pilot-wave view: when
-// its path does or doesn't run through the atom's target).
-// Returns the share of the upper level, |c_e|², for chance P after the light has shone for `t` fs.
-export const drivenShare = (P, t, tau) => (t <= 0 ? 0 : P * (tau === Infinity ? 1 : (1 - Math.exp(-t / (2 * tau)))) ** 2);
-// The emitting atom itself: its upper level fades as exp(−t/τ) (this is the share still up).
+// The emitting atom's share still in the upper level: it fades as exp(−t/τ).
 export const emitterShare = (t, tau) => (t <= 0 ? 1 : Math.exp(-t / tau));

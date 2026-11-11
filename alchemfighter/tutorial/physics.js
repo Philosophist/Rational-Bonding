@@ -477,3 +477,89 @@ export function pairStep(c, t, { G, Gr, J, F, D }) {
   c[2] = k * (ba[0] + bb[0]); c[3] = k * (ba[1] + bb[1]);
   return { wr, wi };
 }
+
+// ---------------------------------------------------------------------------
+// Any number of atoms sharing one excitation: the same physics as the pair above, for a whole
+// group. Atom i holds amplitude c_i ("the excitation is on atom i"); every pair of atoms is
+// coupled through its electric fields by the same J and F. The amplitudes follow
+//   i·dc/dt = H·c,   H_ii = D_i − i·G/2,   H_ij = Gr·(J_ij − i·F_ij/2)
+// (D_i: how far a field has shifted atom i's level; G, Gr as in pairStep). This is the standard
+// result for N atoms and one photon (Lehmberg 1970), exact for atoms much closer together than the
+// light's wave train is long. |c|² summed over the atoms shrinks as time passes: it is the chance
+// that no photon has left yet. Light leaves at rate Gr·Σ_ij F_ij·Re(c_i* c_j) (F_ii = 1): faster
+// than one atom when the atoms swing in step (they flash together, superradiance), slower when
+// they swing against each other (the excitation is held, subradiance).
+// ---------------------------------------------------------------------------
+// pos: positions (nm). pOf(d): (dipole · direction)² for a unit vector d between two atoms.
+// Returns H (real and imaginary parts, row-major N×N) and F, J (in units of Gr).
+export function groupMatrix(pos, lam, { G, Gr, D, pOf, minR = 1 }) {
+  const N = pos.length, Hr = new Float64Array(N * N), Hi = new Float64Array(N * N), F = new Float64Array(N * N), J = new Float64Array(N * N);
+  for (let i = 0; i < N; i++) {
+    Hr[i * N + i] = D ? D[i] : 0; Hi[i * N + i] = -G / 2; F[i * N + i] = 1;
+    for (let j = i + 1; j < N; j++) {
+      const d = [pos[j][0] - pos[i][0], pos[j][1] - pos[i][1], pos[j][2] - pos[i][2]], r = Math.hypot(d[0], d[1], d[2]);
+      const u = r > 1e-9 ? [d[0] / r, d[1] / r, d[2] / r] : [1, 0, 0];
+      const k = pairCoupling(2 * Math.PI * Math.max(r, minR) / lam, pOf(u));
+      Hr[i * N + j] = Hr[j * N + i] = Gr * k.J; Hi[i * N + j] = Hi[j * N + i] = -Gr * k.F / 2;
+      F[i * N + j] = F[j * N + i] = k.F; J[i * N + j] = J[j * N + i] = k.J;
+    }
+  }
+  return { N, Hr, Hi, F, J };
+}
+// U = exp(−i·H·t) for a complex N×N matrix (scaling and squaring with a 10-term series): the exact
+// step for constant H, however fast the atoms swing or however large the shifts.
+export function groupPropagator({ N, Hr, Hi }, t) {
+  // M = −i·H·t = (Hi + i·(−Hr))·t
+  let nrm = 0;
+  for (let i = 0; i < N; i++) { let s = 0; for (let j = 0; j < N; j++) s += Math.hypot(Hr[i * N + j], Hi[i * N + j]); nrm = Math.max(nrm, s); }
+  const sq = Math.max(0, Math.ceil(Math.log2(Math.max(1e-300, nrm * Math.abs(t) / 0.5)))), sc = t / 2 ** sq, n2 = N * N;
+  const Mr = new Float64Array(n2), Mi = new Float64Array(n2);
+  for (let k = 0; k < n2; k++) { Mr[k] = Hi[k] * sc; Mi[k] = -Hr[k] * sc; }
+  const mul = (Ar, Ai, Br, Bi) => {
+    const Cr = new Float64Array(n2), Ci = new Float64Array(n2);
+    for (let i = 0; i < N; i++) for (let k = 0; k < N; k++) {
+      const ar = Ar[i * N + k], ai = Ai[i * N + k];
+      if (ar === 0 && ai === 0) continue;
+      for (let j = 0; j < N; j++) { const br = Br[k * N + j], bi = Bi[k * N + j]; Cr[i * N + j] += ar * br - ai * bi; Ci[i * N + j] += ar * bi + ai * br; }
+    }
+    return [Cr, Ci];
+  };
+  let Ur = new Float64Array(n2), Ui = new Float64Array(n2), Tr = new Float64Array(n2), Ti = new Float64Array(n2);
+  for (let i = 0; i < N; i++) { Ur[i * N + i] = 1; Tr[i * N + i] = 1; }
+  for (let m = 1; m <= 10; m++) {
+    [Tr, Ti] = mul(Tr, Ti, Mr, Mi);
+    for (let k = 0; k < n2; k++) { Tr[k] /= m; Ti[k] /= m; Ur[k] += Tr[k]; Ui[k] += Ti[k]; }
+  }
+  for (let s = 0; s < sq; s++) [Ur, Ui] = mul(Ur, Ui, Ur, Ui);
+  return { N, Ur, Ui };
+}
+// c ← U·c, with c = { re, im } arrays of length N.
+export function groupApply({ N, Ur, Ui }, c) {
+  const re = new Float64Array(N), im = new Float64Array(N);
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    re[i] += Ur[i * N + j] * c.re[j] - Ui[i * N + j] * c.im[j];
+    im[i] += Ur[i * N + j] * c.im[j] + Ui[i * N + j] * c.re[j];
+  }
+  c.re = re; c.im = im;
+  return c;
+}
+export const groupNorm = c => { let s = 0; for (let i = 0; i < c.re.length; i++) s += c.re[i] ** 2 + c.im[i] ** 2; return s; };
+// Σ_ij F_ij·Re(c_i* c_j): the group's light-emission rate in units of Gr (1 for one excited atom
+// alone; up to N for N atoms sharing equally and in step).
+export function groupLightRate({ N, F }, c) {
+  let s = 0;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) s += F[i * N + j] * (c.re[i] * c.re[j] + c.im[i] * c.im[j]);
+  return Math.max(0, s);
+}
+// How bright the group's light is in direction dir (unit vector), relative to one atom holding
+// all of it: |Σ c_i·exp(−i·k·dir·r_i)|² / Σ|c_i|². The atoms' waves add up in some directions and
+// cancel in others.
+export function groupArrayFactor(pos, c, lam, dir) {
+  const k = 2 * Math.PI / lam;
+  let sr = 0, si = 0;
+  for (let i = 0; i < pos.length; i++) {
+    const ph = -k * (dir[0] * pos[i][0] + dir[1] * pos[i][1] + dir[2] * pos[i][2]), cs = Math.cos(ph), sn = Math.sin(ph);
+    sr += c.re[i] * cs - c.im[i] * sn; si += c.re[i] * sn + c.im[i] * cs;
+  }
+  return (sr * sr + si * si) / Math.max(1e-300, groupNorm(c));
+}

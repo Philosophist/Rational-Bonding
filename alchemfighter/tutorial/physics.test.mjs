@@ -181,3 +181,48 @@ test('two atoms sharing one excitation', () => {
   assert.ok(maxB < 1e-3, maxB);
   assert.ok(Math.abs(e[0] ** 2 + e[1] ** 2 - Math.exp(-1)) < 0.01);
 });
+
+test('a group of two is the pair model exactly', () => {
+  const lam = 121.567, G = 0.37, Gr = 0.37, pos = [[0, 0, 0], [6, 2, 1]];
+  const d = [6, 2, 1], r = Math.hypot(...d), cy = d[1] / r, p = cy * cy;
+  for (const [t, D] of [[0.5, 0], [3, 40], [20, 0]]) {
+    const k = P.pairCoupling(2 * Math.PI * r / lam, p), c2 = [1, 0, 0, 0];
+    P.pairStep(c2, t, { G, Gr, J: k.J * Gr, F: k.F, D });
+    const M = P.groupMatrix(pos, lam, { G, Gr, D: [D / 2, -D / 2], pOf: u => u[1] * u[1] });
+    const c = P.groupApply(P.groupPropagator(M, t), { re: [1, 0], im: [0, 0] });
+    for (const [x, y] of [[c.re[0], c2[0]], [c.im[0], c2[1]], [c.re[1], c2[2]], [c.im[1], c2[3]]]) assert.ok(Math.abs(x - y) < 1e-9, `${x} vs ${y}`);
+  }
+});
+
+test('a group far apart behaves as lone atoms; one step equals many small ones', () => {
+  const lam = 121.567, G = 0.4, Gr = 0.35, pOf = u => u[1] * u[1];
+  const far = P.groupMatrix([[0, 0, 0], [5e4, 0, 0], [0, 0, 7e4]], lam, { G, Gr, pOf });
+  const c = P.groupApply(P.groupPropagator(far, 3), { re: [1, 0, 0], im: [0, 0, 0] });
+  assert.ok(Math.abs(P.groupNorm(c) - Math.exp(-G * 3)) < 1e-3, P.groupNorm(c));
+  const pos = [[0, 0, 0], [3, 1, 0], [-2, 4, 5], [8, -3, 2], [1, 9, -6]];
+  const M = P.groupMatrix(pos, lam, { G, Gr, D: [30, -500, 0, 2000, 7], pOf });
+  const a = P.groupApply(P.groupPropagator(M, 2), { re: [1, 0, 0, 0, 0], im: [0, 0, 0, 0, 0] });
+  let b = { re: [1, 0, 0, 0, 0], im: [0, 0, 0, 0, 0] };
+  const U = P.groupPropagator(M, 2 / 64);
+  for (let i = 0; i < 64; i++) b = P.groupApply(U, b);
+  for (let i = 0; i < 5; i++) assert.ok(Math.abs(a.re[i] - b.re[i]) < 1e-8 && Math.abs(a.im[i] - b.im[i]) < 1e-8);
+  // the norm only ever falls, at the rate the light and the other branches leave
+  const c0 = { re: [0.5, 0.5, 0.5, 0.5, 0], im: [0, 0, 0, 0, 0] }, M0 = P.groupMatrix(pos, lam, { G, Gr, pOf });
+  const h = 1e-5, c1 = P.groupApply(P.groupPropagator(M0, h), { re: [...c0.re], im: [...c0.im] });
+  const rate = (P.groupNorm(c0) - P.groupNorm(c1)) / h;
+  assert.ok(Math.abs(rate - ((G - Gr) * P.groupNorm(c0) + Gr * P.groupLightRate(M0, c0))) < 1e-3 * rate, rate);
+});
+
+test('atoms close together and in step flash together: N times one atom\'s rate', () => {
+  const lam = 121.567, pOf = u => u[1] * u[1];
+  // four atoms in the plane across the dipole, 1.2 nm apart: far closer than the wavelength
+  const pos = [[0, 0, 0], [1.2, 0, 0], [0, 0, 1.2], [1.2, 0, 1.2]];
+  const M = P.groupMatrix(pos, lam, { G: 1, Gr: 1, pOf });
+  const inStep = { re: [0.5, 0.5, 0.5, 0.5], im: [0, 0, 0, 0] }, against = { re: [0.5, -0.5, -0.5, 0.5], im: [0, 0, 0, 0] };
+  assert.ok(P.groupLightRate(M, inStep) > 3.95, P.groupLightRate(M, inStep));
+  assert.ok(P.groupLightRate(M, against) < 0.01, P.groupLightRate(M, against));
+  // and the light's direction: two atoms half a wavelength apart, in step, send nothing along their line
+  const two = [[0, 0, 0], [lam / 2, 0, 0]], c = { re: [Math.SQRT1_2, Math.SQRT1_2], im: [0, 0] };
+  assert.ok(P.groupArrayFactor(two, c, lam, [1, 0, 0]) < 1e-9);
+  assert.ok(Math.abs(P.groupArrayFactor(two, c, lam, [0, 0, 1]) - 2) < 1e-9);
+});

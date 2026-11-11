@@ -73,11 +73,13 @@ vec4 sampleCloud(int i, vec3 pw){
   vec2 w = cmul(uCA[i], psi(uQA[i], uModeA[i], uNormA[i], p));
   if (dot(uCB[i], uCB[i]) > 0.0) {
     vec2 b = cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], p));
-    if (uInc[i] > 0.5) {   // two shapes whose densities add (no interference between them)
-      float da = dot(w, w), db = dot(b, b);
-      return vec4((phaseColor(w) * da + phaseColor(b) * db) / max(da + db, 1e-30), da + db);
-    }
+    // uInc 1: two shapes whose densities add (no interference between them). 0: they interfere
+    // (the beat that swings the charge). In between: a blend, as a fast beat blurs into its average.
+    float da = dot(w, w), db = dot(b, b);
+    vec4 added = vec4((phaseColor(w) * da + phaseColor(b) * db) / max(da + db, 1e-30), da + db);
+    if (uInc[i] >= 1.0) return added;
     w += b;
+    return mix(vec4(phaseColor(w), dot(w, w)), added, uInc[i]);
   }
   return vec4(phaseColor(w), dot(w, w));
 }
@@ -308,10 +310,19 @@ export function createRenderer(canvas) {
 
 // Line builder: pairs of points with colour and alpha (the GPU clips them at the near plane).
 export class Lines {
-  constructor() { this.a = []; }
-  begin() { this.a.length = 0; }
+  constructor() { this.a = []; this.chunks = []; }
+  begin() { this.a.length = 0; this.chunks.length = 0; }
   seg(p, q, col, alpha = 1) {
     this.a.push(p[0], p[1], p[2], col[0], col[1], col[2], alpha, q[0], q[1], q[2], col[0], col[1], col[2], alpha);
   }
-  data() { return new Float32Array(this.a); }
+  // Segments worked out earlier and kept as one block (see lightLines in game.js).
+  chunk(f32) { this.chunks.push(f32); }
+  data() {
+    if (!this.chunks.length) return new Float32Array(this.a);
+    const out = new Float32Array(this.a.length + this.chunks.reduce((n, c) => n + c.length, 0));
+    out.set(this.a);
+    let o = this.a.length;
+    for (const c of this.chunks) { out.set(c, o); o += c.length; }
+    return out;
+  }
 }

@@ -74,11 +74,21 @@ test('pilot-wave targets give each atom the same chance as the wave picture', ()
   });
 });
 
-test('a driven atom reaches the absorption chance once the whole photon has passed', () => {
-  close(L.drivenShare(0.3, 1e6, 2.7), 0.3, 1e-9, 'all passed');
-  assert.ok(L.drivenShare(0.3, 2.7, 2.7) < 0.3 && L.drivenShare(0.3, 2.7, 2.7) > 0.03);
+test('the emitter fades with its lifetime, and photons leave on the same clock', () => {
   close(L.emitterShare(2.7, 2.7), Math.exp(-1), 1e-12, 'emitter');
-  // launch times follow the lifetime
   const rand = rng(3); let s = 0; for (let i = 0; i < 20000; i++) s += L.sampleLaunch(2.7, rand);
   close(s / 20000, 2.7, 0.03, 'mean launch');
+});
+
+test('a short, fading swing (one cycle long) still gives the exact field from its stream function', () => {
+  const em = L.makeEmission({ src: [0, 0, 0], lam: 91, axis: [0, 0, 1], t0: 0, tau: 91 / L.C, gain: 0.6, phase: 1.1 });
+  for (const [R, th, t] of [[2, 0.7, 0.4], [25, 1.9, 0.5]]) {
+    const h = 1e-4 * R, ht = 1e-5;
+    const dPdT = (L.psiLin(em, R, Math.cos(th + ht), t) - L.psiLin(em, R, Math.cos(th - ht), t)) / (2 * ht);
+    const dPdR = (L.psiLin(em, R + h, Math.cos(th), t) - L.psiLin(em, R - h, Math.cos(th), t)) / (2 * h);
+    const Er = dPdT / (R * R * Math.sin(th)), Et = -dPdR / (R * Math.sin(th));
+    const { E } = L.field(em, [R * Math.sin(th), 0, R * Math.cos(th)], t);
+    const er = E[0] * Math.sin(th) + E[2] * Math.cos(th), et = E[0] * Math.cos(th) - E[2] * Math.sin(th), mag = Math.hypot(er, et);
+    assert.ok(Math.abs(Er - er) < 1e-4 * mag && Math.abs(Et - et) < 1e-4 * mag, `R=${R}: (${Er}, ${Et}) vs (${er}, ${et})`);
+  }
 });
