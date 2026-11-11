@@ -15,7 +15,7 @@ $PSQL -q -d rs_test -c "create publication supabase_realtime" 2>/dev/null
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/20261102120000_cube_chess.sql >/dev/null
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/20261105120000_reasonance.sql >/dev/null
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/20261105120000_reasonance.sql >/dev/null # safe to run twice
-for f in 20261105230000_reasonance_neither.sql 20261105230000_reasonance_neither.sql 20261106130000_ourgument_no_opinion.sql 20261106130000_ourgument_no_opinion.sql 20261109120000_ourgument_other_view.sql 20261109120000_ourgument_other_view.sql 20261110120000_ourgument_public_maps.sql 20261110120000_ourgument_public_maps.sql; do
+for f in 20261105230000_reasonance_neither.sql 20261105230000_reasonance_neither.sql 20261106130000_ourgument_no_opinion.sql 20261106130000_ourgument_no_opinion.sql 20261109120000_ourgument_other_view.sql 20261109120000_ourgument_other_view.sql 20261110120000_ourgument_public_maps.sql 20261110120000_ourgument_public_maps.sql 20261111120000_ourgument_clarifications.sql 20261111120000_ourgument_clarifications.sql; do
   $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f $M/$f >/dev/null
 done
 $PSQL -q -d rs_test -v ON_ERROR_STOP=1 -f database.test.sql | grep -q 'ALL PASSED'

@@ -267,9 +267,17 @@ export function standingContention(map, id) {
 
 // Ratings. Every change is kept with its time, so a map remembers when and
 // what you believed. Returns the flavor text to show, if any.
+// Clarifications say what a post means; they aren't claims to agree or
+// disagree with, so they take no stance, confidence or stars. Their arrows can
+// still be supported, contended or questioned.
+export function takesViews(it) {
+  return !!it && it.type !== 'clarification';
+}
+
 export function rate(map, id, { stance, confidence, relevance, other } = {}, now = Date.now()) {
   const it = map.items[id];
   if (!it) return [];
+  if (!takesViews(it)) return [];
   const prev = it.rating ?? { history: [] };
   const next = {
     stance: stance === undefined ? prev.stance ?? null : stance,
