@@ -5,6 +5,7 @@
 import * as P from './physics.js';
 import { waveDesc, extentBohr } from './orbitals.js';
 import { createRenderer, Lines } from './render.js';
+import * as W from './light.js';
 import * as M from './mat4.js';
 
 const $ = id => document.getElementById(id);
@@ -61,6 +62,14 @@ const FALL_DUR = 3.0;
 // the lifetimes keep their real proportions: 2p 1.6 ns, 3s 159 ns, ...), then the shape morphs
 // over STEP_MORPH s while everything slows.
 const STEP_MORPH = 1.5;
+// When its photon is found, the swinging atom settles into the lower level over SETTLE seconds.
+const SETTLE = 0.5;
+// An atom starting to send light: the clock slows until one swing of its charge takes EMIT_PERIOD
+// screen seconds, holds EMIT_HOLD s (longer the first two times), then speeds up (e-fold per EMIT_EASE s).
+const EMIT_PERIOD = 2, EMIT_HOLD = [5, 2], EMIT_EASE = 1;
+// Swings faster than SWING_HZ on screen are drawn as their average (no flicker: photosensitivity),
+// fully so above SWING_HZ_AVG.
+const SWING_HZ = 1.2, SWING_HZ_AVG = 2.2;
 // Acid Neutrality: this many fresh protons appear for the player to neutralize.
 const ACID_N = 10;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
@@ -81,7 +90,7 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
-    shots: 0, absorbed: 0, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
+    shots: 0, emitShown: 0, pilot: true, absorbed: 0, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0 }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
   };
@@ -263,36 +272,62 @@ function desc(s) {
   if (!descCache.has(k)) descCache.set(k, waveDesc(s.n, s.l, s.m, 1, true));
   return descCache.get(k);
 }
-// Light leaves as a wave: a shell of electromagnetic ripple spreading out from the atom at the
-// speed of light, brightest where the radiation pattern is strongest. A dipole
-// whose charge swings along an axis (Δm = 0) sends most light out sideways (sin²θ); one that turns
-// in a circle (Δm = ±1) sends (1 + cos²θ)/2. The photon's energy is spread over the whole shell
-// until it is detected somewhere, which the spectrometer does at the wall.
+// Light leaves as Maxwell's equations say it does (light.js): an atom changing level swings its
+// charge like a tiny antenna, and the exact field of that swing spreads out at the speed of light,
+// at the light's real wavelength. A swing along an axis (Δm = 0) sends most light out sideways
+// (sin²θ); one turning in a circle (Δm = ±1) sends (1 + cos²θ)/2.
+// The photon itself (pilot-wave view): a particle that rides the wave along one straight path at c,
+// its direction drawn from the wave's brightness. Only where it goes can it be taken: by an atom
+// whose target its path runs through, or else by the wall, where the spectrometer records it.
+// When it is taken, the swing that sent it stops and the rest of the wave, now empty, runs out.
 const randomDir = () => { const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z); return [rr * Math.cos(th), z, rr * Math.sin(th)]; };
-function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir(), from = null, show = LIGHT_SHOW) {
-  const I = pattern === 'lin' ? c => 1 - c * c : pattern === 'circ' ? c => 0.5 * (1 + c * c) : () => 1;
-  const avgI = pattern === 'iso' ? 1 : 2 / 3;
-  let dir;   // where the photon is found if nothing takes it (and its recoil), drawn from the pattern
-  do dir = randomDir(); while (Math.random() > I(v3.dot(dir, axis)));
-  const b = v3.dot(pos, dir), c = v3.dot(pos, pos) - P.SPHERE_R ** 2;
-  const exitAt = -b + Math.sqrt(Math.max(0, b * b - c));   // distance to the wall along dir
-  const L = { lam, E: P.HC / lam, src: [...pos], axis, I, x: 0, exitAt, slow: lightSlow(show), exitPt: v3.add(pos, v3.scale(dir, exitAt)), col: photonColor(lam) };
-  planLight(L, avgI, from);
+const lifetimeFs = tauNs => tauNs * 1e6 / P.RATE_BOOST;   // a real lifetime on the game's (sped-up) clock
+// Starts a light wave. launchIn: fs until the photon leaves (0 = now). tau: how long the swing lasts
+// (fs). from: the atom sending it, which can't take it back.
+function startLight({ pos, lam, pattern = 'lin', axis = randomDir(), from = null, show = LIGHT_SHOW, tau = lam / P.C, launchIn = 0, emitter = null }) {
+  if (pattern === 'iso') { pattern = 'lin'; axis = randomDir(); }   // two-photon light: no single axis, a random one stands in
+  const em = W.makeEmission({ src: pos, lam, pattern, axis, t0: S.simFs, tau });
+  const L = { em, lam, E: P.HC / lam, pattern, col: photonColor(lam), from, emitter, show, slowFlight: lightSlow(show), tLaunch: S.simFs + launchIn,
+    launched: false, caught: false, age: 0, quick: show === LIGHT_QUICK, maxR: v3.len(pos) + P.SPHERE_R };
   S.light.push(L);
-  S.slow = Math.min(S.slow, L.slow);   // slow everything at once, so the wave can be seen
-  return dir;
+  if (launchIn <= 0) launchPhoton(L);
+  return L;
+}
+// The old one-call form: a photon that leaves at once (capture, the two-atom pair). Returns its direction.
+function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir(), from = null, show = LIGHT_SHOW) {
+  return startLight({ pos, lam, pattern, axis, from, show }).dir;
+}
+// The photon leaves: its direction is drawn from the pattern, and what it will run into is settled
+// now, from where the atoms are (they barely move while light crosses the system).
+function launchPhoton(L) {
+  const { em } = L, pos = em.src;
+  let dir;
+  do dir = randomDir(); while (Math.random() > W.patternI(L.pattern, v3.dot(dir, em.axis)));
+  const b = v3.dot(pos, dir), c = v3.dot(pos, pos) - P.SPHERE_R ** 2;
+  L.dir = dir; L.launched = true; L.tLaunch = S.simFs;
+  L.exitAt = -b + Math.sqrt(Math.max(0, b * b - c));   // distance to the wall along its path
+  L.exitPt = v3.add(pos, v3.scale(dir, L.exitAt));
+  L.target = planTarget(L);
+  S.slow = Math.min(S.slow, L.slowFlight);   // slow everything at once, so the photon can be followed
+  if (L.emitter) L.emitter.onLaunch(L);
+  if (!S.dotSaid && S.pilot && L.emitter) {
+    S.dotSaid = true;
+    log('The bright point is the photon itself, riding its wave (pilot-wave view, P to hide it). The wave went everywhere; the photon goes one way, and only what it runs into can take it.');
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Light meeting atoms. In this level light passes out through the edge of the system, so each
-// photon gets one pass. Its wave spreads at the speed of light; wherever it reaches an atom, that
-// atom may take the whole photon (never part of it), with chance σ·w/(4πr²): its target area σ
-// times how bright the wave is that way (w), spread over the sphere of radius r the wave has
-// reached. If nothing takes it, it is found at the wall, where the spectrometer records it.
+// photon gets one pass. An atom takes the whole photon (never part of it) when the photon's path
+// runs through its target, a cone of solid angle σ/R² around the direction to it. Averaged over
+// paths that is a chance σ·w/(4πR²): its target area σ times how bright the wave is that way (w),
+// spread over the sphere of radius R. If nothing takes it, it is found at the wall.
 // - Lyman light (121.6, 102.6, 97.3 nm) is exactly the colour that lifts a 1s electron to 2p, 3p or
 //   4p. For that colour a 1s atom's target area is huge (about 7,000, 4,400 and 3,800 nm²), so a
 //   resting atom within about 20 nm almost always takes it, then gives it back out
-//   (radiation trapping).
+//   (radiation trapping). While the wave washes over such an atom, the atom answers it: a little
+//   of the p shape mixes into its cloud, swinging at the light's frequency (Schrödinger's equation
+//   with the light's field; see drivenShare in light.js). It keeps it only if the photon arrives.
 // - Any photon with more energy than an atom's electron is bound by (13.6 eV from 1s, 3.4 from
 //   n = 2, 1.5 from n = 3, 0.85 from n = 4) can knock it free, but the target area is tiny
 //   (about 0.0006 nm²), so on one pass that is very rare.
@@ -302,7 +337,7 @@ function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir(), from = null, 
 //   can knock its electron off (collisions, rate n·σ·v, on the rare-event clock).
 // ---------------------------------------------------------------------------
 const LYMAN_SIGMA = { 2: 7057, 3: 4424, 4: 3793 };     // nm², resonant absorption from 1s (λ²/2π · g · branch)
-// σ/(4πr²) counts the wave as a plane wave. Just outside the near field (λ/2π) that still
+// σ/(4πR²) counts the wave as a plane wave. Just outside the near field (λ/2π) that still
 // overestimates, so one atom's chance from a single neighbour's wave is capped at about half.
 const NEAR_CAP = 0.5;
 const lymanUpper = lam => [2, 3, 4].find(n => Math.abs(lam - P.lambdaFor(1, n)) / lam < 1e-4) || 0;
@@ -311,49 +346,83 @@ const watched = a => S.cascade && S.cascade.atom === a;
 const idle1s = a => !a.trans && !a.pending && !a.pair && !a.mix && a.st.n === 1 && a.fade >= 1 && !watched(a);
 // Any atom sitting in a level (not mid-jump) can have its electron knocked off by strong enough light.
 const resting = a => !a.trans && !a.pair && a.fade >= 1;
-function planLight(L, avgI, from) {
+// An atom's chance of taking this light, from where the light started (wave picture).
+function lightChance(L, a) {
+  const d = v3.sub(a.p.pos, L.em.src), r = v3.len(d);
+  if (r < 0.05 || a === L.from) return null;
   const nUp = lymanUpper(L.lam);
-  const near = S.atoms.filter(a => a !== from && resting(a)).map(a => ({ a, d: v3.sub(a.p.pos, L.src) }))
-    .map(o => ({ ...o, r: v3.len(o.d) })).filter(o => o.r > 0.05 && o.r < L.exitAt).sort((x, y) => x.r - y.r);
-  for (const o of near) {
-    // Inside λ/2π a neighbour is coupled, not absorbing (see tryPair), so only farther atoms take Lyman light.
-    const sLy = nUp && idle1s(o.a) && o.r >= L.lam / (2 * Math.PI) ? LYMAN_SIGMA[nUp] : 0, sIon = P.photoionSigma(o.a.st.n, L.E);
-    if (!sLy && !sIon) continue;
-    const w = L.I(v3.dot(v3.scale(o.d, 1 / o.r), L.axis)) / avgI;
-    if (Math.random() < Math.min(NEAR_CAP, (sLy + sIon) * w / (4 * Math.PI * o.r * o.r))) {
-      L.absorbAt = o.r; L.target = o.a; L.hitDir = v3.scale(o.d, 1 / o.r);
-      L.how = Math.random() * (sLy + sIon) < sLy ? 'lyman' : 'ion';
-      L.nUp = nUp;
-      return;
+  // Inside λ/2π a neighbour is coupled, not absorbing (see tryPair), so only farther atoms take Lyman light.
+  const sLy = nUp && idle1s(a) && r >= L.lam / (2 * Math.PI) ? LYMAN_SIGMA[nUp] : 0, sIon = resting(a) ? P.photoionSigma(a.st.n, L.E) : 0;
+  if (!sLy && !sIon) return null;
+  const u = v3.scale(d, 1 / r), w = W.patternI(L.pattern, v3.dot(u, L.em.axis)) / W.patternAvg(L.pattern);
+  return { r, u, sLy, sIon, nUp, P: Math.min(NEAR_CAP, (sLy + sIon) * w / (4 * Math.PI * r * r)) };
+}
+function planTarget(L) {
+  const near = S.atoms.map(a => ({ a, c: lightChance(L, a) })).filter(o => o.c && o.c.r < L.exitAt).sort((x, y) => x.c.r - y.c.r);
+  for (const { a, c } of near) {
+    if (!W.inCone(L.dir, c.u, W.targetSolidAngle(c.P, c.u, L.em.axis, L.pattern))) continue;
+    return { a, r: c.r, how: Math.random() * (c.sLy + c.sIon) < c.sLy ? 'lyman' : 'ion', nUp: c.nUp };
+  }
+  return null;
+}
+// Resting 1s atoms answering a Lyman wave that is washing over them (drawn as a little p shape
+// mixing in). Recomputed every frame from each light's field.
+function driveAtoms() {
+  const want = new Map();
+  for (const L of S.light) {
+    if (L.caught || !lymanUpper(L.lam)) continue;
+    for (const a of S.atoms) {
+      const c = idle1s(a) && lightChance(L, a);
+      if (!c || !c.sLy) continue;
+      const shone = Math.min(S.simFs - c.r / P.C, L.em.tEnd) - L.em.t0;   // how long its wave has been here
+      const share = W.drivenShare(c.P * c.sLy / (c.sLy + c.sIon), shone, L.em.tau);
+      if (share > (want.get(a)?.share || 0)) want.set(a, { share, nUp: c.nUp, lam: L.lam });
     }
   }
+  for (const a of S.atoms) {
+    const w = want.get(a);
+    if (w) { a.drive = { ...w, release: false }; continue; }
+    if (a.drive) a.drive.release = true;   // the photon went elsewhere: the borrowed p shape fades out
+  }
 }
-// dLight: how far light travels this step (c × the real time that passes).
-function updateLight(dLight) {
+// Each step: send photons whose time has come, and follow each photon along its path.
+function updateLight(dt) {
   for (const L of S.light) {
-    L.x += dLight;
-    if (L.absorbAt && L.x >= L.absorbAt) {
-      const a = L.target;
-      L.gone = true;
+    L.age += dt;
+    if (!L.launched) { if (S.simFs >= L.tLaunch) launchPhoton(L); else continue; }
+    if (L.caught) { L.gone = P.C * (S.simFs - L.em.tEnd) > L.maxR; continue; }
+    const s = P.C * (S.simFs - L.tLaunch);   // how far the photon has gone
+    if (L.target && s >= L.target.r) {
+      const a = L.target.a;
+      catchPhoton(L);
       if (!S.atoms.includes(a) || !resting(a)) continue;   // it changed meanwhile: rare, let it go
-      a.p.vel = v3.add(a.p.vel, v3.scale(L.hitDir, L.E / P.C / P.MP));   // the photon's push
-      if (L.how === 'lyman' && idle1s(a)) reExcite(a, L);
+      a.p.vel = v3.add(a.p.vel, v3.scale(L.dir, L.E / P.C / P.MP));   // the photon's push
+      if (L.target.how === 'lyman' && idle1s(a)) reExcite(a, L, L.target.nUp);
       else {
         const n = a.st.n;
+        if (a.emitL) { cancelLight(a.emitL); a.emitL = null; a.pending = null; }
         freeAtom(a, L.E - P.ionE(n), L.col);
         log(`H(${P.stateName(a.st)}) + ${L.lam.toFixed(1)} nm light → H⁺ + e⁻, with ${(L.E - P.ionE(n)).toFixed(2)} eV to spare.`, 'red');
         say(`The light knocked the electron off a hydrogen atom! ${n === 1 ? 'From 1s that takes at least 13.6 eV of ultraviolet' : `Up on step n = ${n} it only takes ${P.ionE(n).toFixed(1)} eV`}. Light can break atoms apart as well as come out of them. That proton is bare again.`);
       }
-    } else if (L.x >= L.exitAt) {
+    } else if (s >= L.exitAt) {
       // Not taken: it is found at the wall and leaves the system. The spectrometer records it.
-      L.gone = true;
+      catchPhoton(L);
       S.spectrum.push({ lam: L.lam, t: S.time });
       S.lightOut++; S.lightOutE += L.E;
       S.flashes.push({ pos: L.exitPt, col: L.col.map(v => v * 0.6), t: 0, life: 0.6, size: 0.5 });
     }
   }
   S.light = S.light.filter(L => !L.gone);
+  driveAtoms();
 }
+// The photon has been found: the swing that sent it stops (its atom settles into the lower level).
+function catchPhoton(L) {
+  L.caught = true; L.em.tEnd = Math.min(L.em.tEnd, S.simFs);
+  if (L.emitter) L.emitter.onCaught(L);
+}
+// A wave whose photon never leaves (the atom was taken over by a pair, or knocked apart).
+function cancelLight(L) { L.caught = true; L.cancelled = true; L.em.tEnd = Math.min(L.em.tEnd, S.simFs); }
 // Fast electrons hitting resting atoms: n = 2 excitation above 10.2 eV, ionization above 13.6 eV.
 function collisions(dtNs) {
   const atoms = S.atoms.filter(idle1s);
@@ -385,15 +454,18 @@ function collisions(dtNs) {
     if (!atoms.length) return;
   }
 }
-function reExcite(a, L) {
-  const to = { n: L.nUp, l: 1, m: 0 };
-  a.trans = { from: a.st, to, t: 0, dur: REEMIT_MORPH };
+function reExcite(a, L, nUp) {
+  const to = { n: nUp, l: 1, m: 0 };
+  // It goes on from the share of the p shape its cloud had already taken while the wave washed over it.
+  const s0 = a.drive ? 2 / Math.PI * Math.asin(Math.sqrt(Math.min(1, a.drive.share))) : 0;
+  a.drive = null;
+  a.trans = { from: a.st, to, t: 0, dur: REEMIT_MORPH, s0 };
   a.reex = true;
   a.absorbed = (a.absorbed || 0) + 1;
   S.absorbed++;
   S.flashes.push({ pos: [...a.p.pos], col: L.col.map(x => x * 0.5), t: 0, life: 1.2, size: 0.3 });   // soft: this happens often
   if (S.absorbed <= 3) log(`A 1s atom took ${L.lam.toFixed(1)} nm ${P.lineName(L.lam) || 'Lyman'} light and jumped to ${P.stateName(to)}. It will give the same light back out.`);
-  if (S.absorbed === 1) say('See that atom light up? Lyman light from another atom reached it and lifted its electron back up: it is exactly the right colour, so a resting hydrogen atom nearby almost always takes it. The atom drops straight back and gives the same light out again. Physicists call this radiation trapping.');
+  if (S.absorbed === 1) say('See that atom light up? As Lyman light from another atom washed over it, its cloud began to answer, a little p shape swinging in time with the wave. Then the photon itself ran into it and lifted its electron up: Lyman light is exactly the right colour, so a resting hydrogen atom nearby almost always takes it. The atom drops straight back and gives the same light out again. Physicists call this radiation trapping.');
 }
 // The atom comes apart: its proton is bare again and its electron flies off with `extra` eV.
 function freeAtom(a, extra, col) {
@@ -599,11 +671,53 @@ function describe(lam, nLow, capture, cap = false) {
   const name = cap ? c.name[0].toUpperCase() + c.name.slice(1) : c.name;
   return `${name}${tag ? ` (${tag})` : ''}`;
 }
+// An atom in an upper level starts to swing at once (its cloud is part upper shape, part lower,
+// beating at the light's frequency) and sends out the exact field of that swing. Its share in the
+// upper level fades as exp(−t/τ). The photon leaves after the atom's sampled real lifetime (on the
+// game's sped-up clock), and when the photon is found the atom settles into the lower level.
+function startEmission(a, d) {
+  const lam = d.photons[0], tauNs = d.quenched ? 2 * P.DECAY['2,1'].tau : P.DECAY[`${a.st.n},${a.st.l}`].tau;
+  const quick = a.reex && !watched(a);
+  a.emitL = startLight({ pos: a.p.pos, lam, pattern: d.dm === 0 ? 'lin' : 'circ', axis: d.axis || [0, 1, 0], from: a,
+    show: quick ? LIGHT_QUICK : LIGHT_SHOW, tau: lifetimeFs(tauNs), launchIn: d.quenched ? 0 : a.waitFs,
+    emitter: {
+      onLaunch: L => {
+        // Each photon carries momentum hν/c, so the atom recoils (about 3 m/s for Lyman-α).
+        a.p.vel = v3.sub(a.p.vel, v3.scale(L.dir, L.E / P.C / P.MP));
+        stepDone(a, d);
+      },
+      onCaught: L => {
+        if (a.emitL !== L || !S.atoms.includes(a)) return;
+        const up = W.emitterShare(S.simFs - L.em.t0, L.em.tau);
+        a.emitL = null; a.pending = null;
+        a.trans = { from: a.st, to: d.to, t: 0, dur: SETTLE, s0: 2 / Math.PI * Math.asin(Math.sqrt(1 - up)), emit: L };
+      },
+    } });
+  a.emitL.showEmit = !quick || S.emitShown < 2;
+  a.emitT0 = S.simFs;
+  S.slow = Math.min(S.slow, lightSlowNow(a.emitL));   // slow at once, so the first swings aren't missed
+}
+// The record and the log line for one step down.
+function stepDone(a, d) {
+  a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
+  const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
+  S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
+  const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
+  if (!a.reex || S.absorbed <= 3) log(`${P.stateName(a.st)} → ${P.stateName(d.to)} after ${when}${d.quenched ? ', let go by a nearby charge\'s electric field' : ''}: ${names}`, d.photons.some(l => P.lineName(l) === 'H-α') ? 'red' : '');
+}
+// The frequency (rad/fs) the atom's cloud beats at: the light it is sending or answering.
+function cloudOmega(a) {
+  if (a.emitL) return a.emitL.em.w;
+  if (a.trans) return 2 * Math.PI * P.C / P.lambdaFor(a.trans.from.n, a.trans.to.n);
+  if (a.drive) return 2 * Math.PI * P.C / a.drive.lam;
+  return 0;
+}
 function updateAtoms(dt, dtFs) {
   for (const a of S.atoms) {
     a.fade = Math.min(1, a.fade + dt / FALL_DUR);
     a.p.glow = Math.max(0, a.p.glow - dt / FALL_DUR);   // the electron's field cancels the proton's outside the atom
-    a.beat += dt * 2 * Math.PI * 2.5;
+    a.phase = (a.phase || 0) + dtFs * cloudOmega(a);   // the cloud's swing, at its real frequency
+    if (a.drive && a.drive.release) { a.drive.share *= Math.exp(-dt * 5); if (a.drive.share < 0.003) a.drive = null; }
     if (a.trans) {
       a.trans.t += dt;
       if (a.trans.t >= a.trans.dur) { a.st = a.trans.to; a.trans = null; if (a.st.n === 1) a.reex = false; scheduleDecay(a); }
@@ -611,22 +725,29 @@ function updateAtoms(dt, dtFs) {
     }
     if (a.mix && a.mix.fade) { a.mix.w *= Math.exp(-dt * 4); if (a.mix.w < 0.01) a.mix = null; }
     if (a.pair || !a.pending) continue;
-    if (a.st.l === 1 && a.st.n > 1 && a.fade >= 1 && tryPair(a)) continue;
-    if (a.pending.twoPhoton) quench2s(a, dt, dtFs);
-    a.waitFs -= dtFs; a.hold -= dt;
-    if (a.waitFs > 0 || a.hold > 0) continue;
-    const d = a.pending; a.pending = null;
-    for (const lam of d.photons) {
-      const dir = emitPhoton(a.p.pos, lam, d.twoPhoton ? 'iso' : d.dm === 0 ? 'lin' : 'circ', d.axis || [0, 1, 0], a, a.reex && !watched(a) ? LIGHT_QUICK : LIGHT_SHOW);
-      // Each photon carries momentum hν/c, so the atom recoils (about 3 m/s for Lyman-α).
-      a.p.vel = v3.sub(a.p.vel, v3.scale(dir, (P.HC / lam) / P.C / P.MP));
+    if (a.st.l === 1 && a.st.n > 1 && a.fade >= 1 && !(a.emitL && a.emitL.launched) && tryPair(a)) {
+      if (a.emitL) { cancelLight(a.emitL); a.emitL = null; }
+      continue;
     }
-    a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
-    const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
-    S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
-    const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
-    if (!a.reex || S.absorbed <= 3) log(`${P.stateName(a.st)} → ${P.stateName(d.to)} after ${when}${d.quenched ? ', let go by a nearby charge\'s electric field' : ''}: ${names}`, d.photons.some(l => P.lineName(l) === 'H-α') ? 'red' : '');
-    a.trans = { from: a.st, to: d.to, t: 0, dur: a.reex ? REEMIT_MORPH : STEP_MORPH };
+    if (a.emitL) continue;                      // swinging; the photon leaves when its time comes
+    if (a.pending.twoPhoton) quench2s(a, dt, dtFs);
+    a.hold -= dt;
+    if (a.hold > 0 || a.fade < 1) continue;
+    const d = a.pending;
+    if (d.twoPhoton) {
+      // 2s left alone: two photons at once after its long wait (no single swing sends them).
+      a.waitFs -= dtFs;
+      if (a.waitFs > 0) continue;
+      a.pending = null;
+      for (const lam of d.photons) {
+        const dir = emitPhoton(a.p.pos, lam, 'iso', randomDir(), a, LIGHT_SHOW);
+        a.p.vel = v3.sub(a.p.vel, v3.scale(dir, (P.HC / lam) / P.C / P.MP));
+      }
+      stepDone(a, d);
+      a.trans = { from: a.st, to: d.to, t: 0, dur: SETTLE };
+      continue;
+    }
+    startEmission(a, d);
   }
   if (S.cascade) {
     const a = S.cascade.atom;
@@ -692,13 +813,25 @@ function slowTarget() {
     const x = Math.min(1, (SLOW_NEAR - d) / 1.5);   // fades in over the outer 1.5 nm
     k = Math.min(k, 1 + (want - 1) * x * x * (3 - 2 * x));
   }
-  for (const L of S.light) k = Math.min(k, L.slow);                // a light wave is out
+  for (const L of S.light) k = Math.min(k, lightSlowNow(L));       // light is being sent or is in flight
   if (S.falling.length) k = Math.min(k, EVENT_SLOW);               // an electron is settling in
   for (const a of S.atoms) {
     if (a.trans) k = Math.min(k, EVENT_SLOW);                      // an atom is changing shape
   }
   for (const q of S.pairs) k = Math.min(k, q.slow);                // two atoms are swinging an excitation
   return k;
+}
+// While an atom is starting to swing, the clock slows until one swing takes EMIT_PERIOD screen
+// seconds, holds there (longer the first two times), then eases back up, so the swing speeds up
+// into a blur, just as for two atoms sharing an excitation. While the photon is in flight, light
+// covers LIGHT_SHOW nm per screen second (LIGHT_QUICK for light passed on from atom to atom).
+function lightSlowNow(L) {
+  if (L.launched && !L.caught) return L.slowFlight;
+  if (L.launched || !L.showEmit) return 1;
+  const want = (L.lam / P.C) / (EMIT_PERIOD * FS_PER_S * SPEEDS[S.speed]);
+  const hold = L.quick ? 0 : EMIT_HOLD[S.emitShown < 2 ? 0 : 1];
+  if (L.age > hold + 0.5 && !L.counted) { L.counted = true; S.emitShown++; }
+  return Math.min(1, want * Math.exp(Math.max(0, L.age - hold) / EMIT_EASE));
 }
 function step(dtReal) {
   const dt = dtReal * SPEEDS[S.speed];
@@ -721,7 +854,7 @@ function step(dtReal) {
   updateAtoms(dt, dtFs);
   updatePairs(dt, dtFs);
   // Light: c × the real time that passed. Rare events: the same real time, sped up by RATE_BOOST.
-  updateLight(P.C * dt * FS_PER_S * S.slow);
+  updateLight(dt);
   collisions(dt * FS_PER_S * S.slow * P.RATE_BOOST * 1e-6);
   if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
   for (const f of S.flashes) f.t += dt;
@@ -761,6 +894,7 @@ addEventListener('keydown', e => {
   keys.add(e.code);
   if (e.code === 'Space') { e.preventDefault(); fire(); }
   if (e.code === 'KeyV') toggleField();
+  if (e.code === 'KeyP') togglePilot();
   if (e.code === 'BracketLeft') setDial(S.dial - 1);
   if (e.code === 'BracketRight') setDial(S.dial + 1);
   if (e.code === 'Comma') setSpeed(S.speed - 1);
@@ -904,6 +1038,15 @@ function setDial(i) {
   $('speedOut').textContent = `${Math.round(P.electronSpeed(E) * 1e3).toLocaleString('en-US')} km/s · ${E <= 0.2 ? 'slow' : E < 2 ? 'medium' : 'fast'}`;
 }
 $('fieldBtn').addEventListener('click', toggleField);
+// Pilot-wave view (the default): each photon is drawn as a particle riding its wave as well as the
+// wave itself. Off, only the wave is drawn. The physics is the same either way: in both, the photon
+// is taken where its path runs.
+function togglePilot() {
+  S.pilot = !S.pilot;
+  $('pilotBtn').setAttribute('aria-pressed', String(S.pilot));
+  panelDirty();
+}
+$('pilotBtn').addEventListener('click', togglePilot);
 $('dialDown').addEventListener('click', () => setDial(S.dial - 1));
 $('dialUp').addEventListener('click', () => setDial(S.dial + 1));
 $('fireBtn').addEventListener('click', fire);
@@ -920,6 +1063,7 @@ function restart() {
   logLines.length = 0; $('logBox').innerHTML = '';
   renderPasses(); setDial(1); setSpeed(S.speed); startBeat(1);
   $('fieldBtn').setAttribute('aria-pressed', 'false');
+  $('pilotBtn').setAttribute('aria-pressed', 'true');
   panelDirty();
 }
 
@@ -1092,52 +1236,125 @@ function magneticRings(e) {
     }
   }
 }
-const drawnWavelength = lam => 0.25 + 1.2 * Math.log(lam / LMIN) / Math.log(LMAX / LMIN);
-// Where a bit of wavefront that left the source along d is after travelling s nm (straight out:
-// in this level light passes through the wall), or null once that bit is outside the system.
-function wavePoint(c, d, s) {
-  const p = v3.add(c, v3.scale(d, s));
-  return v3.dot(p, p) > P.SPHERE_R ** 2 ? null : p;
+// How fast a swing at angular frequency w (rad/fs) looks on screen, in swings per second, and how
+// much of it to draw as its average instead (0: as it is, 1: averaged). Fast swings are averaged so
+// nothing flickers (photosensitivity); Glow view always shows the average.
+const screenHz = w => w / (2 * Math.PI) * FS_PER_S * SPEEDS[S.speed] * S.slow;
+const avgShare = w => (!S.fieldView ? 1 : Math.max(0, Math.min(1, (screenHz(w) - SWING_HZ) / (SWING_HZ_AVG - SWING_HZ))));
+// The light's field, exactly (light.js), at its real wavelength.
+// - A straight swing: its electric field lines, which lie in planes through the swing's axis, are
+//   drawn in WAVE_PLANES of those planes (photon colour), and its magnetic field lines, which are
+//   rings around the axis, in green, brighter where the field is stronger. Lines crowd where the
+//   field is strong. Close in they loop from one end of the swing to the other (the near field);
+//   for Lyman light, beyond about λ/4 loops break off and travel out (the radiation).
+// - A circular swing: electric field lines followed out from the atom, in 3D; they wind into
+//   spirals as the swing turns. Magnetic lines are followed round as loops.
+// - Too fast to show (or Glow view): nested surfaces of equal average field strength, which don't
+//   move, so the wave's shape and reach are seen without flicker.
+const WAVE_PLANES = 6, PSI_STEP = 1 / 30, PSI_LEVELS = 9;
+const inSystem = x => v3.dot(x, x) <= P.SPHERE_R * P.SPHERE_R;
+// The lines are worked out again at most LIGHT_REDRAW times a second of wall time (often enough for
+// swings of at most 1.2 per second; the averaged surfaces change only slowly) and replayed between.
+const LIGHT_REDRAW = 20, MAX_DRAWN_LIGHTS = 4;
+function lightLines(L) {
+  const wall = performance.now();
+  if (L.cache && wall - L.cache.at < 1000 / LIGHT_REDRAW && L.cache.fv === S.fieldView) { for (const g of L.cache.segs) lines.seg(...g); return; }
+  const segs = [];
+  lightLinesNow(L, { seg: (a, b, c, al) => segs.push([a, b, c, al]) });
+  L.cache = { at: wall, segs, fv: S.fieldView };
+  for (const g of segs) lines.seg(...g);
 }
-// The light wave drawn as a grid on its wavefront, a few ripples deep. In Field view the grid lines
-// that run pole to pole follow the electric field (photon colour) and the rings around the axis
-// follow the magnetic field (green), at 90° to each other and to the direction of travel. Brightness
-// follows the radiation pattern and thins out as the wave spreads (it is drawn far brighter than 1/r²).
-const WAVE_MER = 10, WAVE_PAR = [0.2, 0.35, 0.5, 0.65, 0.8], WAVE_STEPS = 28;
-function photonLines(ph) {
-  const lw = 1.2 * drawnWavelength(ph.lam), s0 = ph.x;
-  const a = ph.axis, e1 = v3.norm(v3.cross(a, Math.abs(a[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(a, e1);
-  const dirOf = (th, ph2) => v3.add(v3.scale(a, Math.cos(th)), v3.add(v3.scale(e1, Math.sin(th) * Math.cos(ph2)), v3.scale(e2, Math.sin(th) * Math.sin(ph2))));
-  // When the photon is taken (by an atom or the wall) the whole wave is gone at once.
-  const base = Math.min(1, s0 / 2) * Math.min(1, 4 / Math.sqrt(1 + s0));
-  const ripples = S.fieldView ? 3 : 1;
-  for (let k = 0; k < ripples; k++) {
-    const s = s0 - k * lw;
-    if (s <= 0.05) continue;
-    const kk = base * (k === 0 ? 1 : k === 1 ? 0.55 : 0.3) * (S.fieldView ? 1.4 : 0.6);
-    // E lines: from pole to pole
-    for (let m = 0; m < WAVE_MER; m++) {
-      const phi = 2 * Math.PI * m / WAVE_MER;
-      let prev = null, prevI = 0;
-      for (let i = 0; i <= WAVE_STEPS; i++) {
-        const th = 0.08 + (Math.PI - 0.16) * i / WAVE_STEPS, d = dirOf(th, phi), I = ph.I(Math.cos(th));
-        const pt = wavePoint(ph.src, d, s);
-        if (prev && pt) lines.seg(prev, pt, ph.col, kk * 0.5 * (I + prevI));
-        prev = pt; prevI = I;
+function lightLinesNow(L, out) {
+  const { em } = L, t = S.simFs, avg = avgShare(em.w), now = 1 - avg;
+  if (C_LIGHT * (t - em.tEnd) > L.maxR) return;
+  const planes = S.fieldView ? WAVE_PLANES : 4, rMax = L.maxR;
+  const place = (R, th, ph) => {
+    const rad = v3.add(v3.scale(em.e1, Math.cos(ph)), v3.scale(em.e2, Math.sin(ph)));
+    return v3.add(em.src, v3.add(v3.scale(em.axis, R * Math.cos(th)), v3.scale(rad, R * Math.sin(th))));
+  };
+  const drawSegs = (segs, col, alpha) => {
+    for (let m = 0; m < planes; m++) {
+      const ph = 2 * Math.PI * m / planes;
+      for (const [R1, t1, R2, t2] of segs) {
+        const a = place(R1, t1, ph), b = place(R2, t2, ph);
+        if (inSystem(a) && inSystem(b)) out.seg(a, b, col, alpha * Math.min(1, R1 / 0.8));
       }
     }
-    if (!S.fieldView) continue;
-    // B lines: rings around the axis
-    for (const f of WAVE_PAR) {
-      const th = Math.PI * f, I = ph.I(Math.cos(th));
+  };
+  if (now > 0.01) {
+    if (L.pattern === 'lin') {
+      const lv = []; for (let j = 1; j <= PSI_LEVELS; j++) lv.push(j * PSI_STEP, -j * PSI_STEP);
+      drawSegs(W.contours((R, c) => W.psiLin(em, R, c, t), lv, { rMin: 0.3, rMax, nR: 60, nT: 40 }), L.col, 0.5 * now);
+      if (S.fieldView) magRings(L, t, now, out);
+    } else circLines(L, t, now, out);
+  }
+  if (avg > 0.01) {
+    // log of the cycle-averaged |E|² (exact for a steady swing: two looks a quarter cycle apart)
+    const q = Math.PI / (2 * em.w);
+    const f = (R, c) => {
+      const s = Math.sqrt(Math.max(0, 1 - c * c)), x = v3.add(em.src, v3.add(v3.scale(em.axis, R * c), v3.scale(em.e1, R * s)));
+      const E1 = W.field(em, x, t).E, E2 = W.field(em, x, t - q).E;
+      const e2 = (v3.dot(E1, E1) + v3.dot(E2, E2)) / 2;
+      return e2 > 0 ? Math.log10(e2) : -99;
+    };
+    const lv = []; for (let j = 1; j <= 10; j++) lv.push(-j);
+    drawSegs(W.contours(f, lv, { rMin: 0.3, rMax, nR: 56, nT: 36 }), L.col, (S.fieldView ? 0.4 : 0.22) * avg);
+  }
+}
+const C_LIGHT = P.C;
+function magRings(L, t, k, out) {
+  const { em } = L, ref = Math.hypot(...W.field({ ...em, tEnd: Infinity, t0: -1e9, tau: Infinity }, v3.add(em.src, v3.scale(em.e1, 20)), 0).B) || 1;
+  for (const R of [2, 4, 8, 14, 22, 32, 45]) {
+    for (const f of [0.3, 0.5, 0.7]) {
+      const th = Math.PI * f, c = place0(em, R, th, 0);
+      if (!inSystem(c)) continue;
+      const B = Math.hypot(...W.field(em, c, t).B);
+      if (!B) continue;
+      const a = Math.min(1, B / ref) * 0.35 * k;
+      if (a < 0.02) continue;
       let prev = null;
-      for (let i = 0; i <= 36; i++) {
-        const pt = wavePoint(ph.src, dirOf(th, 2 * Math.PI * i / 36), s);
-        if (prev && pt) lines.seg(prev, pt, [0.36, 0.95, 0.6], kk * 0.6 * I);
+      for (let i = 0; i <= 32; i++) {
+        const pt = place0(em, R, th, 2 * Math.PI * i / 32);
+        if (prev && inSystem(pt) && inSystem(prev)) out.seg(prev, pt, [0.36, 0.95, 0.6], a);
         prev = pt;
       }
     }
   }
+}
+function place0(em, R, th, ph) {
+  const rad = v3.add(v3.scale(em.e1, Math.cos(ph)), v3.scale(em.e2, Math.sin(ph)));
+  return v3.add(em.src, v3.add(v3.scale(em.axis, R * Math.cos(th)), v3.scale(rad, R * Math.sin(th))));
+}
+// Circular swing: field lines followed out from a small sphere round the atom (where the field
+// points outward), and magnetic loops through points at right angles to the swing's motion.
+function circLines(L, t, k, out) {
+  const { em } = L, src = em.src, opts = { src, inside: inSystem, maxSteps: 140 };
+  const getE = x => W.field(em, x, t).E, getB = x => W.field(em, x, t).B;
+  const N = S.fieldView ? 18 : 8, ga = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < N; i++) {
+    const z = 1 - 2 * (i + 0.5) / N, r = Math.sqrt(1 - z * z), u = [r * Math.cos(ga * i), z, r * Math.sin(ga * i)];
+    const x0 = v3.add(src, v3.scale(u, 0.6)), E0 = getE(x0);
+    if (v3.dot(E0, u) <= 0) continue;
+    const pts = W.traceLine(getE, x0, opts);
+    for (let j = 1; j < pts.length; j++) out.seg(pts[j - 1], pts[j], L.col, 0.55 * k);
+  }
+  if (!S.fieldView) return;
+  const { pd } = W.dipole(em, t);
+  const side = v3.len(pd) > 0 ? v3.norm(v3.cross(pd, em.axis)) : em.e1;
+  for (const R of [2, 5, 10, 18, 28]) for (const sgn of [1, -1]) {
+    const x0 = v3.add(src, v3.scale(side, sgn * R)), B0 = getB(x0);
+    if (!v3.len(B0)) continue;
+    const pts = W.traceLine(getB, x0, { ...opts, maxSteps: 120, closeTo: x0 });
+    for (let j = 1; j < pts.length; j++) out.seg(pts[j - 1], pts[j], [0.36, 0.95, 0.6], 0.4 * k);
+  }
+}
+// The photon's particle (pilot-wave view): a bright point riding its wave, with a short streak behind.
+function photonDot(L, glows) {
+  if (!S.pilot || !L.launched || L.caught) return;
+  const s = P.C * (S.simFs - L.tLaunch), at = v3.add(L.em.src, v3.scale(L.dir, s));
+  glows.push({ pos: at, size: 0.14, col: L.col.map(c => c * 2.6) });
+  const back = v3.add(L.em.src, v3.scale(L.dir, Math.max(0, s - 5)));
+  lines.seg(back, at, L.col, 0.9);
 }
 function coneLines(a) {
   const ax = v3.norm(v3.sub(a.aimPoint, a.muzzle));
@@ -1184,12 +1401,21 @@ function draw(views, panel) {
   }
   const clouds = S.atoms.map(a => {
     const A = desc(a.st);
+    // Two shapes at once, beating at the real frequency of the light between them (Schrödinger's
+    // equation: the beat is what swings the charge). Drawn as the beat itself when it is slow enough
+    // to see, or as its average (the two densities simply added) when it is too fast to show.
+    const two = (Bd, up, nA, nB) => {
+      const w = cloudOmega(a), k = avgShare(w), pk = Math.max(A.peak, Bd.peak), cb = Math.sqrt(Math.max(0, 1 - up));
+      return { pos: a.p.pos, radius: extentBohr(Math.max(nA, nB), 1) * P.A0, A, B: Bd, cA: [Math.sqrt(up), 0],
+        cB: [cb * Math.cos(-a.phase), cb * Math.sin(-a.phase)], inc: k > 0.5 ? 1 : 0,
+        invMax: 1 / pk, iso: (up * A.iso + (1 - up) * Bd.iso) / pk, fade: a.fade };
+    };
     if (a.trans) {
-      const x = Math.min(1, a.trans.t / a.trans.dur), s = x * x * (3 - 2 * x), Bd = desc(a.trans.to);
-      const pk = Math.max(A.peak, Bd.peak), cb = Math.sin(s * Math.PI / 2);
-      return { pos: a.p.pos, radius: extentBohr(Math.max(a.st.n, a.trans.to.n), 1) * P.A0, A, B: Bd, cA: [Math.cos(s * Math.PI / 2), 0],
-        cB: [cb * Math.cos(-a.beat), cb * Math.sin(-a.beat)], invMax: 1 / pk, iso: ((1 - s) * A.iso + s * Bd.iso) / pk, fade: a.fade };
+      const x = Math.min(1, a.trans.t / a.trans.dur), s0 = a.trans.s0 || 0, s = s0 + (1 - s0) * x * x * (3 - 2 * x);
+      return two(desc(a.trans.to), Math.cos(s * Math.PI / 2) ** 2, a.st.n, a.trans.to.n);
     }
+    if (a.emitL && a.pending) return two(desc(a.pending.to), W.emitterShare(S.simFs - a.emitL.em.t0, a.emitL.em.tau), a.st.n, a.pending.to.n);
+    if (a.drive && a.drive.share > 0.003) return two(desc({ n: a.drive.nUp, l: 1, m: 0 }), 1 - Math.min(1, a.drive.share), 1, a.drive.nUp);
     if (a.mix) {
       // Sharing an excitation: part this shape, part that one, with no sloshing between them
       // (the two parts belong to different joint states of the pair, so their densities just add).
@@ -1226,7 +1452,8 @@ function draw(views, panel) {
     for (let i = 0; i <= n; i++) pts.push(fallPos(f, f.t * i / n));
     for (let i = 1; i <= n; i++) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], 0.5 * (i / n) * (1 - f.t / FALL_DUR));
   }
-  for (const L of S.light) photonLines(L);
+  for (const L of S.light.slice(-MAX_DRAWN_LIGHTS)) lightLines(L);
+  for (const L of S.light) photonDot(L, glows);
   for (const q of S.pairs) {   // the two atoms' coupled electric fields: a faint link, brighter toward the atom holding more
     const A = q.a.p.pos, B = q.b.p.pos, ab = v3.sub(B, A), len = v3.len(ab);
     const side = v3.norm(v3.cross(ab, Math.abs(ab[1]) < 0.9 * len ? [0, 1, 0] : [1, 0, 0]));
@@ -1264,7 +1491,7 @@ function frame(now) {
 // Left stick: fly where you look. Right stick: turn (left/right) and rise or sink (up/down).
 // Trigger: fire along the right controller. A/B: faster/slower electrons. X: Field/Glow view.
 // The sticks fire thrusters: the ship keeps drifting until you brake (squeeze the left grip).
-// Y: game speed.
+// Y: game speed. Left stick click: photon particle (pilot-wave view) on or off.
 // ---------------------------------------------------------------------------
 const xr = { session: null, ref: null, head: null, aim: null, buttons: {}, panelCanvas: document.createElement('canvas'), panelVersion: 0, panelT: 0 };
 xr.panelCanvas.width = 1024; xr.panelCanvas.height = 640;
@@ -1330,6 +1557,7 @@ function xrInput(frame, dt) {
       if (edge('X', 4)) toggleField();
       xr.brake = pressed(1);   // left grip squeeze: brake
       if (edge('Y', 5)) setSpeed(S.speed === SPEEDS.length - 1 ? 0 : S.speed + 1);
+      if (edge('LS', 3)) togglePilot();   // left stick click: photon particle on/off
     } else {
       cam.yaw -= dz(ax[0]) * 1.5 * dt;
       move = v3.add(move, [0, -dz(ax[1]), 0]);
@@ -1412,7 +1640,7 @@ function drawPanelCanvas() {
   y = wrap(g, `Electron gun ${$('dialOut').textContent} · ${$('aimOut').textContent}`, 28, y + 12, W - 56, 30, 2);
   g.fillStyle = '#8a9db1';
   for (const p of S.passes.slice(0, 2)) y = wrap(g, `${p.who}: ${fmtNm(p.rp)} · ${fmtChance(p.chance)} · ${p.caught ? 'CAUGHT' : 'missed'}`, 28, y + 4, W - 56, 28, 1);
-  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.fieldView ? 'Field view' : 'Glow view'} (X)   ·   A/B electron speed   ·   ship ${$('shipOut').textContent}`, 28, H - 28);
+  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.fieldView ? 'Field view' : 'Glow view'} (X)   ·   photon particle ${S.pilot ? 'on' : 'off'} (stick click)   ·   A/B electron speed   ·   ship ${$('shipOut').textContent}`, 28, H - 28);
 }
 for (const id of ['vrBtn', 'vrBtn2']) $(id).addEventListener('click', toggleVR);
 vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).title = 'No VR headset found in this browser'; });
@@ -1420,5 +1648,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('rateTag').textContent = `rates ×${P.RATE_BOOST.toLocaleString('en-US')}`;
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, cam, fire, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);

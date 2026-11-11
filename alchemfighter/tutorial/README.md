@@ -20,7 +20,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 | `render.js` | WebGL2: stars, the sphere's wall, field glows, ray-marched electron clouds, lines, the VR panel; draws once per eye in VR |
 | `mat4.js` | Small matrix helpers for the flat camera and the headset's eyes |
 | `game.js` | Beats, tutor lines, flight controls, the gun, the cascade, the HUD |
-| `physics.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/physics.test.mjs` |
+| `light.js` | Pure maths for light: the exact field of an oscillating dipole, its stream function and contour lines, field-line tracing, the photon's path and targets (pilot-wave view), and the driven and emitting clouds' shares |
+| `physics.test.mjs`, `light.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/*.test.mjs` |
 
 ## The physics, and where it is simplified
 
@@ -53,7 +54,9 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   together:
   - an electron within 4 nm of a proton: until it moves at most about 1.5 nm per screen second;
   - an electron settling into its new cloud, or an atom changing shape: ×0.01;
-  - a light wave out: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
+  - an atom starting to send light: until one swing of its charge takes 2 screen seconds, held
+    for 5 s the first two times (2 s after), then easing back up (e-fold per second);
+  - a photon in flight: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
     passed from atom to atom (radiation trapping) slows things less, to 300 nm per second.
   Rare events (captures, steps down, collisions) all run RATE_BOOST = 600,000 times faster than in
   nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. An
@@ -62,18 +65,50 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - two atoms swinging an excitation between them (below): until one swing there and back takes
     3 screen seconds. That is held for 6 s the first two times (2.5 s after), then the clock eases
     back up and the swinging speeds up into a blur.
-- **Light as a wave:** light moves at its real speed on the same clock. It is about 1,600 times
-  faster than a 0.1 eV electron, which is why matter looks almost frozen while a wave is out.
-  The wave is a grid on the expanding wavefront, a few ripples deep. Lines from pole to pole follow
-  the electric field (photon colour); rings around the axis follow the magnetic field (green).
-  Brightness follows the dipole pattern (sin²θ for Δm = 0, (1 + cos²θ)/2 for Δm = ±1) and fades
-  as the wave spreads.
+- **Light is Maxwell's exact field** (`light.js`). An atom changing level swings its charge like
+  a tiny antenna (an oscillating dipole), and the game draws the exact field of that swing, close
+  in and far out, at the light's real wavelength and with every part arriving at the speed of
+  light (retarded time). Nothing is shrunk to make ripples show. Hydrogen's light (97 to 1,875 nm)
+  is longer than the 80 nm system, so most of what is inside is near field: the lines loop from one
+  end of the swing to the other and breathe in and out, and only for Lyman light do loops start to
+  break off and travel out near the far wall.
+  - *Straight swing (Δm = 0):* the electric field lines are drawn exactly, as the contour lines of
+    the Hertz stream function Ψ = sin²θ·[p(t_r)/R + ṗ(t_r)/c] in 6 planes through the axis (equal
+    steps in Ψ, so lines crowd where the field is strong). Magnetic field lines are rings around
+    the axis (green), brighter where B is stronger.
+  - *Circular swing (Δm = ±1):* electric field lines are followed out from the atom in 3D and wind
+    into spirals; magnetic lines are followed round as loops.
+  - *Envelope:* the swing starts the moment the atom is in the upper level and fades as e^(−t/2τ)
+    (the single-atom result of quantum electrodynamics, Wigner–Weisskopf), τ the level's lifetime
+    on the game's clock. When the photon is found, the swing stops and the rest of the wave, now
+    empty, runs out at c.
+  - *No flicker:* a swing faster than 1.2 per screen second is drawn as its average instead
+    (nested surfaces of equal average field strength), fully so above 2.2 per second. Glow view
+    always shows the average, dimmer.
+- **Electron clouds follow Schrödinger's equation live.** While an atom sends light, its cloud is
+  part upper shape and part lower, beating at the light's real frequency (that beat is what swings
+  the charge); its share in the upper level fades as e^(−t/τ). A resting 1s atom that a Lyman wave
+  washes over answers it: a little p shape mixes in, beating with the wave. To first order the
+  share grows with the square of the field that has passed, P·(1 − e^(−t/2τ))², reaching P (that
+  atom's chance of taking the photon) once the whole photon has gone by. It keeps the p shape only
+  if the photon arrives; otherwise the borrowed share fades. When the beat is too fast to show, the
+  two shapes are drawn added together (the average). Spontaneous emission itself (why an excited
+  atom starts to radiate, and when its photon leaves) is not in Schrödinger's equation: it needs
+  the quantum theory of light, so it keeps the measured lifetimes.
+- **Pilot-wave view (on by default; P, the "Photon particle" button, or the left stick click in
+  VR):** each photon is also drawn as a particle riding its wave, as in de Broglie–Bohm theory.
+  It leaves when the atom's sampled lifetime is up, along a straight path drawn from the wave's
+  brightness (averaged over a cycle a dipole's energy flows straight out), at c. An atom takes it
+  only if the path runs through its target, a cone of solid angle σ/R² around the direction to it
+  (widened where the pattern dims, so each atom's chance is exactly σ·w/(4πR²), the wave
+  picture's). With the view off only the wave is drawn; the physics is the same either way.
+  Pilot waves are well established for electrons and still debated for photons, so the game
+  calls it a view.
 - **Light passes out through the edge** in this level (matter still bounces off it). Each photon
-  gets one pass. Where its wave reaches an atom, the atom takes the whole photon or none of it,
-  with chance σ·w/(4πr²): target area × the pattern's brightness that way ÷ the sphere the wave
-  has spread over. When a photon is taken, by an atom or by the wall, its whole wave is gone at
-  once. If no atom takes it, it is found at the wall in a direction drawn from the pattern (the
-  same direction sets the atom's recoil), and the spectrometer records it there.
+  gets one pass. An atom takes the whole photon or none of it, with chance σ·w/(4πr²): target area
+  × the pattern's brightness that way ÷ the sphere the wave has spread over (settled by the
+  photon's path, above). If no atom takes it, it is found at the wall along its path (the same
+  direction sets the atom's recoil), and the spectrometer records it there.
   - *Lyman light* (121.6, 102.6, 97.3 nm) lifts a resting 1s atom to 2p, 3p or 4p. Its target
     area is huge (about 7,000, 4,400 and 3,800 nm²), so nearby atoms usually take it and give it
     back (radiation trapping) before it gets out. Just outside the near field the plane-wave
@@ -122,8 +157,9 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
-- **Pacing of a capture:** the electron spirals in over 3 s, and each step down holds its shape
-  for its real (sped-up) lifetime and then morphs over 1.5 s (re-emitted light: 0.6 s).
+- **Pacing of a capture:** the electron spirals in over 3 s. Each step down then swings for its
+  real (sped-up) lifetime while sending its wave, and when its photon is found the atom settles
+  into the lower level over 0.5 s.
 - **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
   then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
   jump; the spiral only shows which electron went where.
