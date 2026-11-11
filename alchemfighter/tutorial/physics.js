@@ -400,3 +400,80 @@ export function sahaBalance(Np, Ne, Etot, V = BOX_V) {
   return { ionized: x, fraction: Np ? x / Np : 0, kT, kelvin: kT / K_B };
 }
 export const kelvin = kT => kT / K_B;
+
+// ---------------------------------------------------------------------------
+// Electric fields on excited atoms.
+// ---------------------------------------------------------------------------
+// The electric field (V/nm) at a point from every loose charge: bare protons and free electrons.
+// Neutral atoms carry q = 0 and add nothing.
+export function fieldAt(pos, ps) {
+  const F = [0, 0, 0];
+  for (const p of ps) {
+    if (!p.active || !p.q) continue;
+    const d = [pos[0] - p.pos[0], pos[1] - p.pos[1], pos[2] - p.pos[2]];
+    const r2 = Math.max(d[0] * d[0] + d[1] * d[1] + d[2] * d[2], 0.01), k = KE * p.q / (r2 * Math.sqrt(r2));
+    F[0] += k * d[0]; F[1] += k * d[1]; F[2] += k * d[2];
+  }
+  return F;
+}
+// 2s cannot give off a single photon by itself. An electric field mixes it with 2p (Stark mixing),
+// which can. 2s and 2p sit only the Lamb shift apart (1058 MHz, 4.4 µeV), so a small field is
+// enough: the mixing is complete once the field energy √3·e·a₀·F passes the Lamb shift, at about
+// 477 V/cm. Rate (per ns) = Γ(2p) × the share of 2p mixed in, which goes as F² for weak fields
+// (2,740 per second at 1 V/cm; the measured value is about 2,780) and levels off at half of 2p's rate.
+export const LAMB_E = 4.3748e-6;                         // eV
+export const STARK_FC = LAMB_E / (Math.sqrt(3) * A0);    // V/nm (4.77e-5 V/nm = 477 V/cm)
+export function starkQuenchRate(F) {
+  const x = F / STARK_FC;
+  return 0.5 * (1 - 1 / Math.sqrt(1 + 4 * x * x)) / DECAY['2,1'].tau;
+}
+// How far a field shifts level n at most (eV per V/nm): the linear Stark effect, (3/2)·n·(n−1)·e·a₀.
+export const starkShift = n => 1.5 * n * (n - 1) * A0;
+// ħ in eV·ns: a level that lives τ ns is ħ/τ wide in energy.
+export const HBAR_NS = 6.582119569e-7;
+
+// ---------------------------------------------------------------------------
+// Two atoms sharing one excitation (resonant dipole-dipole coupling).
+// Atom A is in np, atom B in 1s. Their electric fields couple the two, so "A excited" is not a
+// settled state: the excitation swings to B and back at rate J, while the pair gives off its
+// photon at a rate that depends on whether the two atoms' waves add up (in step, up to twice as
+// fast) or cancel (out of step, far slower). With x = 2πr/λ and p = (dipole · direction to the
+// other atom)², in units of one atom's own decay rate Γ:
+//   F = (3/2)·[(1−p)·sin x/x + (1−3p)·(cos x/x² − sin x/x³)]     shared decay
+//   J = (3/4)·[−(1−p)·cos x/x + (1−3p)·(sin x/x² + cos x/x³)]    swinging rate
+// (the standard two-atom result; F → 1 and J → 1/x³ as the atoms come closer than the wavelength).
+// ---------------------------------------------------------------------------
+export function pairCoupling(x, p) {
+  const s = Math.sin(x), c = Math.cos(x);
+  return {
+    F: 1.5 * ((1 - p) * s / x + (1 - 3 * p) * (c / (x * x) - s / (x * x * x))),
+    J: 0.75 * (-(1 - p) * c / x + (1 - 3 * p) * (s / (x * x) + c / (x * x * x))),
+  };
+}
+// Advances the pair's two amplitudes c = [Re a, Im a, Re b, Im b] (a: excitation on A, b: on B)
+// by time t under  i·dc/dt = [[D/2, g], [g, −D/2]]·c − i·(G/2)·c,  g = J − i·Gr·F/2.
+//   G: each atom's total decay rate, Gr: the part that goes to 1s, J and F as above (J already
+//   times Gr), D: how far apart a field has shifted the two atoms' levels. All in rad per unit time.
+// |c|² shrinks as time passes: it is the chance that no photon has left yet.
+export function pairStep(c, t, { G, Gr, J, F, D }) {
+  const gr = J, gi = -Gr * F / 2;
+  // Ω = sqrt(D²/4 + g²), complex
+  const zr = D * D / 4 + gr * gr - gi * gi, zi = 2 * gr * gi, zm = Math.hypot(zr, zi);
+  let wr = Math.sqrt((zm + zr) / 2), wi = Math.sqrt(Math.max(0, (zm - zr) / 2)); if (zi < 0) wi = -wi;
+  const a = wr * t, b = wi * t;
+  const cr = Math.cos(a) * Math.cosh(b), ci = -Math.sin(a) * Math.sinh(b);    // cos(Ωt)
+  const sr = Math.sin(a) * Math.cosh(b), si = Math.cos(a) * Math.sinh(b);     // sin(Ωt)
+  // q = sin(Ωt)/Ω (→ t as Ω → 0)
+  const wm = wr * wr + wi * wi;
+  const qr = wm > 1e-24 ? (sr * wr + si * wi) / wm : t, qi = wm > 1e-24 ? (si * wr - sr * wi) / wm : 0;
+  // −i·q·M, with M = [[D/2, g], [g, −D/2]]
+  const dr = qi * D / 2, di = -qr * D / 2;                                   // −i·q·D/2
+  const or = qr * gi + qi * gr, oi = -(qr * gr - qi * gi);                   // −i·q·g
+  const [ar, ai, br, bi] = c, k = Math.exp(-G * t / 2);
+  const mul = (xr, xi, yr, yi) => [xr * yr - xi * yi, xr * yi + xi * yr];
+  const aa = mul(cr + dr, ci + di, ar, ai), ab = mul(or, oi, br, bi);
+  const ba = mul(or, oi, ar, ai), bb = mul(cr - dr, ci - di, br, bi);
+  c[0] = k * (aa[0] + ab[0]); c[1] = k * (aa[1] + ab[1]);
+  c[2] = k * (ba[0] + bb[0]); c[3] = k * (ba[1] + bb[1]);
+  return { wr, wi };
+}

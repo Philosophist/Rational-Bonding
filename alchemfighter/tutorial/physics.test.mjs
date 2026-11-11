@@ -134,3 +134,50 @@ test('a sealed box of 11 freshly made atoms settles mostly ionized', () => {
   const cold = P.sahaBalance(11, 11, -11 * P.RY + 0.3);
   assert.ok(cold.fraction < 0.05, cold.fraction);
 });
+
+test('2s is let go by an electric field (Stark mixing)', () => {
+  // 1 V/cm = 1e-7 V/nm: about 2,780 per second measured.
+  const perS = P.starkQuenchRate(1e-7) * 1e9;
+  assert.ok(perS > 2600 && perS < 2900, perS);
+  assert.ok(Math.abs(P.STARK_FC / 1e-7 - 477) < 3, P.STARK_FC);
+  // A strong field mixes 2s and 2p half and half: 2s then lives twice as long as 2p.
+  assert.ok(Math.abs(1 / P.starkQuenchRate(1e-2) - 2 * P.DECAY['2,1'].tau) < 0.01);
+  assert.equal(P.starkQuenchRate(0), 0);
+  // One bare proton 40 nm away is already far past the mixing field.
+  const F = P.fieldAt([40, 0, 0], [{ active: true, q: 1, pos: [0, 0, 0] }, { active: true, q: 0, pos: [39, 0, 0] }]);
+  assert.ok(Math.abs(F[0] - P.KE / 1600) < 1e-12 && F[1] === 0);
+  assert.ok(F[0] > 10 * P.STARK_FC);
+});
+
+test('two atoms sharing one excitation', () => {
+  // Close together the shared decay is complete (F → 1) and the swinging goes as 1/x³.
+  for (const p of [0, 0.5, 1]) {
+    const k = P.pairCoupling(0.05, p);
+    assert.ok(Math.abs(k.F - 1) < 0.01, k.F);
+    assert.ok(Math.abs(k.J - 0.75 * (1 - 3 * p) / 0.05 ** 3) / Math.abs(k.J) < 0.01, k.J);
+  }
+  // Far apart both fade away.
+  const far = P.pairCoupling(60, 0);
+  assert.ok(Math.abs(far.F) < 0.03 && Math.abs(far.J) < 0.02);
+  // No field shift: the excitation swings fully across in a quarter period π/(2J), and the chance
+  // that no photon has left is (e^(−Γs·t) + e^(−Γa·t))/2 with Γs,a = Γ(1 ± F).
+  const k = P.pairCoupling(0.26, 0), G = 1, par = { G, Gr: G, J: k.J * G, F: k.F, D: 0 };
+  const c = [1, 0, 0, 0], t = Math.PI / (2 * par.J);
+  for (let i = 0; i < 50; i++) P.pairStep(c, t / 50, par);
+  const nA = c[0] ** 2 + c[1] ** 2, nB = c[2] ** 2 + c[3] ** 2;
+  assert.ok(nA / (nA + nB) < 1e-3, nA / (nA + nB));
+  const expect = (Math.exp(-(1 + k.F) * t) + Math.exp(-(1 - k.F) * t)) / 2;
+  assert.ok(Math.abs(nA + nB - expect) < 1e-9, `${nA + nB} vs ${expect}`);
+  // Left alone a long time, what survives is the out-of-step shape: half on each atom.
+  const d = [1, 0, 0, 0];
+  P.pairStep(d, 8, par);
+  const dA = d[0] ** 2 + d[1] ** 2, dB = d[2] ** 2 + d[3] ** 2;
+  assert.ok(Math.abs(dA / (dA + dB) - 0.5) < 0.01, dA / (dA + dB));
+  // A field that shifts one atom's level far more than the coupling keeps the excitation at home,
+  // and it then leaves at the single atom's own rate.
+  const e = [1, 0, 0, 0], off = { ...par, D: 400 * par.J };
+  let maxB = 0;
+  for (let i = 0; i < 400; i++) { P.pairStep(e, 0.0025, off); maxB = Math.max(maxB, e[2] ** 2 + e[3] ** 2); }
+  assert.ok(maxB < 1e-3, maxB);
+  assert.ok(Math.abs(e[0] ** 2 + e[1] ** 2 - Math.exp(-1)) < 0.01);
+});
