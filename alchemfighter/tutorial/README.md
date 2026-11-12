@@ -193,7 +193,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     keeps its charge centred, so that pull is due to be brought in line.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
-- **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
+- **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the capture takes 3 s on screen. Each step down then swings for its

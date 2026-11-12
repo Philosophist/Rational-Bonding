@@ -69,8 +69,8 @@ const EMIT_PERIOD = 2, EMIT_HOLD = [5, 2], EMIT_EASE = 1;
 // Swings faster than SWING_HZ on screen are drawn as their average (no flicker: photosensitivity),
 // fully so above SWING_HZ_AVG.
 const SWING_HZ = 1.2, SWING_HZ_AVG = 2.2;
-// Acid Neutrality: this many fresh protons appear for the player to neutralize.
-const ACID_N = 10;
+// Acid Neutrality: this many fresh protons join the first one, so the system holds 10 hydrogen in all.
+const ACID_N = 9;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
 const THRUST = 5, THRUST_FAST = 15, BRAKE = 10;   // nm/s²
 const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
@@ -124,7 +124,7 @@ const BEATS = {
   },
   3: {
     title: 'Acid Neutrality',
-    say: `Ten more protons have appeared. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Each catch's energy leaves as light through the edge of the system: watch the spectrometer catch it.`,
+    say: `Nine more protons have appeared, so this system now holds ten hydrogen. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Each catch's energy leaves as light through the edge of the system: watch the spectrometer catch it.`,
   },
 };
 function say(text) {
@@ -137,6 +137,8 @@ const phone = matchMedia('(max-width: 900px)');
 function setTutorOpen(open) {
   $('tutor').classList.toggle('collapsed', !open);
   $('tutorToggle').setAttribute('aria-expanded', String(open));
+  $('tutorToggle').textContent = open ? '−' : 'ⓘ';
+  $('tutorToggle').title = open ? 'Minimize the tutor (I)' : 'Show the tutor and options (I)';
   if (open) delete $('tutor').dataset.unread;
 }
 $('tutorToggle').addEventListener('click', () => setTutorOpen($('tutor').classList.contains('collapsed')));
@@ -527,7 +529,7 @@ function capture(e, p, E) {
   const axis = v3.len(F0) > FIELD_MIN ? v3.norm(F0) : Lh > 1e-6 ? v3.norm(Lv) : [0, 1, 0];
   const mAbs = Math.min(pick.l, Math.round(Math.abs(v3.dot(Lv, axis)))), m = mAbs && Math.random() < 0.5 ? -mAbs : mAbs;
   const st = { n: pick.n, l: pick.l, m };
-  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', from: null, to: st }] };
   setPure(atom, st);
   // The capture itself: the free electron's wave (its l = pick.lIn part, solved at its energy) turns
   // into the orbital over FALL_DUR, one wave the whole way, sloshing at the light's frequency.
@@ -748,7 +750,7 @@ function endGroup(q, how, M) {
     if (!L) { L = startLight({ pos: x.p.pos, lam: q.lam, pattern, axis: [0, 1, 0], from: x, show: q.reex ? LIGHT_QUICK : LIGHT_SHOW, tau: Infinity, launchIn: Infinity, gain: Math.hypot(q.c.re[xi], q.c.im[xi]) }); }
     launchPhoton(L, dir);
     x.p.vel = v3.sub(x.p.vel, v3.scale(dir, (P.HC / q.lam) / P.C / P.MP));
-    x.steps.push({ lam: [q.lam], to: GROUND, delayNs: realNs, reemit: q.reex });
+    x.steps.push({ lam: [q.lam], from: q.up, to: GROUND, delayNs: realNs, reemit: q.reex });
     S.lastPhoton = { lam: q.lam, nLow: 1, extra: 0 };
     const rate = P.groupLightRate(M, q.c) / n2;
     if (!q.reex || S.paired <= 3) log(`${N > 2 ? `A group of ${N} atoms` : 'Two atoms'} let the shared photon go after ${realNs.toFixed(1)} ns${rate > 1.3 ? `, flashing together (${rate.toFixed(1)}× one atom's rate)` : rate < 0.5 ? ', after holding it back' : ''}: ${q.lam.toFixed(1)} nm ${describe(q.lam, 1)}`);
@@ -799,7 +801,7 @@ function startEmission(a, d) {
 }
 // The record and the log line for one step down.
 function stepDone(a, d) {
-  a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
+  a.steps.push({ lam: d.photons, from: a.st, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
   const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
   S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
   const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
@@ -863,22 +865,35 @@ function updateAtoms(dt, dtFs) {
   }
   if (S.beat === 3 && !S.b3.doneAt && acidLeft() === 0 && S.atoms.every(a => !a.pending && !a.trans && !a.pair && a.fade >= 1)) {
     S.b3.doneAt = S.time;
-    say(`The acid is neutral: every proton holds an electron. The energy each catch released left the system as light, ${S.lightOut} photons in all. That escaping light is why hydrogen out in space can stay neutral.`);
+    say(`Congratulations, you solved the system! The acid is neutral: every proton holds an electron. The energy each catch released left the system as light, ${S.lightOut} photons in all. That escaping light is why hydrogen out in space can stay neutral.`);
     setTimeout(showDone, 3000);
   }
 }
 const fmtC = K => `${Math.round((K - 273) / (K > 2000 ? 100 : 10)) * (K > 2000 ? 100 : 10)} °C`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 function showDone() {
-  const photons = [...S.oldSteps, ...S.atoms.flatMap(a => a.steps)].filter(s => !s.reemit).flatMap(s => [].concat(s.lam));
-  const count = new Map();
-  const cls = new Map();
-  for (const l of photons) { const c = P.classify(l); cls.set(c.name, c); count.set(c.name, (count.get(c.name) || 0) + 1); }
-  $('doneTitle').textContent = 'You neutralized the acid';
-  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${photons.length} photons: ${[...count].map(([name, k]) => `${k} ${name}`).join(', ')}. ${S.lightOut} photons left the system, carrying away ${S.lightOutE.toFixed(0)} eV.`;
-  const kinds = [...cls.values()].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
+  const steps = [...S.oldSteps, ...S.atoms.flatMap(a => a.steps)].filter(s => !s.reemit);
+  // Each kind of light on its own line, with the drops (orbital to orbital) that released it.
+  const kinds = new Map();
+  let total = 0;
+  for (const st of steps) for (const l of [].concat(st.lam)) {
+    total++;
+    const c = P.classify(l);
+    if (!kinds.has(c.name)) kinds.set(c.name, { lam: l, n: 0, drops: new Map() });
+    const k = kinds.get(c.name); k.n++; k.lam = Math.min(k.lam, l);
+    const drop = st.from ? `${P.stateName(st.from)} → ${P.stateName(st.to)}${st.twoPhoton ? ' (two photons)' : ''}` : `free electron caught into ${P.stateName(st.to)}`;
+    k.drops.set(drop, (k.drops.get(drop) || 0) + 1);
+  }
+  $('doneTitle').textContent = 'Congratulations, you solved the system!';
   const extra = [S.paired ? ` Atoms shared an excitation ${S.paired} time${S.paired === 1 ? '' : 's'}.` : '',
     S.ionized ? ` Light and fast electrons knocked atoms apart ${S.ionized} time${S.ionized === 1 ? '' : 's'}.` : ''].join('');
-  $('doneKinds').textContent = kinds.join('. ') + '.' + extra;
+  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${total} photons; ${S.lightOut} left the system, carrying away ${S.lightOutE.toFixed(0)} eV.${extra}`;
+  const list = $('doneKinds'); list.replaceChildren();
+  for (const [name, k] of [...kinds].sort((a, b) => a[1].lam - b[1].lam)) {
+    const li = document.createElement('li'), b = document.createElement('b');
+    b.textContent = `${name[0].toUpperCase()}${name.slice(1)} ×${k.n}`;
+    li.append(b, `: ${[...k.drops].sort((a, b) => b[1] - a[1]).map(([d, m]) => m > 1 ? `${d} ×${m}` : d).join(', ')}`);
+    list.append(li);
+  }
   $('doneBox').hidden = false;
 }
 
@@ -1000,6 +1015,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); fire(); }
   if (e.code === 'KeyV') toggleField();
   if (e.code === 'KeyP') togglePilot();
+  if (e.code === 'KeyI') setTutorOpen($('tutor').classList.contains('collapsed'));
   if (e.code === 'BracketLeft') setDial(S.dial - 1);
   if (e.code === 'BracketRight') setDial(S.dial + 1);
   if (e.code === 'Comma') setSpeed(S.speed - 1);

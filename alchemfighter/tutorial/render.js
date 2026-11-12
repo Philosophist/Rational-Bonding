@@ -142,7 +142,8 @@ void main(){
   vec3 ro = uCamPos;
   vec3 col = vec3(0.0015, 0.0025, 0.006) + stars(rd) * 0.8;
 
-  // The sealed system sphere: a faint latitude/longitude grid where the view ray leaves it.
+  // The sealed system sphere: only a faint latitude/longitude grid where the view ray leaves it.
+  // The wall itself is clear (no tint or rim glow), so space shows through it unchanged.
   float b = dot(ro, rd), c = dot(ro, ro) - uSphereR*uSphereR, h = b*b - c;
   if (h > 0.0) {
     float tw = -b + sqrt(h);
@@ -151,8 +152,7 @@ void main(){
       float lat = asin(clamp(P.y, -1.0, 1.0)) * 12.0 / 3.14159, lon = atan(P.z, P.x) * 24.0 / 6.28318;
       vec2 g = abs(fract(vec2(lat, lon)) - 0.5); vec2 fw = fwidth(vec2(lat, lon));
       float line = max(smoothstep(fw.x * 1.5, 0.0, 0.5 - g.x), smoothstep(fw.y * 1.5, 0.0, 0.5 - g.y) * sqrt(max(0.0, 1.0 - P.y*P.y)));
-      float rim = pow(1.0 - abs(dot(P, rd)), 3.0);
-      col += vec3(0.02, 0.55, 0.6) * (0.05 * line + 0.05 * rim);
+      col += vec3(0.02, 0.55, 0.6) * 0.05 * line;
     }
   }
 
