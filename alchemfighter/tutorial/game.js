@@ -77,6 +77,8 @@ const PROTON_SMEAR = 0.01;       // nm, keeps the glow's centre finite (log scal
 // Missed electrons stay in the sphere (matter can't leave). Fire as many as you like; past this many
 // free electrons the oldest one is removed, to keep the simulation smooth.
 const MAX_FREE = 12;
+// Strongest field (atomic units) a 1s cloud is drawn leaning in; see draw().
+const LEAN_MAX_AU = 0.02;
 
 // ---------------------------------------------------------------------------
 // State
@@ -397,34 +399,26 @@ function catchPhoton(L) {
 // A wave whose photon never leaves (its atom joined a group, lost its share, or was knocked apart).
 function cancelLight(L) { L.caught = true; L.cancelled = true; L.em.tEnd = Math.min(L.em.tEnd, S.simFs); }
 // Fast electrons hitting resting atoms: n = 2 excitation above 10.2 eV, ionization above 13.6 eV.
-function collisions(dtNs) {
-  const atoms = S.atoms.filter(idle1s);
-  if (!atoms.length) return;
-  const bare = bareProtons();
-  for (const e of freeElectrons()) {
-    if (bare.some(p => v3.len(v3.sub(p.pos, e.pos)) < 2)) continue;   // falling past a proton, not its own speed
-    const v = v3.len(e.vel), E = 0.5 * P.ME * v * v;
-    if (E <= P.EXCITE_E) continue;
-    const rEx = P.collRate(P.collExciteSigma(E), E, atoms.length), rIon = P.collRate(P.collIonSigma(E), E, atoms.length);
-    if (Math.random() > 1 - Math.exp(-(rEx + rIon) * dtNs)) continue;
-    const pool = atoms.filter(idle1s);
-    if (!pool.length) return;
-    const a = pool[Math.floor(Math.random() * pool.length)];
-    if (Math.random() * (rEx + rIon) < rEx) {
-      e.vel = v3.scale(e.vel, Math.sqrt((E - P.EXCITE_E) / E));
-      a.trans = { from: a.st, to: { n: 2, l: 1, m: 0 }, t: 0, dur: STEP_MORPH };
-      a.reex = true;
-      S.bumped++;
-      if (S.bumped <= 2) log(`A fast electron (${E.toFixed(1)} eV) hit a hydrogen atom and bumped it up to 2p, slowing down by 10.2 eV.`);
-    } else {
-      const left = E - P.RY, share = left * 0.5 * Math.random();   // the knocked-out electron usually leaves slow
-      e.vel = v3.scale(e.vel, Math.sqrt((left - share) / E));
-      freeAtom(a, share, [0.4, 0.6, 1]);
-      log(`A fast electron (${E.toFixed(1)} eV) knocked the electron off a hydrogen atom.`, 'red');
-      if (S.ionized === 1) say('A fast electron smashed into a hydrogen atom and knocked its electron off. That proton is bare again.');
-    }
-    atoms.splice(atoms.indexOf(a), 1);
-    if (!atoms.length) return;
+function atomPass(ev) {
+  const { e, p, rp } = ev, a = S.atoms.find(x => x.p === p);
+  const E = ev.E;
+  if (!a || !idle1s(a) || E <= P.EXCITE_E) return;
+  if (bareProtons().some(q => v3.len(v3.sub(q.pos, e.pos)) < 2)) return;   // falling past a proton, not its own speed
+  if (Math.random() > P.impactChanceGame(E, rp)) return;
+  const sEx = P.collExciteSigma(E), sIon = P.collIonSigma(E);
+  if (Math.random() * (sEx + sIon) < sEx) {
+    // The electron gives 10.2 eV to the atom's electron and is turned a little; the atom recoils.
+    if (!P.inelasticScatter(e, p, P.EXCITE_E, P.impactAngle(E, P.EXCITE_E))) return;
+    a.trans = { from: a.st, to: { n: 2, l: 1, m: 0 }, t: 0, dur: STEP_MORPH };
+    a.reex = true;
+    S.bumped++;
+    if (S.bumped <= 2) log(`A fast electron (${E.toFixed(1)} eV) hit a hydrogen atom ${fmtNm(rp)} away and bumped it up to 2p, slowing down by 10.2 eV. The atom recoiled.`);
+  } else {
+    const left = E - P.RY, share = left * 0.5 * Math.random();   // the knocked-out electron usually leaves slow
+    if (!P.inelasticScatter(e, p, P.RY + share, P.impactAngle(E, P.RY + share))) return;
+    freeAtom(a, share, [0.4, 0.6, 1]);
+    log(`A fast electron (${E.toFixed(1)} eV) knocked the electron off a hydrogen atom.`, 'red');
+    if (S.ionized === 1) say('A fast electron smashed into a hydrogen atom and knocked its electron off. That proton is bare again.');
   }
 }
 // The atom comes apart: its proton is bare again and its electron flies off with `extra` eV.
@@ -434,10 +428,11 @@ function freeAtom(a, extra, col) {
   S.oldSteps.push(...a.steps);
   p.q = 1; p.glow = 1;
   // The freed electron starts 0.5 nm out with the speed it needs to end up with `extra` far away.
-  const dir = randomDir(), r0 = 0.5;
-  addElectron(v3.add(p.pos, v3.scale(dir, r0)), v3.add(p.vel, v3.scale(dir, P.electronSpeed(extra + P.KE / r0))),
-    { freed: true, E: extra, born: S.time });
-  p.vel = v3.sub(p.vel, v3.scale(dir, P.electronSpeed(extra) * P.ME / P.MP));   // the proton recoils from the electron
+  // The two are launched with opposite momenta, so the pair's total momentum is unchanged.
+  const dir = randomDir(), r0 = 0.5, { vE, vP } = P.launchApart(p.vel, P.MP, P.ME, dir, extra, r0);
+  p.m = P.MP; p.pol = null;
+  addElectron(v3.add(p.pos, v3.scale(dir, r0)), vE, { freed: true, E: extra, born: S.time });
+  p.vel = vP;
   S.ionized++;
   S.flashes.push({ pos: [...p.pos], col, t: 0, life: 1.2, size: 1.0 });
 }
@@ -450,11 +445,12 @@ function capture(e, p, E) {
   const lam = P.captureLambda(Math.max(E, 0), st.n);
   e.active = false;
   S.ps = S.ps.filter(x => x !== e);
-  p.q = 0;                                  // the pair is neutral now: no more Coulomb force
+  p.q = 0;                                  // the pair is neutral now: only the atom's weak pulls (see physics.js)
   const atom = { p, st, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
   S.atoms.push(atom);
   // Momentum is kept: the atom moves on with the pair's shared momentum, minus the photon's kick.
   p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
+  p.m = P.MP + P.ME;
   // The photon leaves from where the electron is when it is caught.
   const pdir = emitPhoton(e.pos, lam, 'lin', randomDir(), atom);
   p.vel = v3.sub(p.vel, v3.scale(pdir, (P.HC / lam) / P.C / P.MP));
@@ -796,6 +792,7 @@ function showDone() {
 // ---------------------------------------------------------------------------
 function onPass(ev) {
   const { e, p, rp } = ev;
+  if (ev.atom) { atomPass(ev); return; }
   if (p.q !== 1) return;
   e.passes++;
   const E = Math.max(ev.E, 0.01);
@@ -854,6 +851,7 @@ function step(dtReal) {
   S.slow += (want - S.slow) * (1 - Math.exp(-dtReal * rate));
   const dtFs = dt * FS_PER_S * S.slow;
   S.simFs += dtFs;
+  for (const a of S.atoms) a.p.pol = P.atomPol(a.st.n);   // how strongly fields pull on each atom
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
   for (const e of freeElectrons()) {
@@ -867,7 +865,6 @@ function step(dtReal) {
   updateGroups(dt, dtFs);
   // Light: c × the real time that passed. Rare events: the same real time, sped up by RATE_BOOST.
   updateLight(dt);
-  collisions(dt * FS_PER_S * S.slow * P.RATE_BOOST * 1e-6);
   if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
   for (const f of S.flashes) f.t += dt;
   S.flashes = S.flashes.filter(f => f.t < f.life);
@@ -1440,10 +1437,21 @@ function draw(views, panel) {
     }
     return { pos: a.p.pos, radius: extentBohr(a.st.n, 1) * P.A0, A, B: A, cA: [1, 0], cB: [0, 0], invMax: 1 / A.peak, iso: A.iso / A.peak, fade: a.fade };
   }).map((c, i) => {
-    // Soap-bubble wobble: a gentle shimmer at rest, stronger while settling in or changing shape.
-    const a = S.atoms[i], tr = a.trans ? Math.sin(Math.PI * Math.min(1, a.trans.t / a.trans.dur)) : 0;
-    c.wobble = 0.06 + 0.14 * (1 - a.fade) + 0.12 * tr;
-    c.radius *= 1 + 2.5 * c.wobble;
+    // Nearby charges bend the cloud by its real polarizability (no random shimmer: a lone 1s atom
+    // is perfectly round and still). 1s is stiff: a proton 1 nm away moves it about 1%; excited
+    // clouds lean much more. Light and jumps already reshape the cloud above (two shapes beating).
+    const a = S.atoms[i], F = P.fieldAt(a.p.pos, S.ps), Fm = v3.len(F);
+    if (a.st.n === 1) {
+      // Past about 0.02 atomic units (a proton closer than ~0.37 nm) the small-lean picture no longer
+      // holds: the electron starts to be shared by both protons (H₂⁺), which comes with the H₂ work.
+      const k = Math.min(1 / P.EAU, LEAN_MAX_AU / Math.max(Fm, 1e-30));
+      c.lean = [F[0] * k, F[1] * k, F[2] * k, 0];
+    }
+    else if (Fm > 0) {
+      const d = P.dipoleMag(Fm, P.atomPol(a.st.n)) / Fm;   // nm per (V/nm): the electron moves against the field
+      c.lean = [-F[0] * d / P.A0, -F[1] * d / P.A0, -F[2] * d / P.A0, 1];
+      c.radius += d * Fm;
+    }
     return c;
   });
   const glows = [];

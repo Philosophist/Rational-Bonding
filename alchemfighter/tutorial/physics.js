@@ -222,9 +222,68 @@ export function lineName(nm) {
 // ---------------------------------------------------------------------------
 // Coulomb dynamics inside the sealed sphere
 // ---------------------------------------------------------------------------
-// Particles: { pos:[x,y,z], vel:[x,y,z], q, m, active }. Neutral or inactive ones feel no force.
-// Electron–proton encounters are tracked so each pass is reported once, with its closest approach.
+// Particles: { pos:[x,y,z], vel:[x,y,z], q, m, active, pol? }. Charges pull and push by Coulomb's law.
+// A neutral atom carries `pol` (from atomPol): the charges' field stretches its cloud into a small
+// dipole, which pulls it toward the stronger field, and the dipole's own field pulls back on the
+// charges (equal and opposite, so momentum is kept). Atoms also feel each other (van der Waals).
+// Electron–proton and electron–atom encounters are tracked so each pass is reported once.
 const SOFT2 = 1e-6;   // nm², softening (0.001 nm) so a dead-centre shot doesn't divide by zero
+
+// Polarizability of hydrogen 1s: α = 4.5 a₀³ (exact). An electric field F (V/nm) gives it the dipole
+// p = α·F/k (e·nm), so a charge at distance r pulls it in with energy −α·k/(2r⁴).
+export const ALPHA_1S = 4.5 * A0 ** 3;   // nm³
+// Atomic unit of electric field (V/nm): the field the electron feels from the proton at a₀.
+export const EAU = 514.220675;
+// Van der Waals pull between two H atoms: −C₆/r⁶, C₆ = 6.499 hartree·a₀⁶ (exact for 1s–1s).
+export const C6_HH = 6.499 * 27.211386 * A0 ** 6;   // eV·nm⁶
+// Close in, two H atoms whose electron spins don't pair repel (the b³Σu⁺ curve: a well of 0.56 meV at
+// 0.415 nm). Three in four meetings are like that; the bonding quarter (H₂) comes with the H₂ level work.
+export const HH_RM = 0.415;
+export const HH_EPS = C6_HH / (2 * HH_RM ** 6);
+// What a neutral atom in shell n does in a field.
+// - n = 1: p = α·F/k, capped near 1 e·a₀ where the simple picture ends.
+// - n ≥ 2: 2s and 2p (and the higher shells' sub-levels) are almost the same energy, so even a weak
+//   field (about the Stark-mixing field, 477 V/cm) mixes them into a lopsided state with the full
+//   dipole (3/2)·n·(n−1)·e·a₀ (the linear Stark effect). We take the state leaning toward the field,
+//   the one whose energy goes down (a simplification: half the Stark states lean the other way).
+// Both use p(F) = pmax·x/√(1+x²), x = κ·F, κ = α/(k·pmax): linear at first, then saturating.
+// Close in, a repulsive core (c8/r⁸) stops a charge passing through the atom; it balances the pull at
+// rm (the H₂⁺ bond length, 0.106 nm, for 1s), so there is no made-up well deeper than the real pull.
+const polCache = new Map();
+export function atomPol(n) {
+  let p = polCache.get(n);
+  if (p) return p;
+  const pmax = n === 1 ? A0 : 1.5 * n * (n - 1) * A0;
+  const alpha = n === 1 ? ALPHA_1S : KE * pmax / STARK_FC;
+  const rm = 0.106 * n * n, k = alpha / (KE * pmax), Frm = KE / (rm * rm);
+  p = { n, alpha, pmax, k, rm, c8: 0 };
+  p.c8 = dipoleMag(Frm, p) * Frm * rm ** 8 / 4;
+  polCache.set(n, p);
+  return p;
+}
+export function dipoleMag(F, pol) { const x = pol.k * F; return pol.pmax * x / Math.sqrt(1 + x * x); }
+export function polEnergy(F, pol) { const x = pol.k * F; return -(pol.pmax / pol.k) * (Math.sqrt(1 + x * x) - 1); }
+
+// The field (V/nm) at atom a from every active charge, with the pieces reused for the forces.
+function chargeLinks(ps, a) {
+  const F = [0, 0, 0], links = [];
+  for (let j = 0; j < ps.length; j++) {
+    const b = ps[j];
+    if (!b.active || !b.q) continue;
+    const d = [a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]];
+    const r2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] + SOFT2, r = Math.sqrt(r2), k = KE * b.q / (r2 * r);
+    F[0] += k * d[0]; F[1] += k * d[1]; F[2] += k * d[2];
+    links.push({ j, b, n: [d[0] / r, d[1] / r, d[2] / r], r });
+  }
+  return { F, links };
+}
+// The induced dipole (e·nm) of atom a in the field F.
+export function atomDipole(F, pol) {
+  const Fm = Math.hypot(F[0], F[1], F[2]);
+  if (Fm < 1e-30) return [0, 0, 0];
+  const s = dipoleMag(Fm, pol) / Fm;
+  return [F[0] * s, F[1] * s, F[2] * s];
+}
 
 function accelerations(ps, out) {
   for (let i = 0; i < ps.length; i++) out[i].fill(0);
@@ -241,9 +300,34 @@ function accelerations(ps, out) {
       out[j][0] += f * dx / b.m; out[j][1] += f * dy / b.m; out[j][2] += f * dz / b.m;
     }
   }
+  for (let i = 0; i < ps.length; i++) {
+    const a = ps[i];
+    if (!a.active || a.q || !a.pol) continue;
+    // Charge ↔ induced dipole. The force on the atom from charge j is (p·∇)F_j = k·q_j·(p − 3(p·n)n)/r³,
+    // and charge j feels the opposite. Using the dipole made by the total field is the exact
+    // gradient of the atom's energy −∫p dF, so energy is kept too.
+    const { F, links } = chargeLinks(ps, a), p = atomDipole(F, a.pol);
+    for (const { j, b, n, r } of links) {
+      const pn = p[0] * n[0] + p[1] * n[1] + p[2] * n[2], k = KE * b.q / (r * r * r), core = 8 * a.pol.c8 / r ** 9;
+      for (let c = 0; c < 3; c++) {
+        const f = k * (p[c] - 3 * pn * n[c]) + core * n[c];   // on the atom; n points from the charge to the atom
+        out[i][c] += f / a.m; out[j][c] -= f / b.m;
+      }
+    }
+    // Atom ↔ atom: van der Waals pull with the unpaired-spin repulsive core.
+    for (let j = i + 1; j < ps.length; j++) {
+      const b = ps[j];
+      if (!b.active || b.q || !b.pol) continue;
+      const d = [b.pos[0] - a.pos[0], b.pos[1] - a.pos[1], b.pos[2] - a.pos[2]];
+      const r = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2] + SOFT2), s6 = (HH_RM / r) ** 6;
+      const f = 12 * HH_EPS * (s6 * s6 - s6) / r;   // −dU/dr, > 0 repels
+      for (let c = 0; c < 3; c++) { out[i][c] -= f * d[c] / r / a.m; out[j][c] += f * d[c] / r / b.m; }
+    }
+  }
 }
 
-// The shortest time scale in the system: the time to cross the gap between any two charges.
+// The shortest time scale in the system: the time to cross the gap between any two particles that
+// push on each other, or to fall across it.
 function timeStep(ps) {
   let best = Infinity;
   for (let i = 0; i < ps.length; i++) {
@@ -251,12 +335,19 @@ function timeStep(ps) {
     if (!a.active) continue;
     for (let j = i + 1; j < ps.length; j++) {
       const b = ps[j];
-      if (!b.active || !a.q || !b.q) continue;
+      if (!b.active) continue;
+      const qq = a.q && b.q, ap = !a.q && a.pol, bp = !b.q && b.pol;
+      if (!qq && !((ap && b.q) || (bp && a.q) || (ap && bp))) continue;
       const dx = b.pos[0] - a.pos[0], dy = b.pos[1] - a.pos[1], dz = b.pos[2] - a.pos[2];
       const r = Math.sqrt(dx * dx + dy * dy + dz * dz + SOFT2);
       const dv = Math.hypot(b.vel[0] - a.vel[0], b.vel[1] - a.vel[1], b.vel[2] - a.vel[2]);
-      const mu = a.m * b.m / (a.m + b.m), tff = Math.sqrt(mu * r * r * r / KE);
-      best = Math.min(best, r / (dv + 1e-9), tff);
+      const mu = a.m * b.m / (a.m + b.m);
+      let f;   // how hard the pair pulls or pushes (eV/nm)
+      if (qq) f = KE / (r * r);
+      else if (ap && bp) { const s6 = (HH_RM / r) ** 6; f = 12 * HH_EPS * (s6 * s6 + s6) / r; }
+      else { const pol = ap ? a.pol : b.pol, F = KE / (r * r); f = dipoleMag(F, pol) * 2 * F / r + 8 * pol.c8 / r ** 9; }
+      // The atoms' short-range cores are stiffer than Coulomb's law, so they get twice the care.
+      best = Math.min(best, (qq ? 1 : 0.5) * Math.min(r / (dv + 1e-9), Math.sqrt(mu * r / f)));
     }
   }
   return best;
@@ -314,7 +405,8 @@ function trackPasses(ps, enc, events) {
   for (const e of ps) {
     if (!e.active || e.q !== -1) continue;
     for (const p of ps) {
-      if (!p.active || p.q !== 1) continue;
+      const atom = !p.q && !!p.pol;
+      if (!p.active || (p.q !== 1 && !atom)) continue;
       const rx = e.pos[0] - p.pos[0], ry = e.pos[1] - p.pos[1], rz = e.pos[2] - p.pos[2];
       const vx = e.vel[0] - p.vel[0], vy = e.vel[1] - p.vel[1], vz = e.vel[2] - p.vel[2];
       const r = Math.hypot(rx, ry, rz), rdot = rx * vx + ry * vy + rz * vz;
@@ -327,23 +419,32 @@ function trackPasses(ps, enc, events) {
       } else if (s.approaching) {
         s.approaching = false;
         s.min = Math.min(s.min, r);
-        if (s.min < 10) {
-          const mu = e.m * p.m / (e.m + p.m), v2 = vx * vx + vy * vy + vz * vz;
-          events.push({ e, p, rp: s.min, E: 0.5 * mu * v2 - KE / Math.sqrt(r * r + SOFT2) });
-        }
+        const mu = e.m * p.m / (e.m + p.m), v2 = vx * vx + vy * vy + vz * vz;
+        if (!atom && s.min < 10) events.push({ e, p, rp: s.min, E: 0.5 * mu * v2 - KE / Math.sqrt(r * r + SOFT2) });
+        // A neutral atom: the electron's energy relative to it (the atom's pull on it is tiny by now).
+        if (atom && s.min < 2) events.push({ e, p, rp: s.min, E: 0.5 * mu * v2, atom: true });
       }
     }
   }
 }
 
-// Total energy (kinetic + Coulomb) of the active charges, for tests.
+// Total energy (kinetic + Coulomb + the atoms' pulls), for tests.
 export function totalEnergy(ps) {
   let E = 0;
   for (const p of ps) if (p.active) E += 0.5 * p.m * (p.vel[0] ** 2 + p.vel[1] ** 2 + p.vel[2] ** 2);
   for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
     const a = ps[i], b = ps[j];
-    if (!a.active || !b.active || !a.q || !b.q) continue;
-    E += KE * a.q * b.q / Math.sqrt((a.pos[0] - b.pos[0]) ** 2 + (a.pos[1] - b.pos[1]) ** 2 + (a.pos[2] - b.pos[2]) ** 2 + SOFT2);
+    if (!a.active || !b.active) continue;
+    const r = Math.sqrt((a.pos[0] - b.pos[0]) ** 2 + (a.pos[1] - b.pos[1]) ** 2 + (a.pos[2] - b.pos[2]) ** 2 + SOFT2);
+    if (a.q && b.q) E += KE * a.q * b.q / r;
+    else if (!a.q && !b.q && a.pol && b.pol) { const s6 = (HH_RM / r) ** 6; E += HH_EPS * (s6 * s6 - 2 * s6); }
+    else if (a.q && b.pol && !b.q) E += b.pol.c8 / r ** 8;
+    else if (b.q && a.pol && !a.q) E += a.pol.c8 / r ** 8;
+  }
+  for (const a of ps) {
+    if (!a.active || a.q || !a.pol) continue;
+    const { F } = chargeLinks(ps, a);
+    E += polEnergy(Math.hypot(F[0], F[1], F[2]), a.pol);
   }
   return E;
 }
@@ -368,6 +469,60 @@ export const collExciteSigma = E => (E <= EXCITE_E ? 0 : 0.02 * Math.log(E / EXC
 export const collIonSigma = E => (E <= RY ? 0 : 4.5 * Math.log(E / RY) / (E * RY));
 // Rate for one electron to hit any of nAtoms atoms spread through the box.
 export const collRate = (sigma, E, nAtoms, V = BOX_V) => (nAtoms / V) * sigma * electronSpeed(E) * 1e6;   // per ns
+
+// One pass of an electron by a 1s atom, with closest approach b (nm) and energy E (eV, relative).
+// The electron hits only atoms it actually passes: the chance falls off over the reach of the
+// collision, s = ħv/ΔE (how far its passing field still changes fast enough to lift the electron,
+// Bohr's adiabatic cut-off), but at least the atom's size. The profile e^(−b²/s²)/(πs²) is
+// normalised so that, summed over every pass, it gives the real cross section σ exactly.
+export function impactReach(E) { return Math.max(HBARC * Math.sqrt(2 * E / MEC2) / EXCITE_E, 2 * A0); }
+export function impactChanceReal(E, b) {
+  const sig = collExciteSigma(E) + collIonSigma(E), s = impactReach(E);
+  return Math.min(1, sig * Math.exp(-b * b / (s * s)) / (Math.PI * s * s));
+}
+// The game multiplies it by the same RATE_BOOST as capture, so hits happen within about 1 nm.
+export const impactChanceGame = (E, b) => Math.min(0.9, RATE_BOOST * impactChanceReal(E, b));
+
+// v3 helpers for the collision maths below.
+const vadd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const vsc = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const vlen = a => Math.hypot(a[0], a[1], a[2]);
+function perpBasis(u) {
+  const a = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  let t = [u[1] * a[2] - u[2] * a[1], u[2] * a[0] - u[0] * a[2], u[0] * a[1] - u[1] * a[0]];
+  t = vsc(t, 1 / vlen(t));
+  return [t, [u[1] * t[2] - u[2] * t[1], u[2] * t[0] - u[0] * t[2], u[0] * t[1] - u[1] * t[0]]];
+}
+// How far an electron is turned when it gives up dE of its E: mostly a small nudge (fast collisions
+// are glancing), from the Born picture dσ/dΩ ∝ 1/(θ² + θm²) with θm = dE/(2E), out to 90°.
+export function impactAngle(E, dE, rand = Math.random) {
+  const tm2 = (dE / (2 * E)) ** 2, tM2 = (Math.PI / 2) ** 2;
+  return Math.sqrt(tm2 * (Math.pow((tM2 + tm2) / tm2, rand()) - 1));
+}
+// Two bodies a and b meet and dE (eV) of their motion goes into something else (lifting an
+// electron, freeing one). Done in their centre-of-mass frame, so momentum and energy are both kept
+// exactly: their shared motion carries on, and what is left of their relative motion turns by theta.
+// Returns false (and changes nothing) if they don't have dE to give.
+export function inelasticScatter(a, b, dE, theta, rand = Math.random) {
+  const M = a.m + b.m, mu = a.m * b.m / M;
+  const vcm = vsc(vadd(vsc(a.vel, a.m), vsc(b.vel, b.m)), 1 / M);
+  const u = [a.vel[0] - b.vel[0], a.vel[1] - b.vel[1], a.vel[2] - b.vel[2]], ul = vlen(u);
+  const K = 0.5 * mu * ul * ul - dE;
+  if (K < 0 || ul === 0) return false;
+  const uh = vsc(u, 1 / ul), [t, w] = perpBasis(uh), ph = 2 * Math.PI * rand();
+  const dir = vadd(vsc(uh, Math.cos(theta)), vadd(vsc(t, Math.sin(theta) * Math.cos(ph)), vsc(w, Math.sin(theta) * Math.sin(ph))));
+  const u2 = vsc(dir, Math.sqrt(2 * K / mu));
+  a.vel = vadd(vcm, vsc(u2, b.m / M));
+  b.vel = vadd(vcm, vsc(u2, -a.m / M));
+  return true;
+}
+// An atom comes apart: its electron leaves from r0 (nm) along dir, with the speed it needs to end up
+// with `extra` eV far away. Both pieces are launched from the atom's own motion with opposite
+// momenta, so the pair's total momentum is unchanged (the proton takes the recoil).
+export function launchApart(vAtom, mP, mE, dir, extra, r0) {
+  const M = mP + mE, mu = mP * mE / M, u = Math.sqrt(2 * (extra + KE / r0) / mu);
+  return { vE: vadd(vAtom, vsc(dir, u * mP / M)), vP: vadd(vAtom, vsc(dir, -u * mE / M)) };
+}
 
 // Where a sealed box with Np protons and Ne electrons in all, and total energy Etot (eV, counting
 // binding energy as negative and light as positive), settles once the energy is shared out: the

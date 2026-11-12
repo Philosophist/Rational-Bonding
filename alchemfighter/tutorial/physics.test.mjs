@@ -226,3 +226,110 @@ test('atoms close together and in step flash together: N times one atom\'s rate'
   assert.ok(P.groupArrayFactor(two, c, lam, [1, 0, 0]) < 1e-9);
   assert.ok(Math.abs(P.groupArrayFactor(two, c, lam, [0, 0, 1]) - 2) < 1e-9);
 });
+
+// ---------------------------------------------------------------------------
+// Neutral atoms, collisions and recoil
+// ---------------------------------------------------------------------------
+const mom = ps => ps.reduce((s, p) => s.map((x, k) => x + p.m * p.vel[k]), [0, 0, 0]);
+const atomAt = (pos, vel = [0, 0, 0], n = 1) => ({ id: `a${pos}`, q: 0, m: P.MP + P.ME, pos: [...pos], vel: [...vel], active: true, pol: P.atomPol(n) });
+
+test('a 1s atom is pulled by a charge with its real polarizability', () => {
+  assert.ok(Math.abs(P.ALPHA_1S / P.A0 ** 3 - 4.5) < 1e-12);
+  const pol = P.atomPol(1);
+  for (const r of [1, 2, 5]) {   // far out, the pull is −α·k/(2r⁴)
+    const F = P.KE / (r * r), want = -0.5 * P.ALPHA_1S * P.KE / r ** 4;
+    assert.ok(Math.abs(P.polEnergy(F, pol) / want - 1) < 0.01, `${r} nm`);
+  }
+  // About 0.5 meV at 1 nm: some 10,000 times a Lyman-α kick's energy.
+  const vKick = (P.HC / P.lambdaFor(1, 2)) / P.C / P.MP, kick = 0.5 * P.MP * vKick ** 2;
+  assert.ok(-P.polEnergy(P.KE, pol) / kick > 5000);
+});
+
+test('an atom and a proton pull together, bounce off the core, and keep energy and momentum', () => {
+  const proton = { id: 'p', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true };
+  const atom = atomAt([0.6, 0.02, 0]);
+  const ps = [proton, atom], E0 = P.totalEnergy(ps);
+  let rmin = Infinity;
+  for (let i = 0; i < 400; i++) { P.stepCharges(ps, 5, new Map()); rmin = Math.min(rmin, Math.hypot(...atom.pos.map((x, k) => x - proton.pos[k]))); }
+  assert.ok(rmin < 0.3 && rmin > 0.05, `closest ${rmin}`);
+  assert.ok(Math.abs(P.totalEnergy(ps) - E0) < 1e-3 * Math.abs(E0), `${P.totalEnergy(ps)} vs ${E0}`);
+  const p = mom(ps);
+  assert.ok(Math.hypot(...p) < 1e-6 * P.MP * 1e-3, `momentum ${p}`);
+});
+
+test('the dipole made by an electron and a proton side by side pulls an atom less than the proton alone', () => {
+  const pol = P.atomPol(1);
+  const alone = P.totalEnergy([{ q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true }, atomAt([1, 0, 0])]);
+  const pair = [{ q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true }, { q: -1, m: P.ME, pos: [0, 0.1, 0], vel: [0, 0, 0], active: true }, atomAt([1, 0, 0])];
+  const pairE = P.totalEnergy(pair) - P.totalEnergy(pair.slice(0, 2));
+  assert.ok(Math.abs(pairE) < 0.1 * Math.abs(alone), `${pairE} vs ${alone}`);
+  assert.ok(pol.c8 > 0);
+});
+
+test('two H atoms attract by van der Waals, bounce, and keep energy', () => {
+  const a = atomAt([0, 0, 0], [0, 0, 0]), b = atomAt([0.8, 0.05, 0], [-2e-6, 0, 0]);
+  const ps = [a, b], E0 = P.totalEnergy(ps);
+  // C6 at 1 nm: about 3.9 µeV.
+  assert.ok(Math.abs(P.C6_HH - 3.88e-6) < 0.02e-6, P.C6_HH);
+  let rmin = Infinity;
+  for (let i = 0; i < 300; i++) { P.stepCharges(ps, 200, new Map()); rmin = Math.min(rmin, Math.hypot(...a.pos.map((x, k) => x - b.pos[k]))); }
+  assert.ok(rmin > 0.3 && rmin < 0.45, `closest ${rmin}`);
+  assert.ok(Math.abs(P.totalEnergy(ps) - E0) < 1e-3 * Math.abs(E0) + 1e-12);
+  const p = mom(ps);
+  assert.ok(Math.hypot(p[0] + 2e-6 * b.m, p[1], p[2]) < 1e-9 * b.m);   // momentum is what b started with
+});
+
+test('an electron passing an atom is reported once, with its closest approach', () => {
+  const atom = atomAt([0, 0, 0]);
+  const e = { id: 'e', q: -1, m: P.ME, pos: [-10, 0.5, 0], vel: [P.electronSpeed(15), 0, 0], active: true };
+  const ps = [atom, e], enc = new Map(), events = [];
+  for (let i = 0; i < 20; i++) events.push(...P.stepCharges(ps, 1, enc).events);
+  assert.equal(events.length, 1);
+  assert.ok(events[0].atom && Math.abs(events[0].rp - 0.5) < 0.02 && Math.abs(events[0].E - 15) < 0.05, JSON.stringify({ rp: events[0].rp, E: events[0].E }));
+});
+
+test('electron impact: local reach, real total cross section, momentum and energy kept, real atom recoil', () => {
+  const E = 15;
+  // Summed over a uniform beam, the pass chance gives back σ.
+  let sum = 0;
+  for (let i = 0; i < 4000; i++) { const b = (i + 0.5) * 0.001; sum += 2 * Math.PI * b * 0.001 * P.impactChanceReal(E, b); }
+  const sig = P.collExciteSigma(E) + P.collIonSigma(E);
+  assert.ok(Math.abs(sum / sig - 1) < 0.01, `${sum} vs ${sig}`);
+  // In the game, a 2 nm pass has almost no chance; a 0.3 nm pass almost always hits.
+  assert.ok(P.impactChanceGame(E, 2.5) < 0.01 && P.impactChanceGame(E, 0.3) > 0.5);
+  const r = rng(3);
+  for (let k = 0; k < 20; k++) {
+    const e = { m: P.ME, vel: [P.electronSpeed(E), 0, 0] }, a = { m: P.MP + P.ME, vel: [0, 0, 0] };
+    const p0 = mom([e, a]), K0 = 0.5 * e.m * P.electronSpeed(E) ** 2;
+    assert.ok(P.inelasticScatter(e, a, P.EXCITE_E, P.impactAngle(E, P.EXCITE_E, r), r));
+    const p1 = mom([e, a]), K1 = 0.5 * e.m * e.vel.reduce((s, x) => s + x * x, 0) + 0.5 * a.m * a.vel.reduce((s, x) => s + x * x, 0);
+    assert.ok(Math.hypot(...p1.map((x, i) => x - p0[i])) < 1e-12 * Math.hypot(...p0));
+    assert.ok(Math.abs(K0 - K1 - P.EXCITE_E) < 1e-9);
+    // The atom moves off at hundreds of m/s (1 m/s = 1e-6 nm/fs): over 100 Lyman-α kicks.
+    assert.ok(Math.hypot(...a.vel) / 1e-6 > 450, `${Math.hypot(...a.vel) / 1e-6} m/s`);
+  }
+  assert.equal(P.inelasticScatter({ m: P.ME, vel: [P.electronSpeed(5), 0, 0] }, { m: P.MP, vel: [0, 0, 0] }, P.EXCITE_E, 0), false);
+});
+
+test('when an atom comes apart, the proton takes the recoil and momentum is kept', () => {
+  const vAtom = [1e-5, -2e-5, 3e-6], dir = [0, 0.6, 0.8], extra = 0.3, r0 = 0.5;
+  const { vE, vP } = P.launchApart(vAtom, P.MP, P.ME, dir, extra, r0);
+  const before = vAtom.map(v => v * (P.MP + P.ME)), after = vE.map((v, k) => v * P.ME + vP[k] * P.MP);
+  assert.ok(Math.hypot(...after.map((x, k) => x - before[k])) < 1e-12 * P.MP);
+  // Let the pair fly apart: far away the electron has `extra` eV relative to the proton.
+  const proton = { id: 'p', q: 1, m: P.MP, pos: [0, 0, 0], vel: vP, active: true };
+  const e = { id: 'e', q: -1, m: P.ME, pos: dir.map(x => x * r0), vel: vE, active: true };
+  const ps = [proton, e];
+  for (let i = 0; i < 100; i++) P.stepCharges(ps, 1, new Map(), 1e9);
+  const rel = e.vel.map((v, k) => v - proton.vel[k]), mu = P.MP * P.ME / (P.MP + P.ME), r = Math.hypot(...e.pos.map((x, k) => x - proton.pos[k]));
+  assert.ok(Math.abs(0.5 * mu * rel.reduce((s, x) => s + x * x, 0) - P.KE / r - extra) < 2e-3);
+  const pEnd = mom(ps);
+  assert.ok(Math.hypot(...pEnd.map((x, k) => x - before[k])) < 1e-9 * P.MP);
+});
+
+test('excited atoms lean far more than 1s in the same field', () => {
+  const F = P.KE / 25;   // a proton 5 nm away
+  const p1 = P.dipoleMag(F, P.atomPol(1)), p2 = P.dipoleMag(F, P.atomPol(2));
+  assert.ok(p2 / p1 > 1000, `${p2 / p1}`);
+  assert.ok(Math.abs(p2 / (3 * P.A0) - 1) < 1e-3);   // the full n = 2 Stark dipole, 3 e·a₀
+});

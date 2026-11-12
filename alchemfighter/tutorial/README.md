@@ -149,16 +149,33 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - *Free electrons* can't absorb light (they can't take its energy and its push together) and
     scatter it about 100 million times less often than an atom absorbs it, so they ignore it here.
   - *Collisions:* an electron faster than 10.2 eV can bump a 1s atom to n = 2 (σ ≈ 0.02 ln x / x
-    nm², x = E/10.2 eV), and one faster than 13.6 eV can ionize it (Lotz formula), at rate n·σ·v.
-  - *Momentum:* a capture keeps the pair's momentum, every photon given off or absorbed kicks the
-    atom by hν/c (about 3 m/s for Lyman-α), and an ionized atom's proton recoils from its electron.
+    nm², x = E/10.2 eV), and one faster than 13.6 eV can ionize it (Lotz formula). Only atoms the
+    electron actually passes can be hit: each pass has chance σ·e^(−b²/s²)/(πs²) over the reach
+    s = ħv/ΔE (at least 2 a₀), which sums to the real σ, times RATE_BOOST like captures, so hits
+    happen within about 1 nm. The collision is done in the pair's centre-of-mass frame: the electron
+    is turned by a mostly small angle (Born, dσ/dΩ ∝ 1/(θ² + θm²)) and the atom recoils, at
+    hundreds of m/s (over 100 times a photon's kick).
+  - *Momentum:* a capture keeps the pair's momentum (the atom then weighs proton + electron), every
+    photon given off or absorbed kicks the atom by hν/c (about 3 m/s for Lyman-α), and when an atom
+    comes apart its electron and proton leave with opposite momenta, so the total is kept.
+  - *Neutral atoms feel fields:* a charge's field stretches a 1s atom into a dipole p = α·F
+    (α = 4.5 a₀³, exact), which pulls the atom toward the stronger field and pulls back on the
+    charge equally. The dipole comes from the total field, so a proton–electron pair side by side
+    pulls far less than a lone proton. Excited atoms (n ≥ 2) take their full Stark dipole,
+    (3/2)·n·(n−1)·e·a₀, once the field passes about 477 V/cm; we use the state that leans toward the
+    field (half the Stark states lean the other way). A repulsive core balancing the pull at
+    0.106 nm (n² times that for excited atoms) stops a charge passing through an atom.
+  - *Atoms feel each other:* van der Waals, −C₆/r⁶ with C₆ = 6.499 hartree·a₀⁶, and the repulsive
+    wall of two H atoms whose spins don't pair (a 0.56 meV well at 0.415 nm), so they bounce.
+    The bonding quarter of meetings (H₂) is left for the H₂ work.
+  - These pulls are real but slow at this scale: a proton 1 nm away pulls a resting 1s atom in over
+    about a minute of game time at normal speed; from 5 nm it would take hours.
   - *The gauge* under the counts shows the free electrons' average energy and the photons and
     energy that have left through the edge.
   - `physics.js` also has what a sealed mirror box would need (photoionization rates, Saha
     balance). With a perfect mirror, 11 protons would settle about 75% ionized near 15,000 °C,
     which is why light has to leave for hydrogen to stay neutral.
-  - *Not modelled:* elastic electron–atom and atom–atom collisions (tiny energy exchange),
-    free–free absorption, two-photon absorption, capture into n ≥ 5, and field mixing of the n = 3
+  - *Not modelled:* H₂ and H₂⁺ bonding, H⁻, free–free absorption, two-photon absorption, capture into n ≥ 5, and field mixing of the n = 3
     and n = 4 sub-levels (the same fields that let 2s go also blend 3s, 3p and 3d).
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
@@ -171,9 +188,13 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
   then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
   jump; the spiral only shows which electron went where.
-- **Orbital wobble:** clouds shimmer like soap bubbles (quadrupole and octupole ripples), more
-  while settling in or changing shape. This is artistic: a single stationary state doesn't change
-  shape. The real change, two shapes mixing during a step down, is drawn too.
+- **Clouds lean in fields (no wobble):** a lone 1s atom is perfectly round and still, so there is no
+  random shimmer. Nearby charges bend each cloud by the same field that moves the atom: 1s is drawn
+  with the exact first-order wave in a field, ψ·(1 − (F·r)(1 + r/2)) (Dalgarno–Lewis), which is
+  stiff (a proton 1 nm away moves it about 1%); fields above 0.02 atomic units (a proton closer
+  than about 0.37 nm) are capped, because there the electron starts to be shared (H₂⁺). Excited
+  clouds are shifted by their full Stark dipole, so they lean visibly. Clouds also change shape
+  when light drives them and while they step down (two shapes beating), as before.
 - **Radiation names:** every photon is named by kind (`classify` in `physics.js`: gamma, X-ray,
   extreme / far UV, UV-C / B / A, the visible colours, near / short-wave / mid / long-wave / far IR,
   microwave, radio) and by hydrogen series (Lyman, Balmer, Paschen, Brackett; "continuum" for the
