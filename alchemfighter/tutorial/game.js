@@ -68,8 +68,8 @@ const EMIT_PERIOD = 2, EMIT_HOLD = [5, 2], EMIT_EASE = 1;
 // Swings faster than SWING_HZ on screen are drawn as their average (no flicker: photosensitivity),
 // fully so above SWING_HZ_AVG.
 const SWING_HZ = 1.2, SWING_HZ_AVG = 2.2;
-// Acid Neutrality: this many fresh protons appear for the player to neutralize.
-const ACID_N = 10;
+// Acid Neutrality: this many fresh protons join the first one, so the system holds 10 hydrogen in all.
+const ACID_N = 9;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
 const THRUST = 5, THRUST_FAST = 15, BRAKE = 10;   // nm/s²
 const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
@@ -123,7 +123,7 @@ const BEATS = {
   },
   3: {
     title: 'Acid Neutrality',
-    say: `Ten more protons have appeared. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Each catch's energy leaves as light through the edge of the system: watch the spectrometer catch it.`,
+    say: `Nine more protons have appeared, so this system now holds ten hydrogen. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Each catch's energy leaves as light through the edge of the system: watch the spectrometer catch it.`,
   },
 };
 function say(text) {
@@ -768,7 +768,7 @@ function updateAtoms(dt, dtFs) {
   }
   if (S.beat === 3 && !S.b3.doneAt && acidLeft() === 0 && S.atoms.every(a => !a.pending && !a.trans && !a.pair && a.fade >= 1)) {
     S.b3.doneAt = S.time;
-    say(`The acid is neutral: every proton holds an electron. The energy each catch released left the system as light, ${S.lightOut} photons in all. That escaping light is why hydrogen out in space can stay neutral.`);
+    say(`Congratulations, you solved the system! The acid is neutral: every proton holds an electron. The energy each catch released left the system as light, ${S.lightOut} photons in all. That escaping light is why hydrogen out in space can stay neutral.`);
     setTimeout(showDone, 3000);
   }
 }
@@ -778,7 +778,7 @@ function showDone() {
   const count = new Map();
   const cls = new Map();
   for (const l of photons) { const c = P.classify(l); cls.set(c.name, c); count.set(c.name, (count.get(c.name) || 0) + 1); }
-  $('doneTitle').textContent = 'You neutralized the acid';
+  $('doneTitle').textContent = 'Congratulations, you solved the system!';
   $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${photons.length} photons: ${[...count].map(([name, k]) => `${k} ${name}`).join(', ')}. ${S.lightOut} photons left the system, carrying away ${S.lightOutE.toFixed(0)} eV.`;
   const kinds = [...cls.values()].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
   const extra = [S.paired ? ` Atoms shared an excitation ${S.paired} time${S.paired === 1 ? '' : 's'}.` : '',
