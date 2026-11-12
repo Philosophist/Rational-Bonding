@@ -64,6 +64,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .fire { font: 700 14px var(--font-display); letter-spacing: .12em; padding: 9px 18px; border-color: var(--minus); background: rgba(90,140,255,.2); }
 .tag { display: inline-block; font: 500 11px var(--font-data); border: 1px solid rgba(255,233,77,.5); color: var(--gold); border-radius: 3px; padding: 1px 6px; }
 #census { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; }
+#heat { margin-top: 6px; line-height: 1.35; }
+#heat b { display: inline; font: inherit; color: var(--gold); }
 #census b { display: block; font: 700 20px/1.1 var(--font-data); }
 .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .swatch { width: 34px; height: 8px; border-radius: 4px; }
@@ -93,9 +95,11 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 #crosshair { position: fixed; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; pointer-events: none; color: rgba(214,226,238,.7); }
 #crosshair.on { color: var(--good); }
 .overlay { position: fixed; inset: 0; z-index: 3; display: grid; place-items: center; padding: 16px; background: rgba(2,4,10,.45); }
-.overlay .panel { max-width: 460px; padding: 20px 22px; }
+.overlay .panel { max-width: 460px; padding: 20px 22px; max-height: calc(100dvh - 32px); overflow: auto; }
 .overlay h2 { font-size: 22px; }
 .fine { font-size: 11px; color: var(--muted); }
+.warn { font-size: 12px; border: 1px solid rgba(255,233,77,.45); background: rgba(255,233,77,.07); border-radius: 4px; padding: 7px 9px; margin: 8px 0 0; }
+.warn b { color: var(--gold); }
 a { color: var(--cyan); }
 /* Phones: one slim bar on top (tap ⓘ for the tutor and options), a small gun panel bottom right,
    the flight pad bottom left, and the middle of the screen left clear. */
@@ -144,11 +148,12 @@ a { color: var(--cyan); }
     <section class="panel" id="statusBox">
       <div class="label">Census</div>
       <div id="census" class="data"><div><b id="cHp">1</b><span class="label">H⁺</span></div><div><b id="cH">0</b><span class="label">H</span></div><div><b id="cE">0</b><span class="label">free e⁻</span></div></div>
+      <div id="heat" class="fine" title="Free electrons' average energy of motion, and the light that has left the system so far."></div>
     </section>
     <section class="panel">
       <div class="row" style="justify-content:space-between"><span class="label">Time</span><span class="data" id="timeOut"></span></div>
       <div class="row" style="justify-content:space-between;margin-top:4px"><button type="button" id="speedBtn" title="Game speed (, and . keys)">game speed ×1</button><span class="data fine">ship <span id="shipOut">still</span></span></div>
-      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Every capture chance is multiplied by this same factor, so the shape of the odds stays real">rates ×</span><span class="fine" id="lightNote">light drawn slowed down</span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Every capture chance is multiplied by this same factor, so the shape of the odds stays real">rates ×</span><span class="fine" id="lightNote">light at its real speed</span></div>
       <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
       <div class="legend"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--good))"></span>magnetic field (drawn ×400)</div>
       <div class="fine">Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).</div>
@@ -183,7 +188,7 @@ a { color: var(--cyan); }
       <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that reaches the wall, at its real wavelength"></canvas>
       <div class="data fine" id="photonOut" aria-live="polite"></div>
       <div class="fine" id="spectroNote">Spectrometer: each photon when it first reaches the wall, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
-      <div class="keys">Drag to look · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
+      <div class="keys">Drag to look, or double-click for mouse look (double-click or Esc to free the cursor) · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
       <div class="keys touch">Drag to look · FIRE to shoot · pad: thrust · ■ brake</div>
     </section>
   </div>
@@ -205,8 +210,9 @@ a { color: var(--cyan); }
   <div class="panel">
     <h1>Alchemfighter</h1>
     <h2>Level 1: Electromagnetic Stardust</h2>
-    <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. In this level, the edge of the system reflects everything, including photons (light).</p>
-    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="vrBtn2">Enter VR</button></div>
+    <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. In this level, the edge of the system holds matter in, but not light (photons).</p>
+    <p class="warn" role="note"><b>Photosensitivity warning.</b> This game has flashes of light and moving patterns. If you have photosensitive epilepsy, or flashing lights have ever affected you, please talk to a doctor before playing, and stop at once if you feel unwell. Glow view (V, or ⓘ on phones) is the calmer view.</p>
+    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="startCalmBtn" title="Start in Glow view: no field lines or light waves">Start in Glow view</button><button type="button" id="vrBtn2">Enter VR</button></div>
     <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>
   </div>
 </div>

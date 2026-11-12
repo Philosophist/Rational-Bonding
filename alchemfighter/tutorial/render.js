@@ -16,7 +16,7 @@ uniform vec4 uQ[${MAX_CHARGES}]; uniform float uQs[${MAX_CHARGES}]; uniform int 
 uniform int uNA; uniform vec3 uAP[${MAX_CLOUDS}]; uniform float uAR[${MAX_CLOUDS}]; uniform float uAS;
 uniform ivec3 uQA[${MAX_CLOUDS}]; uniform int uModeA[${MAX_CLOUDS}]; uniform float uNormA[${MAX_CLOUDS}]; uniform vec2 uCA[${MAX_CLOUDS}];
 uniform ivec3 uQB[${MAX_CLOUDS}]; uniform int uModeB[${MAX_CLOUDS}]; uniform float uNormB[${MAX_CLOUDS}]; uniform vec2 uCB[${MAX_CLOUDS}];
-uniform float uInvMax[${MAX_CLOUDS}]; uniform float uIso[${MAX_CLOUDS}]; uniform float uFade[${MAX_CLOUDS}]; uniform float uWob[${MAX_CLOUDS}];
+uniform float uInvMax[${MAX_CLOUDS}]; uniform float uIso[${MAX_CLOUDS}]; uniform float uFade[${MAX_CLOUDS}]; uniform float uWob[${MAX_CLOUDS}]; uniform float uInc[${MAX_CLOUDS}];
 uniform vec4 uG[${MAX_GLOWS}]; uniform vec3 uGC[${MAX_GLOWS}]; uniform int uGN;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -71,7 +71,14 @@ vec4 sampleCloud(int i, vec3 pw){
   vec3 p = (pw - uAP[i]) * uAS;
   p /= wobble(i, p);
   vec2 w = cmul(uCA[i], psi(uQA[i], uModeA[i], uNormA[i], p));
-  if (dot(uCB[i], uCB[i]) > 0.0) w += cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], p));
+  if (dot(uCB[i], uCB[i]) > 0.0) {
+    vec2 b = cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], p));
+    if (uInc[i] > 0.5) {   // two shapes whose densities add (no interference between them)
+      float da = dot(w, w), db = dot(b, b);
+      return vec4((phaseColor(w) * da + phaseColor(b) * db) / max(da + db, 1e-30), da + db);
+    }
+    w += b;
+  }
   return vec4(phaseColor(w), dot(w, w));
 }
 void marchCloud(int i, vec3 ro, vec3 rd, float t0, float t1, inout vec3 acc, inout float T){
@@ -189,7 +196,7 @@ export function createRenderer(canvas) {
   const prog = link(VERT, FRAG, ['aPos']);
   const U = {};
   for (const n of ['uViewport', 'uCamPos', 'uInvVP', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
-    'uNA', 'uAP', 'uAR', 'uAS', 'uQA', 'uModeA', 'uNormA', 'uCA', 'uQB', 'uModeB', 'uNormB', 'uCB', 'uInvMax', 'uIso', 'uFade', 'uWob',
+    'uNA', 'uAP', 'uAR', 'uAS', 'uQA', 'uModeA', 'uNormA', 'uCA', 'uQB', 'uModeB', 'uNormB', 'uCB', 'uInvMax', 'uIso', 'uFade', 'uWob', 'uInc',
     'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(prog, n);
   const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
   const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb);
@@ -223,7 +230,7 @@ export function createRenderer(canvas) {
     ap: new Float32Array(MAX_CLOUDS * 3), ar: new Float32Array(MAX_CLOUDS),
     qa: new Int32Array(MAX_CLOUDS * 3), ma: new Int32Array(MAX_CLOUDS), na: new Float32Array(MAX_CLOUDS), ca: new Float32Array(MAX_CLOUDS * 2),
     qb: new Int32Array(MAX_CLOUDS * 3), mb: new Int32Array(MAX_CLOUDS), nb: new Float32Array(MAX_CLOUDS), cb: new Float32Array(MAX_CLOUDS * 2),
-    inv: new Float32Array(MAX_CLOUDS), iso: new Float32Array(MAX_CLOUDS), fade: new Float32Array(MAX_CLOUDS), wob: new Float32Array(MAX_CLOUDS),
+    inv: new Float32Array(MAX_CLOUDS), iso: new Float32Array(MAX_CLOUDS), fade: new Float32Array(MAX_CLOUDS), wob: new Float32Array(MAX_CLOUDS), inc: new Float32Array(MAX_CLOUDS),
   };
 
   // scene: { views:[{viewport:[x,y,w,h], camPos, VP, invVP}], time, sphereR, steps, bohrPerUnit,
@@ -236,7 +243,7 @@ export function createRenderer(canvas) {
     const nq = Math.min(MAX_CHARGES, scene.charges.length);
     qArr.fill(0); qsArr.fill(0);
     for (let i = 0; i < nq; i++) { const c = scene.charges[i]; qArr.set([...c.pos, c.q], i * 4); qsArr[i] = c.smear; }
-    gl.uniform4fv(U.uQ, qArr); gl.uniform1fv(U.uQs, qsArr); gl.uniform1i(U.uQN, nq); gl.uniform1f(U.uFieldGain, 6.0);
+    gl.uniform4fv(U.uQ, qArr); gl.uniform1fv(U.uQs, qsArr); gl.uniform1i(U.uQN, nq); gl.uniform1f(U.uFieldGain, 2.0);   // glow brightens inside about 0.3 nm, the capture range
 
     const na = Math.min(MAX_CLOUDS, scene.clouds.length);
     for (let i = 0; i < na; i++) {
@@ -244,13 +251,13 @@ export function createRenderer(canvas) {
       cl.ap.set(c.pos, i * 3); cl.ar[i] = c.radius;
       cl.qa.set([c.A.n, c.A.l, c.A.m], i * 3); cl.ma[i] = c.A.mode; cl.na[i] = c.A.norm; cl.ca.set(c.cA, i * 2);
       cl.qb.set([c.B.n, c.B.l, c.B.m], i * 3); cl.mb[i] = c.B.mode; cl.nb[i] = c.B.norm; cl.cb.set(c.cB, i * 2);
-      cl.inv[i] = c.invMax; cl.iso[i] = c.iso; cl.fade[i] = c.fade; cl.wob[i] = c.wobble || 0;
+      cl.inv[i] = c.invMax; cl.iso[i] = c.iso; cl.fade[i] = c.fade; cl.wob[i] = c.wobble || 0; cl.inc[i] = c.inc || 0;
     }
     gl.uniform1i(U.uNA, na); gl.uniform1f(U.uAS, scene.bohrPerUnit);
     gl.uniform3fv(U.uAP, cl.ap); gl.uniform1fv(U.uAR, cl.ar);
     gl.uniform3iv(U.uQA, cl.qa); gl.uniform1iv(U.uModeA, cl.ma); gl.uniform1fv(U.uNormA, cl.na); gl.uniform2fv(U.uCA, cl.ca);
     gl.uniform3iv(U.uQB, cl.qb); gl.uniform1iv(U.uModeB, cl.mb); gl.uniform1fv(U.uNormB, cl.nb); gl.uniform2fv(U.uCB, cl.cb);
-    gl.uniform1fv(U.uInvMax, cl.inv); gl.uniform1fv(U.uIso, cl.iso); gl.uniform1fv(U.uFade, cl.fade); gl.uniform1fv(U.uWob, cl.wob);
+    gl.uniform1fv(U.uInvMax, cl.inv); gl.uniform1fv(U.uIso, cl.iso); gl.uniform1fv(U.uFade, cl.fade); gl.uniform1fv(U.uWob, cl.wob); gl.uniform1fv(U.uInc, cl.inc);
 
     const ng = Math.min(MAX_GLOWS, scene.glows.length);
     gArr.fill(0); gcArr.fill(0);
