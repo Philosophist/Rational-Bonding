@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from './physics.js';
+import * as Q from './quantum.js';
 
 // Seeded random numbers so the statistical tests are repeatable.
 function rng(seed = 1) {
@@ -29,26 +30,52 @@ test('periapsis: the proton pulls slow electrons in close', () => {
   assert.ok(Math.abs(P.periapsisFromL(b * v, E) - P.periapsis(b, E)) < 1e-9);
 });
 
-test('capture odds: averaged over a uniform beam, they reproduce the Kramers cross section', () => {
+test('capture odds: averaged over a uniform beam, they reproduce the computed cross section', () => {
   for (const E of [0.1, 1, 10]) {
+    // ∫ 2πb·chance db, with the pass's angular momentum L = b/ƛ (in ħ)
+    const lb = P.reducedWavelength(E);
     let s = 0;
-    const lo = Math.log(1e-5), hi = Math.log(1e4), N = 4000, h = (hi - lo) / N;
-    for (let i = 0; i <= N; i++) { const b = Math.exp(lo + i * h); s += (i === 0 || i === N ? 0.5 : 1) * 2 * Math.PI * b * b * P.captureChanceReal(E, P.periapsis(b, E)) * h; }
-    assert.ok(Math.abs(s / P.captureSigma(E) - 1) < 0.01, `E=${E}: ${s} vs ${P.captureSigma(E)}`);
+    const N = 6000, bMax = 14 * lb, h = bMax / N;
+    for (let i = 0; i <= N; i++) { const b = i * h; s += (i === 0 || i === N ? 0.5 : 1) * 2 * Math.PI * b * P.captureChanceReal(E, b / lb) * h; }
+    assert.ok(Math.abs(s / P.captureSigma(E) - 1) < 0.04, `E=${E}: ${s} vs ${P.captureSigma(E)}`);
   }
 });
 
-test('capture odds: slow and close beats fast or wide, by the real ratios', () => {
-  const slowClose = P.captureChanceReal(0.1, P.periapsis(0.5, 0.1));
-  const fastClose = P.captureChanceReal(10, P.periapsis(0.5, 10));
-  const slowWide = P.captureChanceReal(0.1, P.periapsis(4, 0.1));
-  assert.ok(slowClose > 10 * fastClose);
-  assert.ok(slowClose > 10 * slowWide);
-  // Real odds per pass are tiny; the game multiplies them by one shared factor.
-  assert.ok(slowClose < 1e-5);
-  const g = P.captureChanceGame(0.1, P.periapsis(0.5, 0.1));
-  assert.ok(g > 0.15 && g < 0.6, `good slow shot: ${g}`);
-  assert.ok(Math.abs(g / slowClose - P.RATE_BOOST) / P.RATE_BOOST < 1e-9);
+test('computed capture agrees with Kramers (with the known Gaunt factors)', () => {
+  // into 1s the exact cross section is about 0.8 of Kramers at low energy; summed to n = 6 it is close
+  const Q1 = Q.captureTable(0.1).flat().filter(x => x.n === 1).reduce((a, x) => a + x.sigma, 0);
+  assert.ok(Q1 / P.kramersSigma(1, 0.1) > 0.75 && Q1 / P.kramersSigma(1, 0.1) < 0.85);
+  let k = 0;
+  for (let n = 1; n <= 6; n++) k += P.kramersSigma(n, 0.1);
+  assert.ok(Math.abs(P.captureSigma(0.1) / k - 0.9) < 0.1);
+});
+
+test('capture odds: what matters is the pass\'s angular momentum, by the real ratios', () => {
+  const lb = P.reducedWavelength(0.1);
+  const good = P.captureChanceReal(0.1, 0.5 / lb);          // b = 0.5 nm: mostly the l = 1 wave
+  const fast = P.captureChanceReal(10, 0.5 / P.reducedWavelength(10));
+  const wide = P.captureChanceReal(0.1, 4 / lb);
+  const headOn = P.captureChanceReal(0.1, 0);
+  assert.ok(good > 10 * fast);
+  assert.ok(good > 10 * wide);
+  assert.ok(good > headOn);                                   // dead centre is the l = 0 wave: p orbitals only
+  assert.ok(good < 1e-5);
+  const g = P.captureChanceGame(0.1, 0.5 / lb);
+  assert.ok(g > 0.1 && g < 0.6, `good slow shot: ${g}`);
+  assert.ok(Math.abs(g / good - P.RATE_BOOST) / P.RATE_BOOST < 1e-9);
+});
+
+test('capture lands where the pass\'s angular momentum allows: l changes by exactly one', () => {
+  const r = rng(3);
+  for (let i = 0; i < 400; i++) {
+    const s = P.pickCaptureState(0.1, 0, r);                 // head-on: l = 0 wave (mostly)
+    if (s.lIn === 0) assert.equal(s.l, 1);
+    assert.equal(Math.abs(s.l - s.lIn), 1);
+  }
+  // A head-on slow pass essentially never lands in 3d; a pass with L ≈ 3.5 ħ often does.
+  const count = (L, n, l) => { let c = 0; for (let i = 0; i < 2000; i++) { const s = P.pickCaptureState(0.1, L, r); if (s.n === n && s.l === l) c++; } return c / 2000; };
+  assert.ok(count(0, 3, 2) < 0.02);
+  assert.ok(count(3.5, 3, 2) > 0.15);
 });
 
 test('aim cone: slower electrons have wider cones', () => {
@@ -346,4 +373,43 @@ test('excited atoms lean far more than 1s in the same field', () => {
   const p1 = P.dipoleMag(F, P.atomPol(1)), p2 = P.dipoleMag(F, P.atomPol(2));
   assert.ok(p2 / p1 > 1000, `${p2 / p1}`);
   assert.ok(Math.abs(p2 / (3 * P.A0) - 1) < 1e-3);   // the full n = 2 Stark dipole, 3 e·a₀
+});
+
+test('quantum: decay rates computed from the orbitals match the measured lifetimes', () => {
+  const T = Q.decayTable();
+  for (const [k, tau] of [['2,1', 1.596], ['3,0', 158.6], ['3,1', 5.27], ['3,2', 15.6], ['4,3', 72.6]]) assert.ok(Math.abs(T[k].tau / tau - 1) < 0.015, `${k}: ${T[k].tau}`);
+  assert.ok(Math.abs(T['3,1'].br[0][2] - 0.882) < 0.002);
+  for (let n = 2; n <= Q.NMAX; n++) for (let l = 0; l < n; l++) assert.ok(T[`${n},${l}`], `${n},${l}`);
+});
+
+test('quantum: photoionization of 1s at threshold is 6.30e-18 cm²', () => {
+  const s = Q.photoionSigmaAU(1, 0, 0.5 + 1e-6, 1) * (0.529177e-8) ** 2;
+  assert.ok(Math.abs(s / 6.30e-18 - 1) < 0.01, `${s}`);
+});
+
+test('quantum: a field splits shell n into the Stark states (3/2)·n·k, and the cloud stays centred', () => {
+  for (const [n, m] of [[2, 0], [3, 0], [3, 1], [4, 0], [5, 2]]) {
+    const v = Q.eigSym(Q.starkMatrix(n, m).Z).vals.sort((a, b) => a - b);
+    const want = [];
+    for (let k = -(n - 1 - m); k <= n - 1 - m; k += 2) want.push(1.5 * n * k);
+    v.forEach((x, i) => assert.ok(Math.abs(x - want[i]) < 1e-6, `${n},${m}: ${v}`));
+  }
+  // A pure 3d0 state in a field sloshes into 3s and 3p and back. Its norm is kept, and so is its
+  // mean position along the field (z commutes with the field's energy F·z inside the shell): it
+  // starts centred on the proton and stays centred; only its shape changes.
+  let c = { re: [0, 0, 1], im: [0, 0, 0] }, minD = 1;
+  for (let i = 0; i < 200; i++) {
+    c = Q.evolveShell(3, 0, 1e-3, c, 20);
+    const nrm = c.re.reduce((a, x, j) => a + x * x + c.im[j] ** 2, 0);
+    assert.ok(Math.abs(nrm - 1) < 1e-9);
+    assert.ok(Math.abs(Q.shellDipole(3, 0, c)) < 1e-9);
+    minD = Math.min(minD, c.re[2] ** 2 + c.im[2] ** 2);
+  }
+  assert.ok(minD < 0.5, `the shape sloshes away from pure 3d: ${minD}`);
+  // Averaged over the sloshing, a field takes much of 3d0 into 3s and 3p
+  const avg = Q.shellAverage(3, 0, 1e-3, { re: [0, 0, 1], im: [0, 0, 0] });
+  assert.ok(avg.p[2] < 0.7 && avg.p[1] > 0.1);
+  // 2s in a field far below the Lamb-shift field stays 2s
+  const weak = Q.shellAverage(2, 0, 1e-12, { re: [1, 0], im: [0, 0] });
+  assert.ok(weak.p[0] > 0.999);
 });

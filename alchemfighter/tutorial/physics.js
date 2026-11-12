@@ -1,6 +1,7 @@
 // Alchemfighter, Level 1 (hydrogen tutorial): the physics, with no DOM or WebGL code.
 // Units: lengths in nm, times in fs, energies in eV, charges in units of e.
 // Design: docs/levels/01-hydrogen-tutorial.md, beats 1 and 2.
+import * as Q from './quantum.js';
 
 export const HC = 1239.84193;        // eV·nm
 export const HBARC = 197.3269804;    // eV·nm
@@ -21,7 +22,7 @@ export const RATE_BOOST = 6e5;
 
 export const levelE = n => -RY / (n * n);
 export const lambdaFor = (n1, n2) => HC / Math.abs(levelE(n2) - levelE(n1));
-export const L_NAMES = 'spdfg';
+export const L_NAMES = 'spdfghi';
 export const stateName = s => `${s.n}${L_NAMES[s.l]}`;
 
 // Speed (nm/fs) of an electron with kinetic energy E (eV); non-relativistic, fine below a few keV.
@@ -30,19 +31,17 @@ export const electronSpeed = E => Math.sqrt(2 * E / ME);
 export const reducedWavelength = E => HBARC / Math.sqrt(2 * MEC2 * E);
 
 // ---------------------------------------------------------------------------
-// Radiative recombination: e⁻ + H⁺ → H(n) + photon
+// Radiative recombination: e⁻ + H⁺ → H(nl) + photon
 // ---------------------------------------------------------------------------
-// Kramers' cross section for capture into shell n (no Gaunt factor), in nm².
-// σ_n = (32π / 3√3) α³ a₀² · Ry² / (n E (Ry + n² E)) ≈ 2.105e-22 cm² · Ry² / (n E (Ry + n² E))
-export const CAPTURE_NMAX = 4;   // levels the slice renders and cascades through
+// Kramers' textbook cross section for capture into shell n (no Gaunt factor), in nm², kept as a
+// check on the computed one: σ_n ≈ 2.105e-22 cm² · Ry² / (n E (Ry + n² E)).
 export function kramersSigma(n, E) {
   return 2.105e-22 * 1e14 * RY * RY / (n * E * (RY + n * n * E));
 }
-export function captureSigma(E) {
-  let s = 0;
-  for (let n = 1; n <= CAPTURE_NMAX; n++) s += kramersSigma(n, E);
-  return s;
-}
+// The game uses the computed cross sections (quantum.js): the free electron's own wave, solved at
+// its real energy one partial wave at a time, overlapped with every orbital up to n = 6.
+export const CAPTURE_NMAX = Q.NMAX;
+export const captureSigma = E => Q.captureSigmaQ(Math.max(E, 0.01));
 
 // Closest approach of an electron with energy E (at infinity) and impact parameter b,
 // on its hyperbola around a proton: r = √(b² + s²) − s, with s = k/(2E).
@@ -56,37 +55,18 @@ export function periapsisFromL(h, E) {
   if (E <= 0) return Math.max(0, (-KE + Math.sqrt(Math.max(0, KE * KE + 2 * E * L2m))) / (2 * E));
   return (-KE + Math.sqrt(KE * KE + 2 * E * L2m)) / (2 * E);
 }
+// A pass's angular momentum in units of ħ, from h = |r × v| (nm²/fs). It is the same all along the
+// pass, so it says how the electron swings past the proton better than any one point does.
+export const HBAR = 0.6582119569;   // eV·fs
+export const angularL = h => ME * h / HBAR;
 
-// How capture depends on the closest approach. Classically, an electron radiates almost all of its
-// energy loss near the closest point, and that energy falls as r_p^(−5/2) (Larmor's formula on a
-// near-parabolic orbit). The electron is a wave, so the closest approach can't be sharper than its
-// reduced wavelength: that sets the core radius r_c. The weight is then normalised so that, averaged
-// over a uniform beam, the chance reproduces the Kramers cross section exactly.
-export const CORE_R = 4 * A0;   // nm, about the size of the n = 2 orbit
-export const coreRadius = () => CORE_R;
-const passWeight = (rp, rc) => Math.pow(rp + rc, -2.5);
-const normCache = new Map();
-function passNorm(E) {
-  const key = E.toPrecision(4);
-  let v = normCache.get(key);
-  if (v !== undefined) return v;
-  const rc = coreRadius(E);
-  // ∫₀^∞ 2πb w(r_p(b)) db on a log grid in b
-  const lo = Math.log(1e-5), hi = Math.log(1e4), N = 1200, h = (hi - lo) / N;
-  v = 0;
-  for (let i = 0; i <= N; i++) {
-    const b = Math.exp(lo + i * h), f = 2 * Math.PI * b * b * passWeight(periapsis(b, E), rc);
-    v += (i === 0 || i === N ? 0.5 : 1) * f * h;
-  }
-  normCache.set(key, v);
-  return v;
-}
-// Real chance that one pass with energy E and closest approach rp ends in capture.
-export function captureChanceReal(E, rp) {
-  const Ee = Math.max(E, 0.01);
-  return captureSigma(Ee) * passWeight(rp, coreRadius(Ee)) / passNorm(Ee);
-}
-export const captureChanceGame = (E, rp) => Math.min(0.9, RATE_BOOST * captureChanceReal(E, rp));
+// What decides a catch. A slow electron is a wave far wider than an atom (ƛ = 0.62 nm at 0.1 eV), so
+// no sharp "closest approach" decides anything. What a pass does fix is its angular momentum L,
+// and the wave near the proton is mostly the partial wave l ≈ L/ħ − ½. Each partial wave has its own
+// computed chance of being caught, into its own orbitals: light changes l by exactly one, so
+// l = 0 (head-on) can only land in p orbitals, l = 1 lands mostly in 1s, l = 3 mostly in 3d.
+export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01), L);
+export const captureChanceGame = (E, L) => Math.min(0.9, RATE_BOOST * captureChanceReal(E, L));
 
 // The gun's aim cone. The gun focuses its electron beam on the aimed point from a 30 nm aperture,
 // so the spot there can't be smaller than about ƛ·D/a (diffraction of the electron's wave).
@@ -109,36 +89,23 @@ export function gaussian(rand = Math.random) {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// Which level the electron lands in: shell n by Kramers' partial cross sections, then the
-// sub-level l in proportion to its 2l + 1 states (a statistical simplification), and m uniformly.
-export function pickCaptureState(E, rand = Math.random) {
-  const ns = [];
-  for (let n = 1; n <= CAPTURE_NMAX; n++) ns.push(n);
-  const n = pickWeighted(ns, k => kramersSigma(k, E), rand);
-  const ls = [];
-  for (let l = 0; l < n; l++) ls.push(l);
-  const l = pickWeighted(ls, k => 2 * k + 1, rand);
-  const m = Math.floor(rand() * (2 * l + 1)) - l;
-  return { n, l, m };
+// Which orbital the electron lands in, for a pass with angular momentum L (ħ): chosen from the
+// computed odds of every partial wave into every orbital. m is uniform here; the game ties it to
+// the pass (see capture in game.js). Returns { n, l, m, lIn }.
+export function pickCaptureState(E, L = 1, rand = Math.random) {
+  const x = Q.pickCapture(Math.max(E, 0.01), L, rand);
+  const m = Math.floor(rand() * (2 * x.l + 1)) - x.l;
+  return { n: x.n, l: x.l, m, lIn: x.lIn };
 }
 // The photon given off at capture carries the electron's energy plus the binding energy.
 export const captureLambda = (E, n) => HC / (E + RY / (n * n));
 
 // ---------------------------------------------------------------------------
-// Spontaneous decay of hydrogen: lifetimes (ns) and branching ratios, from the prototype.
-// 2s cannot give off one photon; in empty space it gives off two, sharing 10.2 eV, after 0.122 s.
+// Spontaneous decay of hydrogen: lifetimes (ns) and branching ratios for every level up to n = 6,
+// computed from the orbitals' dipole overlaps (quantum.js). 2s cannot give off one photon; in empty
+// space it gives off two, sharing 10.2 eV, after 0.122 s.
 // ---------------------------------------------------------------------------
-export const DECAY = {
-  '2,1': { tau: 1.596, br: [[1, 0, 1]] },
-  '2,0': { tau: 1.22e8, br: [[1, 0, 1]], twoPhoton: true },
-  '3,0': { tau: 158.6, br: [[2, 1, 1]] },
-  '3,1': { tau: 5.27, br: [[1, 0, 0.882], [2, 0, 0.118]] },
-  '3,2': { tau: 15.6, br: [[2, 1, 1]] },
-  '4,0': { tau: 226.5, br: [[2, 1, 0.584], [3, 1, 0.416]] },
-  '4,1': { tau: 12.4, br: [[1, 0, 0.841], [2, 0, 0.119], [3, 0, 0.028], [3, 2, 0.012]] },
-  '4,2': { tau: 36.5, br: [[2, 1, 0.746], [3, 1, 0.254]] },
-  '4,3': { tau: 72.6, br: [[3, 2, 1]] },
-};
+export const DECAY = Q.decayTable();
 
 // One downward step from state s. Returns the new state, the photons (nm), and the real delay (ns).
 export function pickDecay(s, rand = Math.random) {
@@ -214,7 +181,7 @@ export function classify(nm) {
 const SERIES = ['', 'Lyman', 'Balmer', 'Paschen', 'Brackett', 'Pfund', 'Humphreys'];
 export const seriesName = nLow => SERIES[nLow] || `n=${nLow}`;
 export function lineName(nm) {
-  const named = [[121.57, 'Lyman-α'], [102.57, 'Lyman-β'], [97.25, 'Lyman-γ'], [656.47, 'H-α'], [486.27, 'H-β'], [1875.6, 'Paschen-α']];
+  const named = [[121.57, 'Lyman-α'], [102.57, 'Lyman-β'], [97.25, 'Lyman-γ'], [656.47, 'H-α'], [486.27, 'H-β'], [434.17, 'H-γ'], [410.29, 'H-δ'], [1875.6, 'Paschen-α'], [4052.3, 'Brackett-α'], [7459.9, 'Pfund-α']];
   for (const [l, name] of named) if (Math.abs(nm - l) / l < 2e-3) return name;
   return '';
 }

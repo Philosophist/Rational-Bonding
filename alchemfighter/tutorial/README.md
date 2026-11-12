@@ -15,7 +15,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 
 | File | Role |
 |---|---|
-| `physics.js` | Pure physics, no DOM: constants, Kramers capture cross sections, per-pass capture odds, aim cone, hydrogen decay table, Coulomb motion in the sphere, Stark mixing, atoms sharing an excitation (pairs and groups) |
+| `quantum.js` | Hydrogen from Schrödinger's equation, no DOM: free-electron waves (Numerov), capture cross sections into every orbital up to n = 6, decay rates and branching, and each shell in an electric field (Stark mixing, solved and stepped exactly) |
+| `physics.js` | Pure physics, no DOM: constants, capture odds per pass (from `quantum.js`), aim cone, hydrogen decay table, Coulomb motion in the sphere, Stark mixing, atoms sharing an excitation (pairs and groups) |
 | `orbitals.js` | Hydrogen wavefunctions, ported unchanged from the rebuild's `prototype/index.html` |
 | `render.js` | WebGL2: stars, the sphere's wall, field glows, ray-marched electron clouds, lines, the VR panel; draws once per eye in VR |
 | `mat4.js` | Small matrix helpers for the flat camera and the headset's eyes |
@@ -28,17 +29,27 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Motion** is classical Coulomb motion of every charge (velocity Verlet with adaptive steps).
   Matter bounces off the wall without losing energy, like a ball off a curved mirror (angle in
   equals angle out); light passes through it.
-- **Capture odds per pass.** The total chance follows Kramers' cross section for radiative
-  recombination into n = 1 to 4. How it depends on the closest approach r_p follows the classical
-  radiated energy near closest approach (∝ r_p^−5/2), softened inside about the size of the n = 2
-  orbit, and normalised so a uniform beam gives exactly the Kramers cross section. The HUD shows
-  both the real chance and the game's, which is the real one × 600,000 (`RATE_BOOST`).
+- **Capture odds per pass** are computed, not fitted. A slow electron is a wave far wider than
+  an atom (ƛ = 0.62 nm at 0.1 eV), so no sharp "closest approach" decides a catch. What a pass
+  does fix is its angular momentum L (the same all along the pass), and near the proton the wave
+  is then mostly the partial wave l ≈ L/ħ − ½ (spread over about one unit). `quantum.js` solves
+  the radial Schrödinger equation for each partial wave at the electron's real energy, overlaps it
+  with every orbital up to n = 6 (the dipole overlap), and gets each partial wave's chance of
+  being caught into each orbital (photo-recombination, by detailed balance with photoionization).
+  Checks: photoionization of 1s at threshold comes out 6.30e-18 cm² (the known value); the total
+  matches Kramers' formula with its known Gaunt factors; averaged over a uniform beam the per-pass
+  odds give back the total. The HUD shows L, the real chance and the game's (the real one ×
+  600,000, `RATE_BOOST`). The best slow shot is not dead centre: a head-on pass is the l = 0 wave,
+  which can only land in p orbitals and is caught less often than the l = 1 wave.
 - **Aim cone:** the gun focuses the electron's wave from a 30 nm aperture, so the spot is about
   ƛ·D / 30 nm (ƛ is the electron's reduced wavelength, D the distance).
-- **Where the electron lands:** shell n in proportion to Kramers' partial cross sections, sub-level
-  l in proportion to 2l + 1 (a statistical simplification), then real lifetimes and branching
-  ratios down to 1s. Capture into n ≥ 5 is left out for now, so the red H-alpha line shows up in
-  about 1 capture in 6, fewer than in a real nebula.
+- **Where the electron lands:** one photon takes it straight from free to one orbital, any n up
+  to 6 (1s is the most likely single one), chosen from the computed odds for this pass. Light
+  changes l by exactly one, so the orbital follows the pass: a head-on pass lands in p orbitals,
+  l = 1 lands mostly in 1s, l = 3 mostly in 3d. m is the pass's angular momentum about the atom's
+  axis, as far as l allows. Then it steps down to 1s, often skipping levels (3p → 1s directly,
+  for instance), with lifetimes and branching computed from the orbitals' overlaps (they match the
+  measured ones: 2p 1.60 ns, 3d 15.5 ns, 3p → 1s in 88%). Capture above n = 6 is left out.
 - **2s** can't give off a single photon by itself. Left alone it gives off two, sharing 10.2 eV,
   after about 0.12 s: 76 million times longer than 2p, and it is not cut short, so a lone 2s atom
   just waits. What lets it go is the electric field of a loose charge (a bare proton or a free
@@ -175,29 +186,44 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - `physics.js` also has what a sealed mirror box would need (photoionization rates, Saha
     balance). With a perfect mirror, 11 protons would settle about 75% ionized near 15,000 °C,
     which is why light has to leave for hydrogen to stay neutral.
-  - *Not modelled:* H₂ and H₂⁺ bonding, H⁻, free–free absorption, two-photon absorption, capture into n ≥ 5, and field mixing of the n = 3
-    and n = 4 sub-levels (the same fields that let 2s go also blend 3s, 3p and 3d).
+  - *Not modelled:* H₂ and H₂⁺ bonding, H⁻, free–free absorption, two-photon absorption, capture
+    above n = 6, fine structure above n = 2, field ionization of high levels, and mixing between
+    shells (the field's effect inside a shell is first order). The pull on excited atoms (above)
+    still uses the leaning Stark state; the clouds now show that a state that starts as one orbital
+    keeps its charge centred, so that pull is due to be brought in line.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 10 more protons appear at random spots (at least
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
-- **Pacing of a capture:** the electron spirals in over 3 s. Each step down then swings for its
+- **Pacing of a capture:** the capture takes 3 s on screen. Each step down then swings for its
   real (sped-up) lifetime while sending its wave, and when its photon is found the atom settles
   into the lower level over 0.5 s.
-- **Capture moment:** the photon leaves from the electron's position, and the electron's glow is
-  then drawn spiralling into its new cloud over 2.2 s. In nature the change is a sudden quantum
-  jump; the spiral only shows which electron went where.
-- **Clouds lean in fields (no wobble):** a lone 1s atom is perfectly round and still, so there is no
-  random shimmer. Nearby charges bend each cloud by the same field that moves the atom: 1s is drawn
-  with the exact first-order wave in a field, ψ·(1 − (F·r)(1 + r/2)) (Dalgarno–Lewis), which is
-  stiff (a proton 1 nm away moves it about 1%); fields above 0.02 atomic units (a proton closer
-  than about 0.37 nm) are capped, because there the electron starts to be shared (H₂⁺). Excited
-  clouds are shifted by their full Stark dipole, so they lean visibly. Clouds also change shape
-  when light drives them and while they step down (two shapes beating), as before.
+- **Capture moment: one wave the whole way.** The free electron's own partial wave near the
+  proton (computed at its energy, the l it came in with) turns smoothly into the orbital it lands
+  in, sloshing between the two at the light's frequency, while the electron's point fades into the
+  middle. There is no spiral: the electron never orbits like a planet, and it is never in two
+  separate orbitals at once.
+- **One electron, one cloud.** Between two levels the cloud is one wave made of both shapes,
+  sloshing at the light's real frequency (that slosh is the swinging charge that sends the light).
+  Faster than 1.2 swings per screen second it is shown at 1.2 (0.5 in Glow view) rather than
+  blurred into two nested shapes, which would also flicker. The only clouds drawn as two shapes
+  added together are atoms sharing an excitation with other atoms: then this atom's part of the
+  shared state really is split between two possibilities.
+- **Clouds in fields, computed (no wobble, no shift):** a lone 1s atom is perfectly round and
+  still. A 1s cloud has no partner in its shell, so a field only stretches it a little: the exact
+  first-order wave ψ·(1 − (F·r)(1 + r/2)) (Dalgarno–Lewis), stiff (a proton 1 nm away moves it
+  about 1%), capped above 0.02 atomic units where H₂⁺ would start. In an excited shell every l has
+  the same energy, so even a weak field mixes them (the linear Stark effect). `quantum.js` builds
+  the field's matrix inside the shell, diagonalises it, and steps the electron's amplitudes
+  exactly in it every frame; the cloud is drawn as that mixture of orbitals, about the field's
+  line and centred on its proton. The field's energy F·z commutes with z inside the shell, so a
+  state that starts as one orbital keeps its charge centred while its shape sloshes (3d to 3s and
+  3p and back). The field also changes the odds of each step down: a mixed 3d can leave from its
+  3p part straight to 1s. 2s keeps the Lamb shift, so it stays 2s in fields below about 477 V/cm.
 - **Radiation names:** every photon is named by kind (`classify` in `physics.js`: gamma, X-ray,
   extreme / far UV, UV-C / B / A, the visible colours, near / short-wave / mid / long-wave / far IR,
-  microwave, radio) and by hydrogen series (Lyman, Balmer, Paschen, Brackett; "continuum" for the
+  microwave, radio) and by hydrogen series (Lyman, Balmer, Paschen, Brackett, Pfund; "continuum" for the
   capture photon).
 - **Ship:** obeys Newton's first law. Keys fire thrusters (5 nm/s², 15 with Shift), the ship
   coasts when you let go, X brakes, and the system's wall bounces it back softly.

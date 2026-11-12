@@ -3,7 +3,8 @@
 // Beat 1: meet the proton (its field and glow). The system starts with only the proton in it.
 // Beat 2: catch an electron with the electron gun, then watch the cascade of light down to 1s.
 import * as P from './physics.js';
-import { waveDesc, extentBohr } from './orbitals.js';
+import { waveDesc, extentBohr, angularNorm, legendre } from './orbitals.js';
+import * as Q from './quantum.js';
 import { createRenderer, Lines } from './render.js';
 import * as W from './light.js';
 import * as M from './mat4.js';
@@ -232,8 +233,9 @@ function aimInfo() {
     const rel = v3.sub(muzzle, info.target.p.pos), dir = v3.norm(v3.sub(aimPoint, muzzle));
     const h = v3.len(v3.cross(rel, dir)) * P.electronSpeed(launchKE(E, v3.len(rel)));
     info.rp = P.periapsisFromL(h, E);
-    info.chance = P.captureChanceGame(E, info.rp);
-    info.real = P.captureChanceReal(E, info.rp);
+    info.L = P.angularL(h);   // what the odds depend on: the pass's angular momentum (ħ)
+    info.chance = P.captureChanceGame(E, info.L);
+    info.real = P.captureChanceReal(E, info.L);
   }
   return info;
 }
@@ -271,6 +273,76 @@ function desc(s) {
   const k = `${s.n},${s.l},${s.m}`;
   if (!descCache.has(k)) descCache.set(k, waveDesc(s.n, s.l, s.m, 1, true));
   return descCache.get(k);
+}
+
+// ---------------------------------------------------------------------------
+// The electron's wave in each atom (quantum.js does the maths)
+// ---------------------------------------------------------------------------
+// Each atom keeps its electron's amplitudes over the orbitals of its shell (a.c, one per l, all
+// with the same m about the atom's own axis a.axis). Inside a shell every l has the same energy,
+// so a nearby charge's field mixes them (the linear Stark effect): the amplitudes evolve exactly in
+// that field and the cloud sloshes from shape to shape, always centred on its proton. The axis
+// follows the field's direction. Sloshing faster than SWING_HZ on screen is shown at SWING_HZ (no
+// flicker); the odds of each step down use the true average over the sloshing.
+const FIELD_MIN = 1e-5;   // V/nm: in a weaker field the axis stays where it is
+const shellLs = (n, m) => { const o = []; for (let l = Math.abs(m); l < n; l++) o.push(l); return o; };
+function setPure(a, st) {
+  a.st = st;
+  const ls = shellLs(st.n, st.m);
+  a.c = { re: ls.map(l => (l === st.l ? 1 : 0)), im: ls.map(() => 0) };
+  a.shellKey = `${st.n},${st.m}`;
+}
+function shellOf(a) { if (!a.c || a.shellKey !== `${a.st.n},${a.st.m}`) setPure(a, a.st); return a.c; }
+// The field along the atom's axis (atomic units). With dt, the axis turns toward the field's line.
+function fieldAlong(a, dt = 0) {
+  const F = P.fieldAt(a.p.pos, S.ps), Fm = v3.len(F);
+  if (!a.axis) a.axis = Fm > FIELD_MIN ? v3.scale(F, 1 / Fm) : [0, 1, 0];
+  if (Fm > FIELD_MIN && dt > 0) {
+    let u = v3.scale(F, 1 / Fm);
+    if (v3.dot(u, a.axis) < 0) u = v3.scale(u, -1);   // the same line: the field just points the other way along it
+    a.axis = v3.norm(v3.add(a.axis, v3.scale(v3.sub(u, a.axis), 1 - Math.exp(-dt * 6))));
+  }
+  return v3.dot(F, a.axis) / Q.F_AU;
+}
+// The fastest swing (rad per fs) that still shows at `hz` per screen second right now.
+const capOmega = hz => 2 * Math.PI * hz / (FS_PER_S * SPEEDS[S.speed] * Math.max(S.slow, 1e-9));
+const showHz = () => (S.fieldView ? SWING_HZ : 0.5);
+function stepShell(a, dt, dtFs) {
+  if (a.pair || a.mix) { a.axis = [0, 1, 0]; return; }   // sharing an excitation: drawn in the system's frame
+  const c = shellOf(a), F = fieldAlong(a, dt);
+  if (c.re.length < 2 || !F) return;
+  const w = Q.shellAverage(a.st.n, a.st.m, F, c).w / Q.T_AU_FS;   // rad/fs
+  a.c = Q.evolveShell(a.st.n, a.st.m, F, c, dtFs * Math.min(1, capOmega(showHz()) / Math.max(w, 1e-30)) / Q.T_AU_FS);
+}
+// Which orbital of the shell the next step down leaves from: each l's share (averaged over the
+// sloshing) times its own decay rate. Returns that state and the shell's lifetime as it is mixed.
+function shellDecay(a) {
+  const c = shellOf(a);
+  if (c.re.length < 2) return { st: a.st, tauNs: null };
+  const { ls, p } = Q.shellAverage(a.st.n, a.st.m, fieldAlong(a), c);
+  const rates = ls.map((l, i) => p[i] / P.DECAY[`${a.st.n},${l}`].tau), tot = rates.reduce((x, y) => x + y, 0);
+  const i = P.pickWeighted(ls.map((_, k) => k), k => rates[k]);
+  return { st: { ...a.st, l: ls[i] }, tauNs: 1 / tot, mixed: p[ls.indexOf(a.st.l)] < 0.98 };
+}
+// The cloud as the shader draws it: a blend of orbitals in the atom's own frame.
+const cmul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+const termOf = (st, c, g = 0) => { const d = desc(st); return { n: st.n, l: st.l, m: st.m, mode: d.mode, norm: d.norm, c, g, peak: d.peak, iso: d.iso }; };
+function shellTerms(a, amp) {
+  const c = shellOf(a), ls = shellLs(a.st.n, a.st.m), out = [];
+  ls.forEach((l, i) => { const k = cmul(amp, [c.re[i], c.im[i]]); if (k[0] * k[0] + k[1] * k[1] > 1e-6) out.push(termOf({ n: a.st.n, l, m: a.st.m }, k)); });
+  return out;
+}
+const angPeakCache = new Map();
+function freeTerm(cap, amp) {
+  const { lIn: l, mIn: m } = cap, mode = m === 0 ? 0 : m > 0 ? 1 : 2, key = `${l},${m}`;
+  if (!angPeakCache.has(key)) { let b = 0; for (let j = 0; j <= 90; j++) b = Math.max(b, legendre(l, Math.abs(m), Math.cos(Math.PI * j / 90)) ** 2); angPeakCache.set(key, b); }
+  const norm = angularNorm(l, m) * (mode ? Math.SQRT2 : 1), peak = cap.free.peak * norm * norm * angPeakCache.get(key);
+  return { n: 0, l, m, mode, norm, c: amp, g: 0, peak, iso: 0.15 * peak };
+}
+function frameOf(a) {
+  const y = a.pair || a.mix || !a.axis ? [0, 1, 0] : a.axis;
+  const x = v3.norm(v3.cross(Math.abs(y[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1], y)), z = v3.cross(x, y);
+  return [x, y, z];
 }
 // Light leaves as Maxwell's equations say it does (light.js): an atom changing level swings its
 // charge like a tiny antenna, and the exact field of that swing spreads out at the speed of light,
@@ -441,12 +513,25 @@ function photonColor(lam) {
   return c.map(x => x * k);
 }
 function capture(e, p, E) {
-  const st = P.pickCaptureState(Math.max(E, 0.01));
-  const lam = P.captureLambda(Math.max(E, 0), st.n);
+  // The pass's angular momentum (in units of ħ) picks the free wave's l; light changes l by one.
+  const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
+  const Lv = v3.scale(v3.cross(off, rel), P.ME / P.HBAR), Lh = v3.len(Lv);
+  const pick = P.pickCaptureState(Math.max(E, 0.01), Lh);
+  const lam = P.captureLambda(Math.max(E, 0), pick.n);
   e.active = false;
   S.ps = S.ps.filter(x => x !== e);
   p.q = 0;                                  // the pair is neutral now: only the atom's weak pulls (see physics.js)
-  const atom = { p, st, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
+  // The atom's axis: the field's line where there is a field (that is what mixes the shell), else
+  // the pass's own spin axis. m: the pass's angular momentum about that axis, as far as l allows.
+  const F0 = P.fieldAt(p.pos, S.ps);
+  const axis = v3.len(F0) > FIELD_MIN ? v3.norm(F0) : Lh > 1e-6 ? v3.norm(Lv) : [0, 1, 0];
+  const mAbs = Math.min(pick.l, Math.round(Math.abs(v3.dot(Lv, axis)))), m = mAbs && Math.random() < 0.5 ? -mAbs : mAbs;
+  const st = { n: pick.n, l: pick.l, m };
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
+  setPure(atom, st);
+  // The capture itself: the free electron's wave (its l = pick.lIn part, solved at its energy) turns
+  // into the orbital over FALL_DUR, one wave the whole way, sloshing at the light's frequency.
+  atom.capt = { t: 0, lIn: pick.lIn, mIn: Math.sign(m) * Math.min(Math.abs(m), pick.lIn), free: Q.freeRadialTable(Math.max(E, 0.01), pick.lIn, extentBohr(st.n, 1)), w: 2 * Math.PI * P.C / lam };
   S.atoms.push(atom);
   // Momentum is kept: the atom moves on with the pair's shared momentum, minus the photon's kick.
   p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
@@ -455,11 +540,10 @@ function capture(e, p, E) {
   const pdir = emitPhoton(e.pos, lam, 'lin', randomDir(), atom);
   p.vel = v3.sub(p.vel, v3.scale(pdir, (P.HC / lam) / P.C / P.MP));
   S.flashes.push({ pos: [...e.pos], col: [0.55, 0.6, 0.75], t: 0, life: 1.2, size: 0.8 });
-  const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
-  let axis = v3.cross(off, rel); axis = v3.len(axis) > 1e-12 ? v3.norm(axis) : [0, 1, 0];
-  S.falling.push({ e, atom, off, axis, t: 0 });
+  S.falling.push({ e, atom, off, t: 0 });
   S.lastPhoton = { lam, nLow: st.n, capture: true };
   log(`Captured into ${P.stateName(st)}: one ${lam.toFixed(1)} nm photon carries off ${(P.HC / lam).toFixed(2)} eV. ${describe(lam, st.n, true, true)}.`, 'hit');
+  if ((S.capSaid = (S.capSaid || 0) + 1) <= 3) log(`It swung past with angular momentum ${Lh.toFixed(1)} ħ, so its wave there was mostly l = ${pick.lIn} (${P.L_NAMES[pick.lIn]}). Light changes l by exactly one, so it could only land in ${[pick.lIn - 1, pick.lIn + 1].filter(x => x >= 0).map(x => P.L_NAMES[x]).join(' or ')} orbitals.`);
   if (st.n === 1) log('Straight to 1s! That happens: a single ultraviolet photon, shorter than 91.2 nm, takes all the energy at once.', 'hit');
   scheduleDecay(atom);
   atom.hold += FALL_DUR;                    // let the electron settle in before the next step down
@@ -475,7 +559,13 @@ function capture(e, p, E) {
 // 2s: its two-photon decay really takes 0.12 s, 76 million times longer than 2p, so left alone it
 // outlasts any game. What lets it go sooner is a loose charge's electric field (quench2s).
 function scheduleDecay(atom) {
+  const mix = shellDecay(atom);
+  if (mix.st.l !== atom.st.l) {
+    if ((S.mixSaid = (S.mixSaid || 0) + 1) <= 2) log(`A nearby charge's electric field is mixing ${P.stateName(atom.st)} with the rest of shell n = ${atom.st.n}, so this time it steps down from its ${P.stateName(mix.st)} part.`);
+    atom.st = mix.st;
+  }
   const d = P.pickDecay(atom.st);
+  if (d && mix.tauNs && !d.twoPhoton) { d.delayNs = P.sampleExp(mix.tauNs); d.tauNs = mix.tauNs; }
   atom.pending = d;
   if (!d) return;
   atom.waitFs = d.delayNs * 1e6 / P.RATE_BOOST;
@@ -686,7 +776,7 @@ function describe(lam, nLow, capture, cap = false) {
 // upper level fades as exp(−t/τ). The photon leaves after the atom's sampled real lifetime (on the
 // game's sped-up clock), and when the photon is found the atom settles into the lower level.
 function startEmission(a, d) {
-  const lam = d.photons[0], tauNs = d.quenched ? 2 * P.DECAY['2,1'].tau : P.DECAY[`${a.st.n},${a.st.l}`].tau;
+  const lam = d.photons[0], tauNs = d.quenched ? 2 * P.DECAY['2,1'].tau : d.tauNs || P.DECAY[`${a.st.n},${a.st.l}`].tau;
   const quick = a.reex && !watched(a);
   a.emitL = startLight({ pos: a.p.pos, lam, pattern: d.dm === 0 ? 'lin' : 'circ', axis: d.axis || [0, 1, 0], from: a,
     show: quick ? LIGHT_QUICK : LIGHT_SHOW, tau: lifetimeFs(tauNs), launchIn: d.quenched ? 0 : a.waitFs,
@@ -725,10 +815,15 @@ function updateAtoms(dt, dtFs) {
   for (const a of S.atoms) {
     a.fade = Math.min(1, a.fade + dt / FALL_DUR);
     a.p.glow = Math.max(0, a.p.glow - dt / FALL_DUR);   // the electron's field cancels the proton's outside the atom
-    a.phase = (a.phase || 0) + dtFs * cloudOmega(a);   // the cloud's swing, at its real frequency
+    // The cloud's swing between two levels: at its real frequency, or at the fastest that shows
+    // without flicker (SWING_HZ on screen), so it is always one wave sloshing, never a blur of two.
+    const cap = capOmega(showHz());
+    a.phase = (a.phase || 0) + dtFs * Math.min(cloudOmega(a), cap);
+    if (a.capt) { a.capt.t += dt; a.capt.phase = (a.capt.phase || 0) + dtFs * Math.min(a.capt.w, cap); if (a.capt.t >= FALL_DUR) a.capt = null; }
+    stepShell(a, dt, dtFs);
     if (a.trans) {
       a.trans.t += dt;
-      if (a.trans.t >= a.trans.dur) { a.st = a.trans.to; a.trans = null; if (a.st.n === 1) a.reex = false; scheduleDecay(a); }
+      if (a.trans.t >= a.trans.dur) { setPure(a, a.trans.to); a.trans = null; if (a.st.n === 1) a.reex = false; scheduleDecay(a); }
       continue;
     }
     if (a.mix && a.mix.fade) { a.mix.w *= Math.exp(-dt * 4); if (a.mix.w < 0.01) a.mix = null; }
@@ -796,10 +891,11 @@ function onPass(ev) {
   if (p.q !== 1) return;
   e.passes++;
   const E = Math.max(ev.E, 0.01);
-  const chance = P.captureChanceGame(E, rp), real = P.captureChanceReal(E, rp);
+  const L = P.angularL(v3.len(v3.cross(v3.sub(e.pos, p.pos), v3.sub(e.vel, p.vel))));
+  const chance = P.captureChanceGame(E, L), real = P.captureChanceReal(E, L);
   const caught = Math.random() < chance;
   const who = e.freed ? 'freed electron' : `shot ${e.shot}`;
-  S.passes.unshift({ who, pass: e.passes, rp, E, chance, real, caught });
+  S.passes.unshift({ who, pass: e.passes, rp, E, L, chance, real, caught });
   S.passes.length = Math.min(S.passes.length, 4);
   renderPasses();
   if (caught) { capture(e, p, E); return; }
@@ -807,7 +903,7 @@ function onPass(ev) {
 }
 function renderPasses() {
   $('passes').innerHTML = S.passes.length ? S.passes.map(p =>
-    `<div class="${p.caught ? 'hit' : p.E > 3 ? 'fast' : 'miss'}">${p.who}${p.pass > 1 ? ` (pass ${p.pass})` : ''}: ${fmtNm(p.rp)} at ${p.E.toFixed(2)} eV · ${fmtChance(p.chance)} · ${p.caught ? 'CAUGHT' : 'missed'} <span class="fine">(real ${fmtOdds(p.real)})</span></div>`).join('')
+    `<div class="${p.caught ? 'hit' : p.E > 3 ? 'fast' : 'miss'}">${p.who}${p.pass > 1 ? ` (pass ${p.pass})` : ''}: ${fmtNm(p.rp)} at ${p.E.toFixed(2)} eV, L ${p.L.toFixed(1)} ħ · ${fmtChance(p.chance)} · ${p.caught ? 'CAUGHT' : 'missed'} <span class="fine">(real ${fmtOdds(p.real)})</span></div>`).join('')
     : '<div class="miss">No passes yet.</div>';
 }
 
@@ -1080,7 +1176,7 @@ function restart() {
 // HUD instruments
 // ---------------------------------------------------------------------------
 const spec = $('spectro'), sctx = spec.getContext('2d');
-const LMIN = 60, LMAX = 2500;
+const LMIN = 60, LMAX = 8000;   // out to 7.5 µm: the Pfund-α line from n = 6
 const lx = (lam, W) => (Math.log(lam / LMIN) / Math.log(LMAX / LMIN)) * W;
 function drawSpectro() {
   const W = spec.width, H = spec.height;
@@ -1095,14 +1191,14 @@ function drawSpectro() {
   }
   sctx.font = '20px ui-monospace, monospace';
   // Radiation zones along the top: extreme UV, far UV, near UV, visible, near IR, short-wave IR.
-  const zones = [[LMIN, 'EUV'], [100, 'far UV'], [200, 'near UV'], [380, 'visible'], [750, 'near IR'], [1400, 'SWIR']];
+  const zones = [[LMIN, 'EUV'], [100, 'far UV'], [200, 'near UV'], [380, 'visible'], [750, 'near IR'], [1400, 'SWIR'], [3000, 'mid IR']];
   for (const [l0, name] of zones) {
     const x = l0 === LMIN ? 0 : lx(l0, W);
     sctx.fillStyle = 'rgba(214,226,238,.18)'; if (x > 0) sctx.fillRect(x, 0, 1, 30);
     sctx.fillStyle = 'rgba(214,226,238,.5)'; sctx.fillText(name, x + 8, 22);
   }
   sctx.fillStyle = 'rgba(214,226,238,.5)';
-  for (const t of [100, 200, 500, 1000, 2000]) { const x = lx(t, W); sctx.fillRect(x, H - 20, 2, 6); sctx.fillText(`${t}`, x + 4, H - 22); }
+  for (const t of [100, 200, 500, 1000, 2000, 5000]) { const x = lx(t, W); sctx.fillRect(x, H - 20, 2, 6); sctx.fillText(`${t}`, x + 4, H - 22); }
   // Lyman limit (91.2 nm): shorter than this means a capture straight to 1s.
   const xl = lx(91.18, W); sctx.fillStyle = 'rgba(214,226,238,.25)'; sctx.fillRect(xl, 30, 1, H - 50);
   const seen = new Map();
@@ -1164,7 +1260,7 @@ function updateHud() {
   if (S.beat < 2) { $('aimOut').textContent = 'The gun unlocks once you have looked around the proton.'; ch.classList.remove('on'); return; }
   if (a.target && a.rp !== undefined) {
     ch.classList.toggle('on', a.chance > 0.05);
-    $('aimOut').innerHTML = `Aimed: closest pass ≈ ${fmtNm(a.rp)} · chance ${fmtChance(a.chance)} <span class="fine">(real ${fmtOdds(a.real)})</span> · cone ±${fmtNm(a.cone)}`;
+    $('aimOut').innerHTML = `Aimed: closest pass ≈ ${fmtNm(a.rp)}, L ≈ ${a.L.toFixed(1)} ħ · chance ${fmtChance(a.chance)} <span class="fine">(real ${fmtOdds(a.real)})</span> · cone ±${fmtNm(a.cone)}`;
   } else {
     ch.classList.remove('on');
     $('aimOut').innerHTML = `Not aimed at a proton · cone ±${fmtNm(a.cone)}`;
@@ -1381,13 +1477,11 @@ function coneLines(a) {
   }
 }
 
-// The caught electron spirals in from where it was caught and melts into its cloud.
+// The caught electron's point fades into the middle of its new cloud as its free wave becomes the
+// orbital (the cloud shows the wave; the point is only where the electron was seen last).
 function fallPos(f, t = f.t) {
-  const x = Math.min(1, t / FALL_DUR), s = x * x * (3 - 2 * x);
-  const r0 = v3.len(f.off), r1 = P.A0 * f.atom.st.n * f.atom.st.n, r = r0 + (r1 - r0) * s;
-  const ang = 3 * Math.PI * s, u = v3.norm(f.off), w = v3.cross(f.axis, u);
-  const dir = v3.add(v3.scale(u, Math.cos(ang)), v3.scale(w, Math.sin(ang)));
-  return v3.add(f.atom.p.pos, v3.scale(dir, r * (1 - 0.7 * s * s)));
+  const x = Math.min(1, t / (0.5 * FALL_DUR)), s = x * x * (3 - 2 * x);
+  return v3.add(f.atom.p.pos, v3.scale(f.off, 1 - s));
 }
 function flatViews() {
   const dpr = Math.min(devicePixelRatio || 1, 1.5);
@@ -1409,48 +1503,44 @@ function draw(views, panel) {
   for (const f of S.falling) {
     const pos = fallPos(f), k = 1 - f.t / FALL_DUR;
     charges.push({ pos, q: -k, smear: 0.05 });
-    fallGlows.push({ pos, size: 0.008 + 0.02 * k, col: [0.45 * k, 0.65 * k, k] });
+    const g = Math.max(0, 1 - f.t / (0.5 * FALL_DUR));
+    fallGlows.push({ pos, size: 0.008 + 0.012 * g, col: [0.45 * g, 0.65 * g, g] });
   }
   const clouds = S.atoms.map(a => {
-    const A = desc(a.st);
-    // Two shapes at once, beating at the real frequency of the light between them (Schrödinger's
-    // equation: the beat is what swings the charge). Drawn as the beat itself when it is slow enough
-    // to see, or as its average (the two densities simply added) when it is too fast to show.
-    const two = (Bd, up, nA, nB) => {
-      const w = cloudOmega(a), k = avgShare(w), pk = Math.max(A.peak, Bd.peak), cb = Math.sqrt(Math.max(0, 1 - up));
-      return { pos: a.p.pos, radius: extentBohr(Math.max(nA, nB), 1) * P.A0, A, B: Bd, cA: [Math.sqrt(up), 0],
-        cB: [cb * Math.cos(-a.phase), cb * Math.sin(-a.phase)], inc: k,
-        invMax: 1 / pk, iso: (up * A.iso + (1 - up) * Bd.iso) / pk, fade: a.fade };
-    };
-    if (a.trans) {
+    // Every cloud is one electron's wave: a blend of orbitals (all of its shell, as the field mixes
+    // them), centred on its proton. Between two levels it is the two shapes in one wave, sloshing at
+    // the light's frequency (Schrödinger's equation: the slosh is what swings the charge).
+    const two = (to, w, ph) => [...shellTerms(a, [Math.sqrt(w), 0]), termOf(to, [Math.sqrt(Math.max(0, 1 - w)) * Math.cos(-ph), Math.sqrt(Math.max(0, 1 - w)) * Math.sin(-ph)])];
+    let terms, free = null, nMax = a.st.n;
+    if (a.capt) {
+      // Being caught: the free electron's wave near the proton turns smoothly into the orbital.
+      const x = Math.min(1, a.capt.t / FALL_DUR), s = x * x * (3 - 2 * x), ph = a.capt.phase || 0;
+      free = a.capt.free;
+      terms = [freeTerm(a.capt, [Math.sqrt(1 - s), 0]), ...shellTerms(a, [Math.sqrt(s) * Math.cos(-ph), Math.sqrt(s) * Math.sin(-ph)])];
+    } else if (a.trans) {
       const x = Math.min(1, a.trans.t / a.trans.dur), s0 = a.trans.s0 || 0, s = s0 + (1 - s0) * x * x * (3 - 2 * x);
-      return two(desc(a.trans.to), Math.cos(s * Math.PI / 2) ** 2, a.st.n, a.trans.to.n);
-    }
-    if (a.emitL && a.pending) return two(desc(a.pending.to), W.emitterShare(S.simFs - a.emitL.em.t0, a.emitL.em.tau), a.st.n, a.pending.to.n);
-    if (a.mix) {
-      // Sharing an excitation: part this shape, part that one, with no sloshing between them
-      // (the two parts belong to different joint states of the pair, so their densities just add).
-      const Bd = desc(a.mix.st), w = Math.max(0, Math.min(1, a.mix.w)), pk = Math.max(A.peak, Bd.peak), g = Math.min(1, w / 0.05);
-      const rA = extentBohr(a.st.n, 1), rB = extentBohr(a.mix.st.n, 1);
-      return { pos: a.p.pos, radius: (rB > rA ? rA + (rB - rA) * g : rA) * P.A0, A, B: Bd, cA: [Math.sqrt(1 - w), 0], cB: [Math.sqrt(w), 0], inc: 1,
-        invMax: 1 / pk, iso: ((1 - w) * A.iso + w * Bd.iso) / pk, fade: a.fade };
-    }
-    return { pos: a.p.pos, radius: extentBohr(a.st.n, 1) * P.A0, A, B: A, cA: [1, 0], cB: [0, 0], invMax: 1 / A.peak, iso: A.iso / A.peak, fade: a.fade };
-  }).map((c, i) => {
-    // Nearby charges bend the cloud by its real polarizability (no random shimmer: a lone 1s atom
-    // is perfectly round and still). 1s is stiff: a proton 1 nm away moves it about 1%; excited
-    // clouds lean much more. Light and jumps already reshape the cloud above (two shapes beating).
-    const a = S.atoms[i], F = P.fieldAt(a.p.pos, S.ps), Fm = v3.len(F);
-    if (a.st.n === 1) {
-      // Past about 0.02 atomic units (a proton closer than ~0.37 nm) the small-lean picture no longer
-      // holds: the electron starts to be shared by both protons (H₂⁺), which comes with the H₂ work.
-      const k = Math.min(1 / P.EAU, LEAN_MAX_AU / Math.max(Fm, 1e-30));
-      c.lean = [F[0] * k, F[1] * k, F[2] * k, 0];
-    }
-    else if (Fm > 0) {
-      const d = P.dipoleMag(Fm, P.atomPol(a.st.n)) / Fm;   // nm per (V/nm): the electron moves against the field
-      c.lean = [-F[0] * d / P.A0, -F[1] * d / P.A0, -F[2] * d / P.A0, 1];
-      c.radius += d * Fm;
+      terms = two(a.trans.to, Math.cos(s * Math.PI / 2) ** 2, a.phase); nMax = Math.max(nMax, a.trans.to.n);
+    } else if (a.emitL && a.pending) {
+      terms = two(a.pending.to, W.emitterShare(S.simFs - a.emitL.em.t0, a.emitL.em.tau), a.phase); nMax = Math.max(nMax, a.pending.to.n);
+    } else if (a.mix) {
+      // Sharing an excitation with other atoms: this atom's electron is entangled with theirs, so its
+      // two parts belong to different joint states and their densities add (group 1).
+      const w = Math.max(0, Math.min(1, a.mix.w));
+      terms = [termOf(a.st, [Math.sqrt(1 - w), 0]), termOf(a.mix.st, [Math.sqrt(w), 0], 1)];
+      nMax = w > 0.05 ? Math.max(nMax, a.mix.st.n) : nMax;
+    } else terms = shellTerms(a, [1, 0]);
+    let wsum = 0, pk = 0, iso = 0;
+    for (const t of terms) { const w = t.c[0] ** 2 + t.c[1] ** 2; wsum += w; pk += w * t.peak; iso += w * t.iso; }
+    pk /= Math.max(wsum, 1e-9); iso /= Math.max(wsum, 1e-9);
+    const radius = Math.max(extentBohr(nMax, 1), free ? free.rmax : 0) * P.A0;
+    const c = { pos: a.p.pos, radius, frame: frameOf(a), terms, free, invMax: 1 / pk, iso: iso / pk, fade: Math.min(1, a.fade * 3) };
+    // A 1s cloud has no partner in its shell, so a field only stretches it a little (second order):
+    // a proton 1 nm away moves it about 1%. Past about 0.02 atomic units (a proton closer than
+    // ~0.37 nm) the small-lean picture no longer holds: the electron starts to be shared by both
+    // protons (H₂⁺), which comes with the H₂ work.
+    if (a.st.n === 1 && terms.length === 1 && !a.capt) {
+      const F = P.fieldAt(a.p.pos, S.ps), Fm = v3.len(F), k = Math.min(1 / P.EAU, LEAN_MAX_AU / Math.max(Fm, 1e-30));
+      c.lean = [F[0] * k, F[1] * k, F[2] * k, 1];
     }
     return c;
   });
@@ -1468,11 +1558,6 @@ function draw(views, panel) {
   for (const e of freeElectrons()) {
     for (let i = 1; i < e.trail.length; i++) lines.seg(e.trail[i - 1], e.trail[i], [0.3, 0.5, 1], 0.08 + 0.4 * i / e.trail.length);
     if (e.trail.length) lines.seg(e.trail[e.trail.length - 1], e.pos, [0.3, 0.5, 1], 0.5);
-  }
-  for (const f of S.falling) {
-    const n = 40, pts = [];
-    for (let i = 0; i <= n; i++) pts.push(fallPos(f, f.t * i / n));
-    for (let i = 1; i <= n; i++) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], 0.5 * (i / n) * (1 - f.t / FALL_DUR));
   }
   const strength = L => (L.launched && !L.caught ? 2 : 0) + W.envelope(L.em, Math.min(S.simFs, L.em.tEnd));
   for (const L of [...S.light].sort((x, y) => strength(y) - strength(x)).slice(0, MAX_DRAWN_LIGHTS)) lightLines(L);
