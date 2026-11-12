@@ -25,8 +25,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 ## The physics, and where it is simplified
 
 - **Motion** is classical Coulomb motion of every charge (velocity Verlet with adaptive steps).
-  Matter bounces off the wall without losing energy, in a random direction as real surfaces
-  scatter (Knudsen's cosine law); light passes through it.
+  Matter bounces off the wall without losing energy, like a ball off a curved mirror (angle in
+  equals angle out); light passes through it.
 - **Capture odds per pass.** The total chance follows Kramers' cross section for radiative
   recombination into n = 1 to 4. How it depends on the closest approach r_p follows the classical
   radiated energy near closest approach (∝ r_p^−5/2), softened inside about the size of the n = 2
