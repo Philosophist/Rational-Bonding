@@ -16,7 +16,7 @@ uniform vec4 uQ[${MAX_CHARGES}]; uniform float uQs[${MAX_CHARGES}]; uniform int 
 uniform int uNA; uniform vec3 uAP[${MAX_CLOUDS}]; uniform float uAR[${MAX_CLOUDS}]; uniform float uAS;
 uniform ivec3 uQA[${MAX_CLOUDS}]; uniform int uModeA[${MAX_CLOUDS}]; uniform float uNormA[${MAX_CLOUDS}]; uniform vec2 uCA[${MAX_CLOUDS}];
 uniform ivec3 uQB[${MAX_CLOUDS}]; uniform int uModeB[${MAX_CLOUDS}]; uniform float uNormB[${MAX_CLOUDS}]; uniform vec2 uCB[${MAX_CLOUDS}];
-uniform float uInvMax[${MAX_CLOUDS}]; uniform float uIso[${MAX_CLOUDS}]; uniform float uFade[${MAX_CLOUDS}]; uniform float uWob[${MAX_CLOUDS}]; uniform float uInc[${MAX_CLOUDS}];
+uniform float uInvMax[${MAX_CLOUDS}]; uniform float uIso[${MAX_CLOUDS}]; uniform float uFade[${MAX_CLOUDS}]; uniform vec4 uLean[${MAX_CLOUDS}]; uniform float uInc[${MAX_CLOUDS}];
 uniform vec4 uG[${MAX_GLOWS}]; uniform vec3 uGC[${MAX_GLOWS}]; uniform int uGN;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -56,28 +56,29 @@ vec3 phaseColor(vec2 w){
          + vec3(0.58,0.42,1.0)*max(sa,0.0) + vec3(1.0,0.72,0.25)*max(-sa,0.0);
   return c / (abs(ca) + abs(sa));
 }
-// Soap-bubble wobble: the cloud's surface breathes in a few slow shape modes (quadrupole and
-// octupole ripples, like a bubble's). An artistic hint that the shape can change; the real change
-// happens during a step down, when two shapes mix (uCB below).
-float wobble(int i, vec3 p){
-  float r = length(p); if (r < 1e-4) return 1.0;
-  vec3 n = p / r; float t = uTime + float(i) * 1.7;
-  float w = n.x*n.y * sin(2.3*t) + 0.5*(3.0*n.z*n.z - 1.0) * sin(1.7*t + 1.0)
-          + n.x*n.z * sin(2.9*t + 2.0) + (n.x*n.x - n.y*n.y) * sin(2.1*t + 4.0)
-          + 0.6 * n.x*n.y*n.z * 4.0 * sin(3.7*t + 0.5);
-  return 1.0 + uWob[i] * w;
+// How nearby charges' electric field bends the cloud (game.js works it out from the same field that
+// moves the atom). w = 0: a 1s cloud, xyz = the field in atomic units. To first order the exact 1s
+// wave in a field F becomes ψ·(1 − (F·r)(1 + r/2)) (Dalgarno and Lewis), which gives hydrogen's real
+// polarizability, 4.5 a₀³: the electron leans toward a proton and away from an electron. w = 1: an
+// excited cloud, shifted as a whole by xyz (Bohr radii), the size of its real Stark dipole.
+float leanFactor(int i, inout vec3 p){
+  vec4 L = uLean[i];
+  if (L.w > 0.5) { p -= L.xyz; return 1.0; }
+  return clamp(1.0 - dot(L.xyz, p) * (1.0 + 0.5 * length(p)), 0.0, 2.0);
 }
 vec4 sampleCloud(int i, vec3 pw){
   vec3 p = (pw - uAP[i]) * uAS;
-  p /= wobble(i, p);
-  vec2 w = cmul(uCA[i], psi(uQA[i], uModeA[i], uNormA[i], p));
+  float f = leanFactor(i, p);
+  vec2 w = cmul(uCA[i], psi(uQA[i], uModeA[i], uNormA[i], p)) * f;
   if (dot(uCB[i], uCB[i]) > 0.0) {
-    vec2 b = cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], p));
-    if (uInc[i] > 0.5) {   // two shapes whose densities add (no interference between them)
-      float da = dot(w, w), db = dot(b, b);
-      return vec4((phaseColor(w) * da + phaseColor(b) * db) / max(da + db, 1e-30), da + db);
-    }
+    vec2 b = cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], p)) * f;
+    // uInc 1: two shapes whose densities add (no interference between them). 0: they interfere
+    // (the beat that swings the charge). In between: a blend, as a fast beat blurs into its average.
+    float da = dot(w, w), db = dot(b, b);
+    vec4 added = vec4((phaseColor(w) * da + phaseColor(b) * db) / max(da + db, 1e-30), da + db);
+    if (uInc[i] >= 1.0) return added;
     w += b;
+    return mix(vec4(phaseColor(w), dot(w, w)), added, uInc[i]);
   }
   return vec4(phaseColor(w), dot(w, w));
 }
@@ -196,7 +197,7 @@ export function createRenderer(canvas) {
   const prog = link(VERT, FRAG, ['aPos']);
   const U = {};
   for (const n of ['uViewport', 'uCamPos', 'uInvVP', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
-    'uNA', 'uAP', 'uAR', 'uAS', 'uQA', 'uModeA', 'uNormA', 'uCA', 'uQB', 'uModeB', 'uNormB', 'uCB', 'uInvMax', 'uIso', 'uFade', 'uWob', 'uInc',
+    'uNA', 'uAP', 'uAR', 'uAS', 'uQA', 'uModeA', 'uNormA', 'uCA', 'uQB', 'uModeB', 'uNormB', 'uCB', 'uInvMax', 'uIso', 'uFade', 'uLean', 'uInc',
     'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(prog, n);
   const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
   const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb);
@@ -230,7 +231,7 @@ export function createRenderer(canvas) {
     ap: new Float32Array(MAX_CLOUDS * 3), ar: new Float32Array(MAX_CLOUDS),
     qa: new Int32Array(MAX_CLOUDS * 3), ma: new Int32Array(MAX_CLOUDS), na: new Float32Array(MAX_CLOUDS), ca: new Float32Array(MAX_CLOUDS * 2),
     qb: new Int32Array(MAX_CLOUDS * 3), mb: new Int32Array(MAX_CLOUDS), nb: new Float32Array(MAX_CLOUDS), cb: new Float32Array(MAX_CLOUDS * 2),
-    inv: new Float32Array(MAX_CLOUDS), iso: new Float32Array(MAX_CLOUDS), fade: new Float32Array(MAX_CLOUDS), wob: new Float32Array(MAX_CLOUDS), inc: new Float32Array(MAX_CLOUDS),
+    inv: new Float32Array(MAX_CLOUDS), iso: new Float32Array(MAX_CLOUDS), fade: new Float32Array(MAX_CLOUDS), lean: new Float32Array(MAX_CLOUDS * 4), inc: new Float32Array(MAX_CLOUDS),
   };
 
   // scene: { views:[{viewport:[x,y,w,h], camPos, VP, invVP}], time, sphereR, steps, bohrPerUnit,
@@ -251,13 +252,13 @@ export function createRenderer(canvas) {
       cl.ap.set(c.pos, i * 3); cl.ar[i] = c.radius;
       cl.qa.set([c.A.n, c.A.l, c.A.m], i * 3); cl.ma[i] = c.A.mode; cl.na[i] = c.A.norm; cl.ca.set(c.cA, i * 2);
       cl.qb.set([c.B.n, c.B.l, c.B.m], i * 3); cl.mb[i] = c.B.mode; cl.nb[i] = c.B.norm; cl.cb.set(c.cB, i * 2);
-      cl.inv[i] = c.invMax; cl.iso[i] = c.iso; cl.fade[i] = c.fade; cl.wob[i] = c.wobble || 0; cl.inc[i] = c.inc || 0;
+      cl.inv[i] = c.invMax; cl.iso[i] = c.iso; cl.fade[i] = c.fade; cl.lean.set(c.lean || [0, 0, 0, 0], i * 4); cl.inc[i] = c.inc || 0;
     }
     gl.uniform1i(U.uNA, na); gl.uniform1f(U.uAS, scene.bohrPerUnit);
     gl.uniform3fv(U.uAP, cl.ap); gl.uniform1fv(U.uAR, cl.ar);
     gl.uniform3iv(U.uQA, cl.qa); gl.uniform1iv(U.uModeA, cl.ma); gl.uniform1fv(U.uNormA, cl.na); gl.uniform2fv(U.uCA, cl.ca);
     gl.uniform3iv(U.uQB, cl.qb); gl.uniform1iv(U.uModeB, cl.mb); gl.uniform1fv(U.uNormB, cl.nb); gl.uniform2fv(U.uCB, cl.cb);
-    gl.uniform1fv(U.uInvMax, cl.inv); gl.uniform1fv(U.uIso, cl.iso); gl.uniform1fv(U.uFade, cl.fade); gl.uniform1fv(U.uWob, cl.wob); gl.uniform1fv(U.uInc, cl.inc);
+    gl.uniform1fv(U.uInvMax, cl.inv); gl.uniform1fv(U.uIso, cl.iso); gl.uniform1fv(U.uFade, cl.fade); gl.uniform4fv(U.uLean, cl.lean); gl.uniform1fv(U.uInc, cl.inc);
 
     const ng = Math.min(MAX_GLOWS, scene.glows.length);
     gArr.fill(0); gcArr.fill(0);
@@ -308,10 +309,19 @@ export function createRenderer(canvas) {
 
 // Line builder: pairs of points with colour and alpha (the GPU clips them at the near plane).
 export class Lines {
-  constructor() { this.a = []; }
-  begin() { this.a.length = 0; }
+  constructor() { this.a = []; this.chunks = []; }
+  begin() { this.a.length = 0; this.chunks.length = 0; }
   seg(p, q, col, alpha = 1) {
     this.a.push(p[0], p[1], p[2], col[0], col[1], col[2], alpha, q[0], q[1], q[2], col[0], col[1], col[2], alpha);
   }
-  data() { return new Float32Array(this.a); }
+  // Segments worked out earlier and kept as one block (see lightLines in game.js).
+  chunk(f32) { this.chunks.push(f32); }
+  data() {
+    if (!this.chunks.length) return new Float32Array(this.a);
+    const out = new Float32Array(this.a.length + this.chunks.reduce((n, c) => n + c.length, 0));
+    out.set(this.a);
+    let o = this.a.length;
+    for (const c of this.chunks) { out.set(c, o); o += c.length; }
+    return out;
+  }
 }
