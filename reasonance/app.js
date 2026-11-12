@@ -3,7 +3,7 @@
 // <marker> references), so they show up wherever the page is hosted.
 import {
   NODE_TYPES, EDGE_TYPES, STANCES, RELEVANCE, createMap, addNode, addEdge, removeItem, flipEdge,
-  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES, untitledName,
+  setEdgeType, itemText, nodeText, standingContention, rate, outline, serialize, parseMap, exampleMap, EXAMPLES, untitledName, takesViews,
   isNode, isEdge, edgesFrom, edgesTo, logSliderToConfidence, confidenceToLogSlider,
   compoundParts, splitIntoPremises, postOrder,
 } from './model.js';
@@ -521,13 +521,21 @@ const REASONS = [
   ['support', 'Support it'], ['contention', 'Contend it'], ['question', 'Question it'],
   ['clarification', 'Clarify it'], ['same', 'Say it another way'],
 ];
+// Only a post's author clarifies it (a draft is yours). Anyone can respond to
+// the clarification's arrow instead.
+function canClarify(it) {
+  const pid = map.posts?.[it.id];
+  return !pid || !cloud.signedIn() || cloud.mine.has(pid);
+}
 function reasonButtons(it) {
   const fallacyPick = h('select', { 'aria-label': 'Call a fallacy', onchange: (ev) => { if (ev.target.value) callFallacy(it.id, ev.target.value); } },
     h('option', { value: '' }, 'Call a fallacy…'), FALLACIES.map((f) => h('option', { value: f.name }, f.name)));
   const linkPick = h('select', { 'aria-label': 'Connect to a post already on the map', onchange: (ev) => { if (ev.target.value) startConnect(it.id, ev.target.value); } },
     h('option', { value: '' }, 'Connect to an existing post…'),
-    Object.entries(EDGE_TYPES).filter(([k]) => k !== 'example' && (k !== 'premise' || it.type === 'combiner')).map(([k, t]) => h('option', { value: k }, t.label)));
-  const row = h('div', { class: 'row' }, REASONS.map(([type, label]) => h('button', { title: EDGE_TYPES[type].note ?? '', onclick: () => addReason(it.id, type) }, label)));
+    Object.entries(EDGE_TYPES).filter(([k]) => k !== 'example' && (k !== 'premise' || it.type === 'combiner') && (k !== 'clarification' || canClarify(it))).map(([k, t]) => h('option', { value: k }, t.label)));
+  const own = canClarify(it);
+  const row = h('div', { class: 'row' }, REASONS.filter(([type]) => own || type !== 'clarification')
+    .map(([type, label]) => h('button', { title: EDGE_TYPES[type].note ?? '', onclick: () => addReason(it.id, type) }, label)));
   if (it.type === 'combiner') row.prepend(h('button', { class: 'accent', onclick: () => addReason(it.id, 'premise') }, 'Add premise'));
   return [h('h3', {}, isEdge(it) ? 'Respond to this inference' : 'Add a reason'), row, h('div', { class: 'row' }, fallacyPick, linkPick)];
 }
@@ -551,7 +559,7 @@ function nodePanel(n) {
     els.push(compoundWarning(n));
   }
   els.push(copyButton(n.id), ...postBox(n));
-  els.push(...reasonButtons(n), ...ratingBlock(n), deleteRow(n));
+  els.push(...reasonButtons(n), ...(takesViews(n) ? ratingBlock(n) : [noViewsNote()]), deleteRow(n));
   return els;
 }
 
@@ -609,7 +617,7 @@ function edgePanel(e) {
   } else if (e.type === 'premise') {
     els.push(h('label', {}, 'Premise number', h('input', { class: 'num', value: e.premise, maxlength: 12, oninput: (ev) => { e.premise = ev.target.value; quietChange(); } })));
   }
-  els.push(...postBox(e), ...reasonButtons(e), ...ratingBlock(e), deleteRow(e));
+  els.push(...postBox(e), ...reasonButtons(e), ...(takesViews(e) ? ratingBlock(e) : [noViewsNote()]), deleteRow(e));
   return els;
 }
 
@@ -625,6 +633,7 @@ function shareToggle(it) {
     } }), 'Share my view publicly'),
     h('p', { class: 'muted' }, on ? 'Anyone can see your view of this, with your username.' : 'Only you see your view. The public totals count it without your name.'));
 }
+const noViewsNote = () => h('p', { class: 'muted' }, 'A clarification says what a post means, so it takes no position, confidence or stars. To disagree with it, support, contend or question its arrow.');
 function ratingBlock(it) {
   const r = it.rating ?? {};
   const stance = stanceButtons(h, r.stance, (k, other) => doRate(it.id, { stance: k, other }), r.other);
@@ -732,7 +741,7 @@ function placeNear(id, dx = 330, dy = 0) {
 
 function addReason(fromId, type) {
   const pos = placeNear(fromId, 330, isEdge(map.items[fromId]) ? 150 : 0);
-  const n = addNode(map, { text: '', ...pos });
+  const n = addNode(map, { type: type === 'clarification' ? 'clarification' : 'statement', text: '', ...pos });
   try { addEdge(map, type, fromId, n.id); } catch (err) { removeItem(map, n.id); toast(err.message); return; }
   selected = n.id;
   changed();
@@ -844,7 +853,7 @@ function postBoxParts(it) {
       !st ? '' : st.raters ? `So far: ${parts.join(' · ')}.` : 'Nobody has rated it yet.',
       yours && othersRated(it, st) ? ' Others have rated it, so its words are fixed.' : ''),
     views.length ? h('p', { class: 'muted' }, 'Shared views: ', views.slice(0, 8).map((v) => `@${v.name ?? 'someone'} ${v.stance === 'other' && v.other ? `says "${v.other}"` : STANCES[v.stance].toLowerCase()}${v.confidence != null ? ` (${formatConfidence(v.confidence)})` : ''}`).join(' · ')) : null,
-    !yours ? h('p', { class: 'muted' }, "Someone else's post, so the words are theirs. To say it another way, or narrow what it means, add a clarification.") : null,
+    !yours ? h('p', { class: 'muted' }, "Someone else's post, so the words are theirs, and only they can clarify it. You can support, contend or question it, or respond to a clarification's arrow.") : null,
     yours ? h('div', { class: 'row' }, anon) : null,
     isNode(it) ? h('div', { class: 'row' }, h('button', { onclick: () => bringReasons(it.id) }, 'Bring in its posted reasons')) : null,
   ];
@@ -856,10 +865,9 @@ function draftBox(it, anon) {
   const found = isNode(it) && it.type !== 'combiner' ? lookupFor(it) : { exact: null, similar: [] };
   const els = [];
   if (found?.exact) {
-    els.push(h('p', { class: 'note' }, h('strong', {}, 'Already posted, word for word. '), 'Each statement is posted once, so your map can use that post. To mean something narrower, use it and add a clarification or a definition.'),
+    els.push(h('p', { class: 'note' }, h('strong', {}, 'Already posted, word for word. '), 'Each statement is posted once, so your map can use that post. If you mean something narrower, reword yours to say exactly that.'),
       h('div', { class: 'row' },
-        h('button', { class: 'accent', onclick: () => postNow([it.id]) }, 'Use the posted one'),
-        h('button', { onclick: async () => { await postNow([it.id]); if (map.posts?.[it.id]) addReason(it.id, 'clarification'); } }, 'Use it and clarify')));
+        h('button', { class: 'accent', onclick: () => postNow([it.id]) }, 'Use the posted one')));
     return els;
   }
   if (found?.similar?.length) {

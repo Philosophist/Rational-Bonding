@@ -7,7 +7,7 @@
 // posted: then the map uses that post), and ratings of posted items are saved
 // with their dated history, private unless shared.
 import * as auth from '../accounts/auth.js';
-import { isNode, isEdge, postOrder, publicCopy, EDGE_TYPES } from './model.js';
+import { isNode, isEdge, postOrder, publicCopy, EDGE_TYPES, takesViews } from './model.js';
 
 export { auth };
 const db = () => auth.client();
@@ -183,7 +183,7 @@ export async function post(map, ids, { confirmed = new Set(), share = false } = 
     mine.add(data.id);
     out.posted++;
     const r = it.rating;
-    if (r && (r.stance || r.confidence != null || r.relevance)) await rate(data.id, r, it.share ?? share);
+    if (r && takesViews(it) && (r.stance || r.confidence != null || r.relevance)) await rate(data.id, r, it.share ?? share);
   }
   return out;
 }
@@ -354,7 +354,8 @@ export async function respond(claimId, type, { reasonId = null, text = '', clari
   const reason = reasonId ? { id: reasonId, made: false } : await postOrReuse({ kind: 'node', type: 'statement', text, anonymous });
   const arrow = await postOrReuse({ kind: 'edge', type, from_post: claimId, to_post: reason.id, premise: null, anonymous });
   let clarification = null;
-  if (clarify.trim()) {
+  // Only the author clarifies a post, so only a reason you wrote gets yours.
+  if (clarify.trim() && mine.has(reason.id)) {
     const c = await postOrReuse({ kind: 'node', type: 'clarification', text: clarify, anonymous });
     await postOrReuse({ kind: 'edge', type: 'clarification', from_post: reason.id, to_post: c.id, premise: null, anonymous });
     clarification = c;

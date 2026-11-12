@@ -3,7 +3,7 @@
 // three.js loads only when the home page first opens; without it, the feed
 // still works over a plain background.
 import * as cloud from './cloud.js';
-import { STANCES, EDGE_TYPES, RELEVANCE, formatConfidence } from './model.js';
+import { STANCES, EDGE_TYPES, RELEVANCE, formatConfidence, takesViews } from './model.js';
 import { stanceButtons, oddsLine } from './stances.js';
 import { nameLink, viewPhrase, postWords, ago } from './profile.js';
 
@@ -126,7 +126,8 @@ function card(r, lead = null) {
   lead,
   h('p', { class: `text ${r.type}` }, postWords(r)),
   h('div', { class: 'meta' }, ab?.by ? nameLink(ab.by) : 'anonymous', ` · ${counts.length ? counts.join(' · ') : 'no views yet'}`),
-  stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(r.id, { stance: k, other }), my?.other),
+  takesViews(r) ? stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(r.id, { stance: k, other }), my?.other)
+    : h('div', { class: 'muted' }, 'A clarification: it says what a post means, so there is no position to take.'),
   my?.stance ? h('div', { class: 'muted' }, my.public ? 'Your view is shared.' : 'Your view is private.') : null);
 }
 // A view from the feed or the floating post: a stance, or { confidence } or
@@ -358,9 +359,9 @@ function drawFloat() {
     h('button', { class: 'fclose', 'aria-label': 'Back to the sea', title: 'Back to the sea (Esc)', onclick: closeFloat }, '×'),
     h('p', { class: 'text' }, postText(post)),
     h('div', { class: 'meta' }, [ab?.by ? `@${ab.by}` : 'anonymous', counts.length ? counts.join(' · ') : 'no views yet'].join(' · ')),
-    stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(post.id, { stance: k, other }), my?.other),
+    takesViews(post) ? stanceButtons(h, my?.stance ?? null, (k, other) => rateFromFeed(post.id, { stance: k, other }), my?.other) : null,
     composeBox(post),
-    ...viewDetails(post.id, my)));
+    ...(takesViews(post) ? viewDetails(post.id, my) : [])));
   // Near: questions, clarifications, rewordings and fallacies it's called.
   const near = links.out.filter((e) => NEAR_TYPES.includes(e.type) && links.ends[e.to_post]?.kind === 'node').slice(0, MAX_NEAR);
   const nearIds = new Set(near.map((e) => e.id));
@@ -471,15 +472,15 @@ function composeBox(post) {
     area,
     h('ul', { id: 'float-suggest', class: 'found', 'aria-label': 'Already posted' }),
     h('div', { id: 'float-alts', class: 'alts' }, altsParts(post.id)),
-    c.showClarify ? h('textarea', { id: 'float-clarify', rows: 2, maxlength: 2000, placeholder: 'A clarification or definition, such as "By wet I mean puddles."', 'aria-label': 'Clarification',
+    c.showClarify && !c.checked?.exact ? h('textarea', { id: 'float-clarify', rows: 2, maxlength: 2000, placeholder: 'A clarification or definition, such as "By wet I mean puddles."', 'aria-label': 'Clarification',
       oninput: (ev) => { c.clarify = ev.target.value; const b = ev.target.parentElement.querySelector('.row button.accent'); if (b) b.textContent = postLabel(c); } }, c.clarify) : null,
     h('label', {}, h('input', { type: 'checkbox', checked: c.anonymous, onchange: (ev) => { c.anonymous = ev.target.checked; } }), 'Post Anonymously'),
     h('div', { class: 'row' },
       h('button', { class: 'accent', disabled: c.busy, onclick: () => submit(post.id) }, c.busy ? 'Posting…' : postLabel(c)),
-      c.showClarify ? null : h('button', { onclick: () => { c.showClarify = true; drawFloat(); setTimeout(() => $('float-clarify')?.focus(), 0); } }, 'Add a clarification before posting'),
+      c.showClarify || c.checked?.exact ? null : h('button', { onclick: () => { c.showClarify = true; drawFloat(); setTimeout(() => $('float-clarify')?.focus(), 0); } }, 'Add a clarification before posting'),
       h('button', { onclick: cancel }, 'Cancel')));
 }
-const postLabel = (c) => c.checked?.exact ? (c.clarify.trim() ? 'Use it, with my clarification' : 'Use the posted one') : c.checked?.near?.length && !c.forced ? 'Mine is different: post it' : 'Post';
+const postLabel = (c) => c.checked?.exact ? 'Use the posted one' : c.checked?.near?.length && !c.forced ? 'Mine is different: post it' : 'Post';
 function cancel() { floatState.compose = null; drawFloat(); }
 let suggestTimer = 0;
 function suggestSoon(centerId) {
@@ -516,9 +517,9 @@ function altsParts(centerId) {
   if (!c?.checked) return [];
   const { exact, near } = c.checked;
   const out = [];
-  if (exact) out.push(h('p', { class: 'note' }, h('strong', {}, 'Already posted, word for word. '), 'Use it, and add a clarification or definition if you mean something narrower.'),
+  if (exact) out.push(h('p', { class: 'note' }, h('strong', {}, 'Already posted, word for word. '), 'Use it, or reword yours if you mean something narrower.'),
     h('ul', { class: 'found' }, suggestion(centerId, exact)));
-  if (near.length) out.push(h('p', { class: 'note' }, h('strong', {}, 'Is it one of these? '), 'Choose one, add a clarification, or post yours if it says something different.'),
+  if (near.length) out.push(h('p', { class: 'note' }, h('strong', {}, 'Is it one of these? '), 'Choose one, or post yours if it says something different.'),
     h('ul', { class: 'found' }, near.map((r) => suggestion(centerId, r))));
   return out;
 }

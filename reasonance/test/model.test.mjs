@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMap, addNode, addEdge, removeItem, flipEdge, setEdgeType, itemText, standingContention,
   rate, outline, serialize, parseMap, exampleMap, logSliderToConfidence, confidenceToLogSlider,
-  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder, publicCopy, untitledName,
+  splitStatements, compoundParts, splitIntoPremises, isNode, EXAMPLES, postOrder, publicCopy, untitledName, takesViews,
 } from '../model.js';
 import { FALLACIES } from '../fallacies.js';
 
@@ -283,4 +283,18 @@ test('untitled maps count up from 1', () => {
   assert.equal(untitledName([]), 'Untitled map 1');
   assert.equal(untitledName(['Rain', 'Untitled map 1']), 'Untitled map 2');
   assert.equal(untitledName(['Untitled map', 'untitled map 3', 'My map 9']), 'Untitled map 4');
+});
+
+test('clarifications take no views', () => {
+  const m = createMap('C');
+  const a = addNode(m, { text: 'It rained.' });
+  const c = addNode(m, { type: 'clarification', text: 'By rained I mean more than a drizzle.' });
+  const e = addEdge(m, 'clarification', a.id, c.id);
+  assert.equal(takesViews(c), false);
+  assert.equal(takesViews(e), false);
+  assert.equal(takesViews(a), true);
+  rate(m, c.id, { stance: 'agree', confidence: 90 });
+  rate(m, e.id, { stance: 'disagree' });
+  assert.equal(m.items[c.id].rating, undefined);
+  assert.equal(m.items[e.id].rating, undefined);
 });

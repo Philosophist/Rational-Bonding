@@ -183,5 +183,21 @@ delete from rs_public_maps where id = 'm1';
 do $$ begin
   if exists (select 1 from rs_public_maps) then raise exception 'alice could not unshare'; end if;
 end $$;
+-- Clarifications: only the author clarifies a post, and nobody rates a clarification.
+reset role; set role authenticated;
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a', false); end $$;
+insert into rs_posts (id, kind, type, text) values ('10000000-0000-0000-0000-0000000000c1','node','clarification','By rained I mean more than a drizzle.');
+insert into rs_posts (kind, type, from_post, to_post) values ('edge','clarification','10000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-0000000000c1');
+select pg_temp.expect_fail($q$insert into rs_ratings (post_id, stance) values ('10000000-0000-0000-0000-0000000000c1','agree')$q$, 'no position');
+reset role;
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000d','d@x');
+insert into profiles (id, username) values ('00000000-0000-0000-0000-00000000000d','dana');
+set role authenticated;
+do $$ begin perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000d', false); end $$;
+insert into rs_posts (id, kind, type, text) values ('10000000-0000-0000-0000-0000000000c2','node','clarification','By wet I mean puddles.');
+select pg_temp.expect_fail($q$insert into rs_posts (kind, type, from_post, to_post) values ('edge','clarification','10000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-0000000000c2')$q$, 'only the author');
+-- dana can still respond to alice's clarification arrow
+insert into rs_posts (kind, type, from_post, to_post) values ('edge','question',
+  (select id from rs_posts where kind = 'edge' and type = 'clarification' and to_post = '10000000-0000-0000-0000-0000000000c1'), '10000000-0000-0000-0000-0000000000c2');
 reset role;
 select 'ALL PASSED';
