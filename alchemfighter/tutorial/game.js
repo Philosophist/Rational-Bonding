@@ -25,9 +25,12 @@ const fmtNm = r => (r < 0.1 ? `${(r * 1000).toFixed(0)} pm` : `${r.toFixed(2)} n
 
 // Time: one clock for everything. At full speed one screen second is FS_PER_S femtoseconds.
 // Nothing ever pauses: when something worth watching happens, the whole system slows down.
-// Rare events (catches, steps down, absorptions, collisions) all run RATE_BOOST times faster than
-// in nature, so you don't wait hours, and they stay in their real proportions.
+// Chance encounters (catches, collisions, light absorbed in flight) run RATE_BOOST times more often
+// than in nature, or the level couldn't be played. How long an atom stays in a level is NOT sped up:
+// every level lasts its real lifetime on the game's clock (DECAY_BOOST = 1). At this clock that is
+// hours of play even for 2p, so an atom usually keeps the orbital it was caught in.
 const FS_PER_S = 40;
+const DECAY_BOOST = 1;
 // Light moves at its real speed on the same clock. While a light wave is out, everything slows
 // until light covers LIGHT_SHOW nm per screen second, so you can watch the wave spread; matter is
 // then almost still, which is true: light is about 1,600 times faster than a slow electron.
@@ -57,8 +60,8 @@ const SLOW_NEAR = 4, SLOW_TARGET = 1.5, SLOW_MIN = 0.02;
 // After a capture the electron's glow is drawn melting into its new cloud over this many seconds.
 // (In nature the change is a sudden quantum jump; this lets you see which electron went where.)
 const FALL_DUR = 3.0;
-// Each step down the ladder: the atom waits its real lifetime (sped up like every rare event, so
-// the lifetimes keep their real proportions: 2p 1.6 ns, 3s 159 ns, ...), then the shape morphs
+// Each step down the ladder: the atom waits its real lifetime on the game's clock (2p 1.6 ns,
+// 3s 159 ns, ...: hours to days of play), then the shape morphs
 // over STEP_MORPH s while everything slows.
 const STEP_MORPH = 1.5;
 // When its photon is found, the swinging atom settles into the lower level over SETTLE seconds.
@@ -267,6 +270,7 @@ function fire() {
   S.flashes.push({ pos: v3.add(a.muzzle, v3.scale(ax, 0.3)), col: [0.3, 0.5, 1.0], t: 0, life: 0.25, size: 0.25 });
 }
 
+const fmtSpan = s => (s < 120 ? `${Math.round(s)} seconds` : s < 7200 ? `${Math.round(s / 60)} minutes` : s < 172800 ? `${Math.round(s / 3600)} hours` : s < 3.15e7 * 2 ? `${Math.round(s / 86400)} days` : `${Math.round(s / 3.15e7).toLocaleString('en-US')} years`);
 // ---------------------------------------------------------------------------
 // Capture and the light cascade
 // ---------------------------------------------------------------------------
@@ -355,14 +359,18 @@ function frameOf(a) {
 // whose target its path runs through, or else by the wall, where the spectrometer records it.
 // When it is taken, the swing that sent it stops and the rest of the wave, now empty, runs out.
 const randomDir = () => { const th = Math.random() * Math.PI * 2, z = Math.random() * 2 - 1, rr = Math.sqrt(1 - z * z); return [rr * Math.cos(th), z, rr * Math.sin(th)]; };
-const lifetimeFs = tauNs => tauNs * 1e6 / P.RATE_BOOST;   // a real lifetime on the game's (sped-up) clock
+const lifetimeFs = tauNs => tauNs * 1e6 / DECAY_BOOST;   // a real lifetime on the game's clock
 // Starts a light wave. launchIn: fs until the photon leaves (0 = now, Infinity = when told to).
 // tau: how long the swing lasts (fs). from: the atom sending it.
-function startLight({ pos, lam, pattern = 'lin', axis = randomDir(), from = null, show = LIGHT_SHOW, tau = lam / P.C, launchIn = 0, emitter = null, gain = 1 }) {
+// vis: how much of the light is inside the system at once, which sets how bright its wave is drawn.
+// A long-lived level sends a wave packet c·τ long (48 cm for 2p), so only a sliver of it is ever
+// inside the 80 nm system: its wave is real but far too faint to see, and is drawn that faint.
+const lightVis = tauFs => (Number.isFinite(tauFs) && tauFs > 0 ? Math.min(1, 3 * (2 * P.SPHERE_R / P.C) / tauFs) : 1);
+function startLight({ pos, lam, pattern = 'lin', axis = randomDir(), from = null, show = LIGHT_SHOW, tau = lam / P.C, launchIn = 0, emitter = null, gain = 1, visTau = tau }) {
   if (pattern === 'iso') { pattern = 'lin'; axis = randomDir(); }   // two-photon light: no single axis, a random one stands in
   const em = W.makeEmission({ src: pos, lam, pattern, axis, t0: S.simFs, tau, gain });
   const L = { em, lam, E: P.HC / lam, pattern, col: photonColor(lam), from, emitter, show, slowFlight: lightSlow(show), tLaunch: S.simFs + launchIn,
-    launched: false, caught: false, age: 0, quick: show === LIGHT_QUICK, maxR: v3.len(pos) + P.SPHERE_R };
+    launched: false, caught: false, age: 0, vis: lightVis(visTau), quick: show === LIGHT_QUICK, maxR: v3.len(pos) + P.SPHERE_R };
   S.light.push(L);
   if (launchIn <= 0) launchPhoton(L);
   return L;
@@ -555,9 +563,9 @@ function capture(e, p, E) {
   if (S.beat === 3) S.b3.caught++;
   say(st.n === 1
     ? 'Caught! This one went straight to the bottom step in one go, so a single ultraviolet flash carried off all the energy.'
-    : `Caught! It landed on step n = ${st.n}. Now watch it step down, giving off light at each step.`);
+    : `Caught! It landed in ${P.stateName(st)}. It stays there for its real lifetime before stepping down: about ${fmtSpan(lifetimeFs(atom.pending && atom.pending.tauNs || P.DECAY[`${atom.st.n},${atom.st.l}`].tau) / (FS_PER_S * SPEEDS[S.speed]))} of play at this game speed.`);
 }
-// The next step down happens after its real (sped-up) delay on the shared clock. That includes
+// The next step down happens after its real delay on the shared clock (not sped up). That includes
 // 2s: its two-photon decay really takes 0.12 s, 76 million times longer than 2p, so left alone it
 // outlasts any game. What lets it go sooner is a loose charge's electric field (quench2s).
 function scheduleDecay(atom) {
@@ -570,7 +578,7 @@ function scheduleDecay(atom) {
   if (d && mix.tauNs && !d.twoPhoton) { d.delayNs = P.sampleExp(mix.tauNs); d.tauNs = mix.tauNs; }
   atom.pending = d;
   if (!d) return;
-  atom.waitFs = d.delayNs * 1e6 / P.RATE_BOOST;
+  atom.waitFs = d.delayNs * 1e6 / DECAY_BOOST;
   atom.hold = 0; atom.since = S.simFs; atom.alone = 0;
   if (d.twoPhoton && (S.in2s = (S.in2s || 0) + 1) <= 2) log('2s can\'t give off a single photon by itself. Left alone it waits about 0.12 s, then gives off two. A loose charge\'s electric field lets it go far sooner.');
 }
@@ -579,8 +587,8 @@ function scheduleDecay(atom) {
 // sphere is close enough to mix the two fully, and 2s then lasts twice as long as 2p.
 function quench2s(a, dt, dtFs) {
   const Fv = P.fieldAt(a.p.pos, S.ps), F = v3.len(Fv);
-  if (Math.random() < 1 - Math.exp(-P.starkQuenchRate(F) * dtFs * P.RATE_BOOST * 1e-6)) {
-    a.pending = { to: { n: 1, l: 0, m: 0 }, photons: [P.lambdaFor(2, 1)], delayNs: (S.simFs - a.since) * P.RATE_BOOST * 1e-6, dm: 0, axis: v3.norm(Fv), quenched: true };
+  if (Math.random() < 1 - Math.exp(-P.starkQuenchRate(F) * dtFs * DECAY_BOOST * 1e-6)) {
+    a.pending = { to: { n: 1, l: 0, m: 0 }, photons: [P.lambdaFor(2, 1)], delayNs: (S.simFs - a.since) * DECAY_BOOST * 1e-6, dm: 0, axis: v3.norm(Fv), quenched: true };
     a.waitFs = 0;
     return;
   }
@@ -621,7 +629,7 @@ function tryGroup(a) {
   const others = S.atoms.filter(o => o !== a && idle1s(o));
   if (!others.length) return false;
   const n = a.st.n, lam = P.lambdaFor(1, n);
-  const dk = P.DECAY[`${n},1`], G = P.RATE_BOOST * 1e-6 / dk.tau;   // decays per fs on the game's clock
+  const dk = P.DECAY[`${n},1`], G = DECAY_BOOST * 1e-6 / dk.tau;   // decays per fs on the game's clock
   const q = { members: [], c: { re: [], im: [] }, w: [], lights: new Map(), up: { ...a.st }, lam, nearR: lam / (2 * Math.PI), G, Gr: G * dk.br.find(x => x[0] === 1)[2],
     u: Math.random(), age: 0, tFs: 0, slow: 1, reex: !!a.reex, col: photonColor(lam), since: a.since || S.simFs, first: a };
   a.pending = null; a.st = GROUND;
@@ -640,7 +648,7 @@ function tryGroup(a) {
 const pOfUp = up => u => (up.m === 0 ? u[1] * u[1] : (1 - u[1] * u[1]) / 2);
 const alongUp = (up, F) => (up.m === 0 ? Math.abs(F[1]) : Math.hypot(F[0], F[2]) / Math.SQRT2);
 function groupModel(q) {
-  const pos = q.members.map(a => a.p.pos), k = P.starkShift(q.up.n) / P.HBAR_NS * P.RATE_BOOST * 1e-6;
+  const pos = q.members.map(a => a.p.pos), k = P.starkShift(q.up.n) / P.HBAR_NS * DECAY_BOOST * 1e-6;
   const D = q.members.map(a => k * alongUp(q.up, P.fieldAt(a.p.pos, S.ps)));
   const M = P.groupMatrix(pos, q.lam, { G: q.G, Gr: q.Gr, D, pOf: pOfUp(q.up), minR: PAIR_MIN_R });
   M.D = D; M.pos = pos;
@@ -683,7 +691,7 @@ function stepGroup(q, dt, dtFs) {
     let L = q.lights.get(a);
     const amp = Math.hypot(q.c.re[j], q.c.im[j]);
     if (!L && amp > 0.15) {
-      L = startLight({ pos: a.p.pos, lam: q.lam, pattern: q.up.m === 0 ? 'lin' : 'circ', axis: [0, 1, 0], from: a, show: q.reex ? LIGHT_QUICK : LIGHT_SHOW, tau: Infinity, launchIn: Infinity, gain: amp });
+      L = startLight({ pos: a.p.pos, lam: q.lam, pattern: q.up.m === 0 ? 'lin' : 'circ', axis: [0, 1, 0], from: a, show: q.reex ? LIGHT_QUICK : LIGHT_SHOW, tau: Infinity, launchIn: Infinity, gain: amp, visTau: 1 / q.G });
       L.em.t0 = q.since; L.group = q; L.showEmit = a === q.first && (!q.reex || S.emitShown < 2);
       q.lights.set(a, L);
     }
@@ -739,7 +747,7 @@ function endGroup(q, how, M) {
   const N = q.members.length, n2 = P.groupNorm(q.c);
   let r = Math.random() * n2, xi = 0;
   for (; xi < N - 1; xi++) { r -= q.c.re[xi] ** 2 + q.c.im[xi] ** 2; if (r <= 0) break; }
-  const x = q.members[xi], realNs = (S.simFs - q.since) * P.RATE_BOOST * 1e-6;
+  const x = q.members[xi], realNs = (S.simFs - q.since) * DECAY_BOOST * 1e-6;
   for (const a of q.members) { a.pair = null; a.mix.fade = true; if (a !== x) a.reex = false; }
   let L = q.lights.get(x);
   for (const [a, l] of q.lights) if (l !== L) cancelLight(l);
@@ -747,7 +755,7 @@ function endGroup(q, how, M) {
     // Where the photon goes: the atoms' waves add up in some directions and cancel in others.
     const pattern = q.up.m === 0 ? 'lin' : 'circ', sum = q.c.re.reduce((s, v, j) => s + Math.hypot(v, q.c.im[j]), 0);
     const dir = patternDir(pattern, [0, 1, 0], d => P.groupArrayFactor(M.pos, q.c, q.lam, d), sum * sum / n2);
-    if (!L) { L = startLight({ pos: x.p.pos, lam: q.lam, pattern, axis: [0, 1, 0], from: x, show: q.reex ? LIGHT_QUICK : LIGHT_SHOW, tau: Infinity, launchIn: Infinity, gain: Math.hypot(q.c.re[xi], q.c.im[xi]) }); }
+    if (!L) { L = startLight({ pos: x.p.pos, lam: q.lam, pattern, axis: [0, 1, 0], from: x, show: q.reex ? LIGHT_QUICK : LIGHT_SHOW, tau: Infinity, launchIn: Infinity, gain: Math.hypot(q.c.re[xi], q.c.im[xi]), visTau: 1 / q.G }); }
     launchPhoton(L, dir);
     x.p.vel = v3.sub(x.p.vel, v3.scale(dir, (P.HC / q.lam) / P.C / P.MP));
     x.steps.push({ lam: [q.lam], from: q.up, to: GROUND, delayNs: realNs, reemit: q.reex });
@@ -776,7 +784,7 @@ function describe(lam, nLow, capture, cap = false) {
 // An atom in an upper level starts to swing at once (its cloud is part upper shape, part lower,
 // beating at the light's frequency) and sends out the exact field of that swing. Its share in the
 // upper level fades as exp(−t/τ). The photon leaves after the atom's sampled real lifetime (on the
-// game's sped-up clock), and when the photon is found the atom settles into the lower level.
+// game's clock, not sped up), and when the photon is found the atom settles into the lower level.
 function startEmission(a, d) {
   const lam = d.photons[0], tauNs = d.quenched ? 2 * P.DECAY['2,1'].tau : d.tauNs || P.DECAY[`${a.st.n},${a.st.l}`].tau;
   const quick = a.reex && !watched(a);
@@ -856,14 +864,15 @@ function updateAtoms(dt, dtFs) {
   }
   if (S.cascade) {
     const a = S.cascade.atom;
-    if (!a.trans && !a.pending && !a.pair && a.st.n === 1 && a.fade >= 1) {
+    if (!a.capt && a.fade >= 1 && !S.falling.length) {
       S.cascade = null; S.autoCam = null;
-      const red = a.steps.some(s => [].concat(s.lam).some(l => P.lineName(l) === 'H-α'));
-      say(`You just made a hydrogen atom. The electron dropped down an energy staircase and every step came out as light${red ? ', including the red H-alpha line that makes hydrogen nebulae glow' : ''}. It stops at the bottom step, called 1s. It can't fall any further and never lands on the proton: 1s is the lowest energy an electron can have here.`);
+      say(a.st.n === 1
+        ? 'You just made a hydrogen atom. Its electron is in 1s, the bottom step: it can\'t fall any further and never lands on the proton. 1s is the lowest energy an electron can have here.'
+        : `You just made a hydrogen atom: neutral, with its electron in ${P.stateName(a.st)}. Higher orbitals are real and last a long time on an atom's scale (2p about 1.6 billionths of a second, which is hours at this clock), so it will most likely still be in ${P.stateName(a.st)} when you move on. When it does step down, each step comes out as light, and it stops at 1s.`);
       if (S.beat === 2 && !S.b2.nextAt) S.b2.nextAt = S.time + 7;   // time to read, then Acid Neutrality
     }
   }
-  if (S.beat === 3 && !S.b3.doneAt && acidLeft() === 0 && S.atoms.every(a => !a.pending && !a.trans && !a.pair && a.fade >= 1)) {
+  if (S.beat === 3 && !S.b3.doneAt && acidLeft() === 0 && !S.falling.length && S.atoms.every(a => !a.capt && a.fade >= 1)) {
     S.b3.doneAt = S.time;
     say(`Congratulations, you solved the system! The acid is neutral: every proton holds an electron. The energy each catch released left the system as light, ${S.lightOut} photons in all. That escaping light is why hydrogen out in space can stay neutral.`);
     setTimeout(showDone, 3000);
@@ -947,7 +956,7 @@ function slowTarget() {
 // covers LIGHT_SHOW nm per screen second (LIGHT_QUICK for light from atoms bumped up by fast electrons).
 function lightSlowNow(L) {
   if (L.launched && !L.caught) return L.slowFlight;
-  if (L.launched || !L.showEmit) return 1;
+  if (L.launched || !L.showEmit || L.vis < 0.2) return 1;   // nothing visible to slow down for
   const want = (L.lam / P.C) / (EMIT_PERIOD * FS_PER_S * SPEEDS[S.speed]);
   const hold = L.quick ? 0 : EMIT_HOLD[S.emitShown < 2 ? 0 : 1];
   if (L.age > hold + 0.5 && !L.counted) { L.counted = true; S.emitShown++; }
@@ -974,7 +983,7 @@ function step(dtReal) {
   S.falling = S.falling.filter(f => f.t < FALL_DUR);
   updateAtoms(dt, dtFs);
   updateGroups(dt, dtFs);
-  // Light: c × the real time that passed. Rare events: the same real time, sped up by RATE_BOOST.
+  // Light: c × the real time that passed. Steps down: the same real time. Chance encounters: sped up by RATE_BOOST.
   updateLight(dt);
   if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
   for (const f of S.flashes) f.t += dt;
@@ -1337,26 +1346,6 @@ function fieldLines() {
     }
   }
 }
-// Magnetic field of a moving electron: circles around its path, B = v × E / c². At these speeds
-// it is about v/c ≈ 1/1000 of the electric field, so it is drawn far brighter than its true share.
-const B_BOOST = 400;
-function magneticRings(e) {
-  const v = v3.len(e.vel), beta = v / P.C;
-  if (beta <= 0) return;
-  const d = v3.scale(e.vel, 1 / v);
-  const e1 = v3.norm(v3.cross(d, Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(d, e1);
-  // B = v × E / c² falls off as 1/r² like the electric field, so the rings fade the same way.
-  for (const [R, off] of [[0.15, 0], [0.3, -0.25], [0.3, 0.25], [0.55, 0]]) {
-    const a = Math.min(1, B_BOOST * beta) * fieldAlpha(1 / (R * R)) * 0.8;
-    const c = v3.add(e.pos, v3.scale(d, off));
-    let prev = null;
-    for (let i = 0; i <= 24; i++) {
-      const t = 2 * Math.PI * i / 24, pt = v3.add(c, v3.add(v3.scale(e1, Math.cos(t) * R), v3.scale(e2, Math.sin(t) * R)));
-      if (prev) lines.seg(prev, pt, [0.36, 0.95, 0.6], a);
-      prev = pt;
-    }
-  }
-}
 // How fast a swing at angular frequency w (rad/fs) looks on screen, in swings per second, and how
 // much of it to draw as its average instead (0: as it is, 1: averaged). Fast swings are averaged so
 // nothing flickers (photosensitivity); Glow view always shows the average.
@@ -1387,7 +1376,8 @@ function lightLines(L) {
   lines.chunk(L.cache.data);
 }
 function lightLinesNow(L, out) {
-  const { em } = L, t = S.simFs, avg = avgShare(em.w), now = 1 - avg;
+  const { em } = L, t = S.simFs, avg = avgShare(em.w) * L.vis, now = (1 - avgShare(em.w)) * L.vis;
+  if (L.vis < 0.01) return;
   if (C_LIGHT * (t - em.tEnd) > L.maxR) return;
   // In a group several antennas are drawn at once, so each gets fewer planes, and only the busiest its magnetic rings.
   const lead = !L.group || L.group.members[L.group.top || 0] === L.from;
@@ -1409,7 +1399,6 @@ function lightLinesNow(L, out) {
     if (L.pattern === 'lin') {
       const lv = []; for (let j = 1; j <= PSI_LEVELS; j++) lv.push(j * PSI_STEP, -j * PSI_STEP);
       drawSegs(W.contours((R, c) => W.psiLin(em, R, c, t), lv, { rMin: 0.3, rMax, nR: 60, nT: 40 }), L.col, 0.5 * now);
-      if (S.fieldView && lead) magRings(L, t, now, out);
     } else circLines(L, t, now, out);
   }
   if (avg > 0.01) {
@@ -1426,25 +1415,6 @@ function lightLinesNow(L, out) {
   }
 }
 const C_LIGHT = P.C;
-function magRings(L, t, k, out) {
-  const { em } = L, ref = Math.hypot(...W.field({ ...em, tEnd: Infinity, t0: -1e9, tau: Infinity }, v3.add(em.src, v3.scale(em.e1, 20)), 0).B) || 1;
-  for (const R of [2, 4, 8, 14, 22, 32, 45]) {
-    for (const f of [0.3, 0.5, 0.7]) {
-      const th = Math.PI * f, c = place0(em, R, th, 0);
-      if (!inSystem(c)) continue;
-      const B = Math.hypot(...W.field(em, c, t).B);
-      if (!B) continue;
-      const a = Math.min(1, B / ref) * 0.35 * k;
-      if (a < 0.02) continue;
-      let prev = null;
-      for (let i = 0; i <= 32; i++) {
-        const pt = place0(em, R, th, 2 * Math.PI * i / 32);
-        if (prev && inSystem(pt) && inSystem(prev)) out.seg(prev, pt, [0.36, 0.95, 0.6], a);
-        prev = pt;
-      }
-    }
-  }
-}
 function place0(em, R, th, ph) {
   const rad = v3.add(v3.scale(em.e1, Math.cos(ph)), v3.scale(em.e2, Math.sin(ph)));
   return v3.add(em.src, v3.add(v3.scale(em.axis, R * Math.cos(th)), v3.scale(rad, R * Math.sin(th))));
@@ -1570,7 +1540,7 @@ function draw(views, panel) {
   }
 
   lines.begin();
-  if (S.fieldView) { fieldLines(); for (const e of freeElectrons()) magneticRings(e); }
+  if (S.fieldView) fieldLines();
   for (const e of freeElectrons()) {
     for (let i = 1; i < e.trail.length; i++) lines.seg(e.trail[i - 1], e.trail[i], [0.3, 0.5, 1], 0.08 + 0.4 * i / e.trail.length);
     if (e.trail.length) lines.seg(e.trail[e.trail.length - 1], e.pos, [0.3, 0.5, 1], 0.5);
@@ -1774,7 +1744,7 @@ function drawPanelCanvas() {
 for (const id of ['vrBtn', 'vrBtn2']) $(id).addEventListener('click', toggleVR);
 vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).title = 'No VR headset found in this browser'; });
 
-$('rateTag').textContent = `rates ×${P.RATE_BOOST.toLocaleString('en-US')}`;
+$('rateTag').textContent = `catches ×${P.RATE_BOOST.toLocaleString('en-US')}`;
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
 window.__alchem = { get state() { return S; }, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };

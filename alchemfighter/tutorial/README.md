@@ -69,10 +69,11 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     for 5 s the first two times (2 s after), then easing back up (e-fold per second);
   - a photon in flight: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
     from an atom a fast electron bumped up slows things less, to 300 nm per second.
-  Rare events (captures, steps down, collisions) all run RATE_BOOST = 600,000 times faster than in
-  nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. An
-  excited atom waits its sampled real lifetime with no fixed hold, so 2p steps down almost at once
-  and 3s (159 ns) lingers about 100 times longer. 2s keeps its real 0.12 s too (see above).
+  Chance encounters (captures, electron collisions) run RATE_BOOST = 600,000 times more often than
+  in nature, or the level couldn't be played (the HUD tag "catches ×600,000"). Steps down are NOT
+  sped up (Steve, 2026-11-12): every level lasts its real lifetime on the game's clock, so even 2p
+  (1.6 ns) lasts about 11 hours of play at normal speed, and an atom almost always keeps the orbital
+  it was caught in. A neutral atom in any orbital counts toward the goal.
   - atoms swinging an excitation between them (below): until one swing there and back takes
     3 screen seconds. That is held for 6 s the first two times (2.5 s after), then the clock eases
     back up and the swinging speeds up into a blur.
@@ -194,10 +195,11 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
-  7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
+  7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every catch has settled (in any orbital). Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the capture takes 3 s on screen. Each step down then swings for its
-  real (sped-up) lifetime while sending its wave, and when its photon is found the atom settles
+  real lifetime while sending its wave (drawn as faint as it really is: a 2p atom's wave packet is
+  48 cm long, so only a sliver of it is ever inside the system, and it is invisible), and when its photon is found the atom settles
   into the lower level over 0.5 s.
 - **Capture moment: one wave the whole way.** The free electron's own partial wave near the
   proton (computed at its energy, the l it came in with) turns smoothly into the orbital it lands
@@ -232,9 +234,10 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 
 ## Views and controls
 
-- **Field view** (default): electric field lines, green magnetic rings around moving electrons, and
-  each photon's electric and magnetic waves at 90° to each other. The magnetic field is drawn 400×
-  brighter than its true share (it is about v/c ≈ 1/1000 of the electric field at these speeds).
+- **Field view** (default): electric field lines, and each photon's electric wave. Nothing is drawn
+  stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn
+  (still counted in the physics): the magnetic fields of moving electrons and of light push on
+  these slow charges about 1,000 times less than the electric fields, so they are left out.
 - **Glow view** (V): the calmer view, glows only.
 - **Window:** drag to look, or double-click for mouse look (double-click again or Esc frees the cursor; raw movement, first reading and big jumps skipped to stop drift), click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
   [ ] or the wheel for electron speed, , and . for game speed.
