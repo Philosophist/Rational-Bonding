@@ -142,6 +142,24 @@ function setTutorOpen(open) {
   if (open) delete $('tutor').dataset.unread;
 }
 $('tutorToggle').addEventListener('click', () => setTutorOpen($('tutor').classList.contains('collapsed')));
+// Every other window gets the same kind of button: − folds it to its title row (marked .keep, so the
+// game-time speed in the Time window stays in view), + opens it again. The choice is remembered.
+const folded = (() => { try { return JSON.parse(localStorage.getItem('af-folded') || '{}'); } catch { return {}; } })();
+for (const box of document.querySelectorAll('.hud .panel[data-name]')) {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'minBtn';
+  const set = shut => {
+    box.classList.toggle('collapsed', shut);
+    btn.textContent = shut ? '+' : '−';
+    btn.title = `${shut ? 'Open' : 'Minimize'} the ${box.dataset.name} window`;
+    btn.setAttribute('aria-expanded', String(!shut));
+    folded[box.id] = shut;
+    try { localStorage.setItem('af-folded', JSON.stringify(folded)); } catch {}
+  };
+  btn.addEventListener('click', () => set(!box.classList.contains('collapsed')));
+  box.prepend(btn);
+  set(!!folded[box.id]);
+}
 setTutorOpen(!phone.matches);
 phone.addEventListener && phone.addEventListener('change', e => setTutorOpen(!e.matches));
 function goals() {
@@ -1594,10 +1612,28 @@ function draw(views, panel) {
       }
     });
   }
+  atomLabels(views[0].camPos);
   if (S.beat >= 2) coneLines(aimInfo());
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
   renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: 72, bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
+}
+
+// A faint "H" beside every neutral atom, so the player connects the caught proton with hydrogen.
+// Drawn as three strokes facing the viewer, sized with distance so it reads the same anywhere.
+function atomLabels(eye) {
+  const B = camBasis();
+  for (const a of S.atoms) {
+    const k = Math.min(1, a.fade || 0);
+    if (k < 0.05 || a.capt) continue;
+    const d = v3.len(v3.sub(a.p.pos, eye)), h = Math.min(4, Math.max(0.15, 0.04 * d));
+    const c = v3.add(a.p.pos, v3.add(v3.scale(B.u, 0.25 * a.st.n * a.st.n + 1.1 * h), v3.scale(B.r, 0.6 * h)));
+    const at = (x, y) => v3.add(c, v3.add(v3.scale(B.r, x * h), v3.scale(B.u, y * h)));
+    const col = [0.75, 0.9, 1], al = 0.32 * k;
+    lines.seg(at(-0.3, -0.5), at(-0.3, 0.5), col, al);
+    lines.seg(at(0.3, -0.5), at(0.3, 0.5), col, al);
+    lines.seg(at(-0.3, 0), at(0.3, 0), col, al);
+  }
 }
 
 // ---------------------------------------------------------------------------

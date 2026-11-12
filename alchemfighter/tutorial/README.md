@@ -191,6 +191,9 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     shells (the field's effect inside a shell is first order). The pull on excited atoms (above)
     still uses the leaning Stark state; the clouds now show that a state that starts as one orbital
     keeps its charge centred, so that pull is due to be brought in line.
+- **Windows:** the HUD windows are see-through. Every one has a − button (top right) that folds it to
+  its title row, and + opens it again (remembered between visits; I folds the tutor). The Game time
+  row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a faint "H" label.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
