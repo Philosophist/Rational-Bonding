@@ -90,7 +90,12 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 #dpad button { width: 48px; height: 48px; padding: 0; font: 600 18px var(--font-display); border-radius: 10px; background: rgba(8,14,26,.55); border-color: rgba(47,227,230,.35); touch-action: none; -webkit-touch-callout: none; }
 #dpad button.small { font-size: 12px; color: var(--muted); }
 #dpad button:active, #dpad button.held { background: rgba(47,227,230,.3); border-color: var(--cyan); }
-#tutorToggle { display: none; }
+#tutor { position: relative; }
+#tutorToggle { position: absolute; top: 6px; right: 6px; padding: 2px 9px; font-size: 13px; line-height: 1.4; }
+#tutor[data-unread="1"] #tutorToggle::after { content: ""; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); }
+#tutor.collapsed .say, #tutor.collapsed .row { display: none; }
+#doneKinds { margin: 6px 0 0; padding-left: 18px; }
+#doneKinds li { margin: 2px 0; }
 #moveBtns { display: none; }   /* replaced by the flight pad; kept for older touch layouts */
 #crosshair { position: fixed; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; pointer-events: none; color: rgba(214,226,238,.7); }
 #crosshair.on { color: var(--good); }
@@ -116,9 +121,7 @@ a { color: var(--cyan); }
   #tutor .goals li:not(.done) ~ li:not(.done) { display: none; }
   #tutor .goals:not(:has(li:not(.done))) li:last-child { display: block; }
   #tutor .goals li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #tutorToggle { display: inline-block; flex: none; margin-left: auto; position: relative; padding: 4px 9px; font-size: 13px; }
-  #tutor[data-unread="1"] #tutorToggle::after { content: ""; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); }
-  #tutor.collapsed .say, #tutor.collapsed .row { display: none; }
+  #tutorToggle { display: inline-block; flex: none; margin-left: auto; position: relative; top: auto; right: auto; padding: 4px 9px; font-size: 13px; }
   #tutor .say { font-size: 13px; max-height: 40vh; overflow: auto; }
   .right { display: none; }
   .bottom { display: flex; justify-content: flex-end; }
@@ -188,7 +191,7 @@ a { color: var(--cyan); }
       <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that reaches the wall, at its real wavelength"></canvas>
       <div class="data fine" id="photonOut" aria-live="polite"></div>
       <div class="fine" id="spectroNote">Spectrometer: each photon when it first reaches the wall, at its real wavelength (log scale). UV and IR are drawn in false colour.</div>
-      <div class="keys">Drag to look, or double-click for mouse look (double-click or Esc to free the cursor) · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view</div>
+      <div class="keys">Drag to look, or double-click for mouse look (double-click or Esc to free the cursor) · Click or Space: fire · W A S D: thrust (you keep drifting) · R / F: up / down · X: brake · Shift: stronger thrust · [ ] or wheel: electron speed · , . : game speed · V: Glow / Field view · I: minimize the tutor</div>
       <div class="keys touch">Drag to look · FIRE to shoot · pad: thrust · ■ brake</div>
     </section>
   </div>
@@ -219,9 +222,9 @@ a { color: var(--cyan); }
 <div class="overlay" id="doneBox" hidden>
   <div class="panel">
     <h1>Goal reached</h1>
-    <h2 id="doneTitle">You made a hydrogen atom</h2>
+    <h2 id="doneTitle">Congratulations, you solved the system!</h2>
     <p id="doneText"></p>
-    <p class="fine" id="doneKinds"></p>
+    <ul class="fine" id="doneKinds"></ul>
     <p class="fine">More of this level is on the way.</p>
     <div class="row" style="margin-top:10px"><button type="button" id="keepBtn">Keep playing</button><button type="button" id="againBtn">Play again</button></div>
   </div>
