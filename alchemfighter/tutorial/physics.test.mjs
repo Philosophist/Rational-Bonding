@@ -101,6 +101,20 @@ test('the wall keeps matter in', () => {
   assert.ok(e.vel[0] < 0);                                   // heading back inside
 });
 
+test('the wall is a mirror: angle in equals angle out', () => {
+  const e = { id: 'e', q: -1, m: P.ME, pos: [30, 25, 0], vel: [1.5, 1, 0.5], active: true };
+  const v0 = [...e.vel];
+  for (let i = 0; i < 40 && !e.bounces; i++) P.stepCharges([e], 1, new Map(), P.SPHERE_R, 4000);
+  assert.equal(e.bounces, 1);
+  const r = Math.hypot(...e.pos), n = e.pos.map(x => x / r);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const vin = dot(v0, n), vout = dot(e.vel, n);
+  assert.ok(Math.abs(vin + vout) < 1e-6, `${vin} vs ${vout}`);   // normal part reversed
+  const tin = v0.map((x, k) => x - vin * n[k]), tout = e.vel.map((x, k) => x - vout * n[k]);
+  for (let k = 0; k < 3; k++) assert.ok(Math.abs(tin[k] - tout[k]) < 1e-6);   // along-wall part kept
+  assert.deepEqual(P.mirrorBounce([1, 2, 3], [1, 0, 0]), [-1, 2, 3]);
+});
+
 test('classify names the radiation', () => {
   assert.equal(P.classify(121.57).name, 'far ultraviolet');
   assert.equal(P.classify(91).name, 'extreme ultraviolet');

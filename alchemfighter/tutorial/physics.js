@@ -373,13 +373,13 @@ export function stepCharges(ps, dt, enc = new Map(), R = SPHERE_R, maxSub = 4000
       const p = ps[i];
       if (!p.active) continue;
       for (let k = 0; k < 3; k++) p.vel[k] += 0.5 * h * acc[i][k];
-      // The wall: matter bounces off without losing energy, in a random direction (real surfaces
-      // scatter diffusely, following Knudsen's cosine law), so a miss doesn't come straight back.
+      // The wall: matter bounces off like a ball off a curved mirror, without losing energy. The
+      // velocity is mirrored about the wall's normal where it hits (angle in = angle out).
       const r = Math.hypot(p.pos[0], p.pos[1], p.pos[2]);
       if (r > R) {
         const nx = p.pos[0] / r, ny = p.pos[1] / r, nz = p.pos[2] / r;
         const vn = p.vel[0] * nx + p.vel[1] * ny + p.vel[2] * nz;
-        if (vn > 0) p.vel = diffuseBounce(p.vel, [-nx, -ny, -nz], rand);
+        if (vn > 0) p.vel = mirrorBounce(p.vel, [nx, ny, nz]);
         const k = (2 * R - r) / r; p.pos[0] *= k; p.pos[1] *= k; p.pos[2] *= k;
         p.bounces = (p.bounces || 0) + 1;
       }
@@ -390,15 +390,10 @@ export function stepCharges(ps, dt, enc = new Map(), R = SPHERE_R, maxSub = 4000
   return { events, substeps: n, done: t >= dt };
 }
 
-// Same speed, new direction drawn from a cosine-weighted hemisphere around the inward normal n.
-export function diffuseBounce(v, n, rand = Math.random) {
-  const speed = Math.hypot(v[0], v[1], v[2]);
-  const a = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-  let t = [n[1] * a[2] - n[2] * a[1], n[2] * a[0] - n[0] * a[2], n[0] * a[1] - n[1] * a[0]];
-  const tl = Math.hypot(t[0], t[1], t[2]); t = t.map(x => x / tl);
-  const b = [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]];
-  const u = rand(), phi = 2 * Math.PI * rand(), st = Math.sqrt(u), ct = Math.sqrt(1 - u);
-  return [0, 1, 2].map(k => speed * (n[k] * ct + st * (Math.cos(phi) * t[k] + Math.sin(phi) * b[k])));
+// Mirror bounce: flip the part of v along the unit normal n, keep the part along the wall.
+export function mirrorBounce(v, n) {
+  const vn = v[0] * n[0] + v[1] * n[1] + v[2] * n[2];
+  return [0, 1, 2].map(k => v[k] - 2 * vn * n[k]);
 }
 
 function trackPasses(ps, enc, events) {
