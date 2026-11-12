@@ -145,6 +145,24 @@ function setTutorOpen(open) {
   if (open) delete $('tutor').dataset.unread;
 }
 $('tutorToggle').addEventListener('click', () => setTutorOpen($('tutor').classList.contains('collapsed')));
+// Every other window gets the same kind of button: − folds it to its title row (marked .keep, so the
+// game-time speed in the Time window stays in view), + opens it again. The choice is remembered.
+const folded = (() => { try { return JSON.parse(localStorage.getItem('af-folded') || '{}'); } catch { return {}; } })();
+for (const box of document.querySelectorAll('.hud .panel[data-name]')) {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'minBtn';
+  const set = shut => {
+    box.classList.toggle('collapsed', shut);
+    btn.textContent = shut ? '+' : '−';
+    btn.title = `${shut ? 'Open' : 'Minimize'} the ${box.dataset.name} window`;
+    btn.setAttribute('aria-expanded', String(!shut));
+    folded[box.id] = shut;
+    try { localStorage.setItem('af-folded', JSON.stringify(folded)); } catch {}
+  };
+  btn.addEventListener('click', () => set(!box.classList.contains('collapsed')));
+  box.prepend(btn);
+  set(!!folded[box.id]);
+}
 setTutorOpen(!phone.matches);
 phone.addEventListener && phone.addEventListener('change', e => setTutorOpen(!e.matches));
 function goals() {
@@ -218,8 +236,34 @@ function getAim() {
   const B = flatBasis();
   return { eye: B.p, f: B.f, muzzle: v3.add(B.p, v3.add(v3.scale(B.u, -0.45), v3.scale(B.r, 0.3))) };
 }
+// Where a shot would go: stepped through the field of every charge in the system as it is right
+// now (the others are held where they are for the prediction), so the path shifts as they move.
+function predictPath(start, vel, target) {
+  const charges = S.ps.filter(q => q.active && q.q);
+  let x = [...start], v = [...vel], best = { r: Infinity, L: 0 };
+  const pts = [[...x]];
+  for (let i = 0; i < 2500; i++) {
+    let rmin = Infinity;
+    for (const q of charges) rmin = Math.min(rmin, v3.len(v3.sub(x, q.pos)));
+    const h = Math.min(2, 0.03 * Math.max(rmin, 0.01) / v3.len(v));
+    const E = P.fieldAt(x, charges);
+    v = v3.add(v, v3.scale(E, -h / P.ME)); x = v3.add(x, v3.scale(v, h));
+    pts.push([...x]);
+    const d = v3.sub(x, target.pos), r = v3.len(d);
+    if (r < best.r) best = { r, L: P.angularL(v3.len(v3.cross(d, v3.sub(v, target.vel)))) };
+    if (v3.len(x) > P.SPHERE_R || (r > best.r + 3 && best.r < 3) || pts.length > 2000) break;
+  }
+  return { pts, rp: best.r, L: best.L };
+}
+let aimCache = null;
 function aimInfo() {
-  const g = getAim(), B = { p: g.eye, f: g.f }, muzzle = g.muzzle;
+  const g0 = getAim(), key = `${S.time}|${g0.eye}|${g0.f}|${S.dial}`;
+  if (aimCache && aimCache.key === key) return aimCache.info;
+  const info = aimInfoNow(g0);
+  aimCache = { key, info };
+  return info;
+}
+function aimInfoNow(g) { const B = { p: g.eye, f: g.f }, muzzle = g.muzzle;
   const targets = [...bareProtons(), ...S.atoms.map(a => a.p)];
   let best = null;
   for (const p of targets) {
@@ -234,11 +278,12 @@ function aimInfo() {
   const cone = P.coneWidth(E, v3.len(v3.sub(aimPoint, muzzle)));
   const info = { muzzle, aimPoint, cone, E, target: best && best.miss < 6 ? best : null };
   if (info.target && info.target.p.q === 1) {
-    // Two-body prediction of the closest approach, from the launch point's angular momentum.
+    // The predicted path through every charge's field, and the pass it makes by the aimed proton.
     const rel = v3.sub(muzzle, info.target.p.pos), dir = v3.norm(v3.sub(aimPoint, muzzle));
-    const h = v3.len(v3.cross(rel, dir)) * P.electronSpeed(launchKE(E, v3.len(rel)));
-    info.rp = P.periapsisFromL(h, E);
-    info.L = P.angularL(h);   // what the odds depend on: the pass's angular momentum (ħ)
+    const pr = predictPath(muzzle, v3.scale(dir, P.electronSpeed(launchKE(E, v3.len(rel)))), info.target.p);
+    info.path = pr.pts;
+    info.rp = pr.rp;
+    info.L = pr.L;   // what the odds depend on: the pass's angular momentum (ħ)
     info.chance = P.captureChanceGame(E, info.L);
     info.real = P.captureChanceReal(E, info.L);
   }
@@ -1442,7 +1487,7 @@ function circLines(L, t, k, out) {
 // The photon's path (pilot-wave view): light is far too fast to follow by eye, so the path it has
 // flown is left as a trail that fades over TRAIL_S seconds of play. It is drawn the same whether
 // the photon leaves through the wall or another atom takes it.
-const TRAIL_S = 1;
+const TRAIL_S = 1, TRAIL_NEAR = 3;
 function trackTrail(L) {
   if (!L.launched || L.trailDone) return;
   if (!L.trail) { L.trail = { pts: [{ pos: [...L.em.src], t: S.time }], col: L.col }; S.trails.push(L.trail); }
@@ -1470,25 +1515,42 @@ function photonDot(L, glows) {
 // crosses ring l passes with L ≈ l + ½, mostly the partial wave l. Each ring's brightness is that
 // wave's real chance of being caught, so the brightest ring is the best place to aim; the rings
 // grow as the electron slows, because its wave (ƛ) gets wider.
+// A tiny stroke font (digits, '.', n, m, p, µ) drawn as lines, so labels show in VR too.
+const GLYPH = {
+  0: [[0, 0, 1, 0], [1, 0, 1, 2], [1, 2, 0, 2], [0, 2, 0, 0]], 1: [[1, 0, 1, 2]], 2: [[0, 2, 1, 2], [1, 2, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]],
+  3: [[0, 2, 1, 2], [1, 2, 1, 0], [1, 0, 0, 0], [0, 1, 1, 1]], 4: [[0, 2, 0, 1], [0, 1, 1, 1], [1, 2, 1, 0]], 5: [[1, 2, 0, 2], [0, 2, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
+  6: [[1, 2, 0, 2], [0, 2, 0, 0], [0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]], 7: [[0, 2, 1, 2], [1, 2, 1, 0]], 8: [[0, 0, 1, 0], [1, 0, 1, 2], [1, 2, 0, 2], [0, 2, 0, 0], [0, 1, 1, 1]],
+  9: [[1, 1, 0, 1], [0, 1, 0, 2], [0, 2, 1, 2], [1, 2, 1, 0], [1, 0, 0, 0]], '.': [[0.4, 0, 0.6, 0]],
+  n: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0]], m: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0.5, 1, 0.5, 0]], p: [[0, -1, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
+};
+function strokeText(str, at, h, col, alpha) {
+  const B = camBasis(), w = 0.5 * h;
+  let x = 0;
+  for (const ch of str) {
+    for (const [x1, y1, x2, y2] of GLYPH[ch] || []) {
+      const p1 = v3.add(at, v3.add(v3.scale(B.r, (x + x1) * w), v3.scale(B.u, y1 * w)));
+      const p2 = v3.add(at, v3.add(v3.scale(B.r, (x + x2) * w), v3.scale(B.u, y2 * w)));
+      lines.seg(p1, p2, col, alpha);
+    }
+    x += ch === '.' ? 1 : ch === ' ' ? 0.8 : 1.6;
+  }
+}
+const fmtLen = nm => (nm < 0.1 ? `${(nm * 1000).toFixed(0)} pm` : nm < 10 ? `${nm.toFixed(nm < 1 ? 2 : 1)} nm` : `${nm.toFixed(0)} nm`);
 function aimPath(a) {
-  if (!a.target || a.target.p.q !== 1) return;
+  if (!a.target || a.target.p.q !== 1 || !a.path) return;
   const pc = a.target.p.pos, dir = v3.norm(v3.sub(a.aimPoint, a.muzzle));
   const r0 = v3.len(v3.sub(a.muzzle, pc)), vL = P.electronSpeed(launchKE(a.E, r0)), vInf = P.electronSpeed(a.E);
-  let x = v3.sub(a.muzzle, pc), v = v3.scale(dir, vL), prev = v3.add(pc, x);
-  for (let i = 0; i < 1500; i++) {
-    const r = v3.len(x), h = 0.02 * r / v3.len(v);
-    const acc = v3.scale(x, -P.KE / (P.ME * r * r * r));
-    v = v3.add(v, v3.scale(acc, h)); x = v3.add(x, v3.scale(v, h));
-    const pt = v3.add(pc, x);
-    lines.seg(prev, pt, [0.6, 0.75, 1], 0.28);
-    prev = pt;
-    if (v3.len(x) > r0 + 1 || v3.len(x) > P.SPHERE_R) break;
-  }
+  for (let i = 1; i < a.path.length; i++) lines.seg(a.path[i - 1], a.path[i], [0.6, 0.75, 1], 0.28);
   const T = Q.captureTable(a.E), P_l = T.map(row => row.reduce((s, z) => s + z.P, 0)), best = Math.max(...P_l);
   const e1 = v3.norm(v3.cross(dir, Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(dir, e1);
   const lb = P.reducedWavelength(a.E) * vInf / vL;   // the miss distance that gives one unit of L from here
   for (let l = 0; l < Math.min(5, P_l.length); l++) {
     const R = (l + 0.5) * lb, k = P_l[l] / best;
+    if (!phone.matches || k === 1) {   // its diameter, beside the ring (phones: only the best ring)
+      const B = camBasis(), d = v3.len(v3.sub(pc, B.p)), hgt = Math.min(1.5, Math.max(0.06, 0.018 * d));
+      const at = v3.add(pc, v3.add(v3.scale(B.r, R * 0.72 + 0.2 * hgt), v3.scale(B.u, R * 0.72)));
+      strokeText(fmtLen(2 * R), at, hgt, [0.36, 0.95, 0.6], 0.25 + 0.45 * k);
+    }
     let q = null;
     for (let i = 0; i <= 48; i++) {
       const t = 2 * Math.PI * i / 48, pt = v3.add(pc, v3.add(v3.scale(e1, Math.cos(t) * R), v3.scale(e2, Math.sin(t) * R)));
@@ -1589,8 +1651,10 @@ function draw(views, panel) {
   lines.begin();
   if (S.fieldView) fieldLines();
   for (const e of freeElectrons()) {
-    for (let i = 1; i < e.trail.length; i++) lines.seg(e.trail[i - 1], e.trail[i], [0.3, 0.5, 1], 0.08 + 0.4 * i / e.trail.length);
-    if (e.trail.length) lines.seg(e.trail[e.trail.length - 1], e.pos, [0.3, 0.5, 1], 0.5);
+    // Its path only where it swings close by a proton (inside TRAIL_NEAR nm), where the pull bends it.
+    const near = x => { let d = Infinity; for (const p of S.ps) if (p.kind === 'proton' && p.active) d = Math.min(d, v3.len(v3.sub(x, p.pos))); return Math.max(0, Math.min(1, (TRAIL_NEAR - d) / 1.5)); };
+    const pts = [...e.trail, e.pos];
+    for (let i = 1; i < pts.length; i++) { const k = near(pts[i]); if (k > 0) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], k * (0.08 + 0.4 * i / pts.length)); }
   }
   const strength = L => (L.launched && !L.caught ? 2 : 0) + W.envelope(L.em, Math.min(S.simFs, L.em.tEnd));
   for (const L of [...S.light].sort((x, y) => strength(y) - strength(x)).slice(0, MAX_DRAWN_LIGHTS)) lightLines(L);
@@ -1612,10 +1676,28 @@ function draw(views, panel) {
       }
     });
   }
+  atomLabels(views[0].camPos);
   if (S.beat >= 2) { const ai = aimInfo(); coneLines(ai); aimPath(ai); }
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
   renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: 72, bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
+}
+
+// A faint "H" beside every neutral atom, so the player connects the caught proton with hydrogen.
+// Drawn as three strokes facing the viewer, sized with distance so it reads the same anywhere.
+function atomLabels(eye) {
+  const B = camBasis();
+  for (const a of S.atoms) {
+    const k = Math.min(1, a.fade || 0);
+    if (k < 0.05 || a.capt) continue;
+    const d = v3.len(v3.sub(a.p.pos, eye)), h = Math.min(4, Math.max(0.15, 0.04 * d));
+    const c = v3.add(a.p.pos, v3.add(v3.scale(B.u, 0.25 * a.st.n * a.st.n + 1.1 * h), v3.scale(B.r, 0.6 * h)));
+    const at = (x, y) => v3.add(c, v3.add(v3.scale(B.r, x * h), v3.scale(B.u, y * h)));
+    const col = [0.75, 0.9, 1], al = 0.32 * k;
+    lines.seg(at(-0.3, -0.5), at(-0.3, 0.5), col, al);
+    lines.seg(at(0.3, -0.5), at(0.3, 0.5), col, al);
+    lines.seg(at(-0.3, 0), at(0.3, 0), col, al);
+  }
 }
 
 // ---------------------------------------------------------------------------
