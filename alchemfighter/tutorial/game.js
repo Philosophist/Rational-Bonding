@@ -94,7 +94,7 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
-    shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], speed: 3, slow: 1,
+    shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0 }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
   };
@@ -320,16 +320,6 @@ function stepShell(a, dt, dtFs) {
   const w = Q.shellAverage(a.st.n, a.st.m, F, c).w / Q.T_AU_FS;   // rad/fs
   a.c = Q.evolveShell(a.st.n, a.st.m, F, c, dtFs * Math.min(1, capOmega(showHz()) / Math.max(w, 1e-30)) / Q.T_AU_FS);
 }
-// Which orbital of the shell the next step down leaves from: each l's share (averaged over the
-// sloshing) times its own decay rate. Returns that state and the shell's lifetime as it is mixed.
-function shellDecay(a) {
-  const c = shellOf(a);
-  if (c.re.length < 2) return { st: a.st, tauNs: null };
-  const { ls, p } = Q.shellAverage(a.st.n, a.st.m, fieldAlong(a), c);
-  const rates = ls.map((l, i) => p[i] / P.DECAY[`${a.st.n},${l}`].tau), tot = rates.reduce((x, y) => x + y, 0);
-  const i = P.pickWeighted(ls.map((_, k) => k), k => rates[k]);
-  return { st: { ...a.st, l: ls[i] }, tauNs: 1 / tot, mixed: p[ls.indexOf(a.st.l)] < 0.98 };
-}
 // The cloud as the shader draws it: a blend of orbitals in the atom's own frame.
 const cmul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
 const termOf = (st, c, g = 0) => { const d = desc(st); return { n: st.n, l: st.l, m: st.m, mode: d.mode, norm: d.norm, c, g, peak: d.peak, iso: d.iso }; };
@@ -450,6 +440,7 @@ function updateLight(dt) {
     const s = P.C * (S.simFs - L.tLaunch);   // how far the photon has gone
     if (L.target && s >= L.target.r) {
       const a = L.target.a;
+      L.endS = L.target.r; trackTrail(L);
       L.target = null;
       if (!S.atoms.includes(a) || !resting(a)) continue;   // it changed meanwhile (rare): the photon flies on
       catchPhoton(L);
@@ -464,6 +455,7 @@ function updateLight(dt) {
       log(`H(${P.stateName(a.st)}) + ${L.lam.toFixed(1)} nm light → H⁺ + e⁻, with ${(L.E - P.ionE(n)).toFixed(2)} eV to spare.`, 'red');
       say(`The light knocked the electron off a hydrogen atom! ${n === 1 ? 'From 1s that takes at least 13.6 eV of ultraviolet' : `Up on step n = ${n} it only takes ${P.ionE(n).toFixed(1)} eV`}. Light can break atoms apart as well as come out of them. That proton is bare again.`);
     } else if (s >= L.exitAt) {
+      L.endS = L.exitAt; trackTrail(L);
       // Not taken: it is found at the wall and leaves the system. The spectrometer records it.
       catchPhoton(L);
       S.spectrum.push({ lam: L.lam, t: S.time });
@@ -563,43 +555,47 @@ function capture(e, p, E) {
   if (S.beat === 3) S.b3.caught++;
   say(st.n === 1
     ? 'Caught! This one went straight to the bottom step in one go, so a single ultraviolet flash carried off all the energy.'
-    : `Caught! It landed in ${P.stateName(st)}. It stays there for its real lifetime before stepping down: about ${fmtSpan(lifetimeFs(atom.pending && atom.pending.tauNs || P.DECAY[`${atom.st.n},${atom.st.l}`].tau) / (FS_PER_S * SPEEDS[S.speed]))} of play at this game speed.`);
+    : `Caught! It landed in ${P.stateName(st)}. As things stand it would wait about ${fmtSpan(lifetimeFs(1 / hazardRates(atom).tot) / (FS_PER_S * SPEEDS[S.speed]))} of play at this game speed before stepping down (nearby charges change that by blending its orbitals).`);
 }
-// The next step down happens after its real delay on the shared clock (not sped up). That includes
-// 2s: its two-photon decay really takes 0.12 s, 76 million times longer than 2p, so left alone it
-// outlasts any game. What lets it go sooner is a loose charge's electric field (quench2s).
+// Steps down are driven by what causes them, moment by moment, never by a timer drawn in advance.
+// What a nearby charge does is fully caused: its field, where it is right now, mixes the shell's
+// orbitals (stepShell). What has no known trigger is the instant the photon leaves: that is a
+// chance per moment, set by how much of each orbital is blended in right now (its share, averaged
+// over the fast slosh) times that orbital's own rate. So a lone 2s atom (only the slow two-photon
+// way out) just sits there; a passing electron blends in 2p while it is close, and the chance of a
+// Lyman-α photon rises and falls with it.
 function scheduleDecay(atom) {
-  const mix = shellDecay(atom);
-  if (mix.st.l !== atom.st.l) {
-    if ((S.mixSaid = (S.mixSaid || 0) + 1) <= 2) log(`A nearby charge's electric field is mixing ${P.stateName(atom.st)} with the rest of shell n = ${atom.st.n}, so this time it steps down from its ${P.stateName(mix.st)} part.`);
-    atom.st = mix.st;
-  }
-  const d = P.pickDecay(atom.st);
-  if (d && mix.tauNs && !d.twoPhoton) { d.delayNs = P.sampleExp(mix.tauNs); d.tauNs = mix.tauNs; }
-  atom.pending = d;
-  if (!d) return;
-  atom.waitFs = d.delayNs * 1e6 / DECAY_BOOST;
+  atom.pending = atom.st.n > 1 ? { hazard: true } : null;
   atom.hold = 0; atom.since = S.simFs; atom.alone = 0;
-  if (d.twoPhoton && (S.in2s = (S.in2s || 0) + 1) <= 2) log('2s can\'t give off a single photon by itself. Left alone it waits about 0.12 s, then gives off two. A loose charge\'s electric field lets it go far sooner.');
+  if (atom.st.n === 2 && atom.st.l === 0 && (S.in2s = (S.in2s || 0) + 1) <= 2) log('2s can\'t give off a single photon by itself, so it stays put. A passing charge\'s electric field blends some 2p into it, and only while it does can one photon get out.');
 }
-// A loose charge's electric field mixes 2s with 2p (Stark mixing), and the atom then gives off one
-// Lyman-α photon, its charge swinging along the field. Any bare proton or free electron inside the
-// sphere is close enough to mix the two fully, and 2s then lasts twice as long as 2p.
-function quench2s(a, dt, dtFs) {
-  const Fv = P.fieldAt(a.p.pos, S.ps), F = v3.len(Fv);
-  if (Math.random() < 1 - Math.exp(-P.starkQuenchRate(F) * dtFs * DECAY_BOOST * 1e-6)) {
-    a.pending = { to: { n: 1, l: 0, m: 0 }, photons: [P.lambdaFor(2, 1)], delayNs: (S.simFs - a.since) * DECAY_BOOST * 1e-6, dm: 0, axis: v3.norm(Fv), quenched: true };
-    a.waitFs = 0;
-    return;
-  }
-  if (F > P.STARK_FC) return;
-  a.alone += dt;
-  if (a.alone > 4 && !a.aloneSaid) {
-    a.aloneSaid = true;
-    say('This atom is resting in 2s, a round shape that can\'t give off a single photon by itself. Left alone it would wait about a tenth of a second, which for an atom is an age: 76 million times longer than 2p. An electric field can let it go. Fire an electron past it.');
-  }
+// The rate (per ns) of a step down right now, from each orbital's share, and the shares.
+function hazardRates(a) {
+  const c = shellOf(a), ls = shellLs(a.st.n, a.st.m);
+  const p = c.re.length > 1 ? Q.shellAverage(a.st.n, a.st.m, fieldAlong(a), c).p : [1];
+  const rates = ls.map((l, i) => p[i] / P.DECAY[`${a.st.n},${l}`].tau);
+  return { ls, p, rates, tot: rates.reduce((x, y) => x + y, 0) };
 }
-
+// One moment's chance of a step down. Returns the step if it happens now.
+function hazardStep(a, dt, dtFs) {
+  const { ls, p, rates, tot } = hazardRates(a);
+  if (a.st.n === 2 && p[0] > 0.999) {
+    a.alone += dt;
+    if (a.alone > 4 && !a.aloneSaid) {
+      a.aloneSaid = true;
+      say('This atom is resting in 2s, a round shape that can\'t give off a single photon by itself. Left alone it would wait about a tenth of a second, which for an atom is an age. A passing charge\'s electric field blends in some 2p, and only then can one photon get out. Fire an electron past it.');
+    }
+  }
+  if (!(Math.random() < 1 - Math.exp(-tot * dtFs * DECAY_BOOST * 1e-6))) return null;
+  const l = ls[P.pickWeighted(ls.map((_, k) => k), k => rates[k])];
+  if (l !== a.st.l && (S.mixSaid = (S.mixSaid || 0) + 1) <= 2) log(`A nearby charge's electric field had blended ${P.stateName({ n: a.st.n, l })} into this ${P.stateName(a.st)} atom, and the light came out of that part.`);
+  a.st = { ...a.st, l };
+  const d = P.pickDecay(a.st);
+  d.delayNs = (S.simFs - a.since) * DECAY_BOOST * 1e-6;
+  if (!d.twoPhoton && a.st.n === 2 && p[0] > 0.01) { d.axis = v3.norm(P.fieldAt(a.p.pos, S.ps)); d.dm = 0; d.byField = true; }   // swinging along the field that blended it
+  a.waitFs = 0;
+  return d;
+}
 // ---------------------------------------------------------------------------
 // Atoms sharing one excitation
 // The system is smaller than a wavelength of Lyman light, so an atom in 2p, 3p or 4p doesn't just
@@ -786,10 +782,10 @@ function describe(lam, nLow, capture, cap = false) {
 // upper level fades as exp(−t/τ). The photon leaves after the atom's sampled real lifetime (on the
 // game's clock, not sped up), and when the photon is found the atom settles into the lower level.
 function startEmission(a, d) {
-  const lam = d.photons[0], tauNs = d.quenched ? 2 * P.DECAY['2,1'].tau : d.tauNs || P.DECAY[`${a.st.n},${a.st.l}`].tau;
+  const lam = d.photons[0], tauNs = P.DECAY[`${a.st.n},${a.st.l}`].tau;
   const quick = a.reex && !watched(a);
   a.emitL = startLight({ pos: a.p.pos, lam, pattern: d.dm === 0 ? 'lin' : 'circ', axis: d.axis || [0, 1, 0], from: a,
-    show: quick ? LIGHT_QUICK : LIGHT_SHOW, tau: lifetimeFs(tauNs), launchIn: d.quenched ? 0 : a.waitFs,
+    show: quick ? LIGHT_QUICK : LIGHT_SHOW, tau: lifetimeFs(tauNs), launchIn: a.waitFs,
     emitter: {
       onLaunch: L => {
         // Each photon carries momentum hν/c, so the atom recoils (about 3 m/s for Lyman-α).
@@ -813,7 +809,7 @@ function stepDone(a, d) {
   const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
   S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
   const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
-  if (!a.reex || S.paired <= 3) log(`${P.stateName(a.st)} → ${P.stateName(d.to)} after ${when}${d.quenched ? ', let go by a nearby charge\'s electric field' : ''}: ${names}`, d.photons.some(l => P.lineName(l) === 'H-α') ? 'red' : '');
+  if (!a.reex || S.paired <= 3) log(`${P.stateName(a.st)} → ${P.stateName(d.to)} after ${when}${d.byField ? ', let go by a nearby charge\'s electric field' : ''}: ${names}`, d.photons.some(l => P.lineName(l) === 'H-α') ? 'red' : '');
 }
 // The frequency (rad/fs) the atom's cloud beats at: the light it is sending or answering.
 function cloudOmega(a) {
@@ -843,9 +839,9 @@ function updateAtoms(dt, dtFs) {
       continue;
     }
     if (a.emitL) continue;                      // swinging; the photon leaves when its time comes
-    if (a.pending.twoPhoton) quench2s(a, dt, dtFs);
     a.hold -= dt;
     if (a.hold > 0 || a.fade < 1) continue;
+    if (a.pending.hazard) { const h = hazardStep(a, dt, dtFs); if (!h) continue; a.pending = h; }
     const d = a.pending;
     if (d.twoPhoton) {
       // 2s left alone: two photons at once after its long wait (no single swing sends them).
@@ -1443,12 +1439,63 @@ function circLines(L, t, k, out) {
   }
 }
 // The photon's particle (pilot-wave view): a bright point riding its wave, with a short streak behind.
+// The photon's path (pilot-wave view): light is far too fast to follow by eye, so the path it has
+// flown is left as a trail that fades over TRAIL_S seconds of play. It is drawn the same whether
+// the photon leaves through the wall or another atom takes it.
+const TRAIL_S = 1;
+function trackTrail(L) {
+  if (!L.launched || L.trailDone) return;
+  if (!L.trail) { L.trail = { pts: [{ pos: [...L.em.src], t: S.time }], col: L.col }; S.trails.push(L.trail); }
+  const s = Math.min(P.C * (S.simFs - L.tLaunch), L.endS ?? Infinity);
+  L.trail.pts.push({ pos: v3.add(L.em.src, v3.scale(L.dir, s)), t: S.time });
+  if (L.endS !== undefined) L.trailDone = true;
+}
+function trailLines() {
+  S.trails = S.trails.filter(tr => S.time - tr.pts[tr.pts.length - 1].t < TRAIL_S);
+  if (!S.pilot) return;
+  for (const tr of S.trails) for (let i = 1; i < tr.pts.length; i++) {
+    const a = 1 - (S.time - tr.pts[i].t) / TRAIL_S;
+    if (a > 0) lines.seg(tr.pts[i - 1].pos, tr.pts[i].pos, tr.col, 0.7 * a);
+  }
+}
 function photonDot(L, glows) {
   if (!S.pilot || !L.launched || L.caught) return;
   const s = P.C * (S.simFs - L.tLaunch), at = v3.add(L.em.src, v3.scale(L.dir, s));
   glows.push({ pos: at, size: 0.14, col: L.col.map(c => c * 2.6) });
   const back = v3.add(L.em.src, v3.scale(L.dir, Math.max(0, s - 5)));
   lines.seg(back, at, L.col, 0.9);
+}
+// The aim path: where the electron would go around the aimed proton (that pair alone), and rings
+// around the proton marking the angular momentum of a pass (in units of ħ). A shot whose line
+// crosses ring l passes with L ≈ l + ½, mostly the partial wave l. Each ring's brightness is that
+// wave's real chance of being caught, so the brightest ring is the best place to aim; the rings
+// grow as the electron slows, because its wave (ƛ) gets wider.
+function aimPath(a) {
+  if (!a.target || a.target.p.q !== 1) return;
+  const pc = a.target.p.pos, dir = v3.norm(v3.sub(a.aimPoint, a.muzzle));
+  const r0 = v3.len(v3.sub(a.muzzle, pc)), vL = P.electronSpeed(launchKE(a.E, r0)), vInf = P.electronSpeed(a.E);
+  let x = v3.sub(a.muzzle, pc), v = v3.scale(dir, vL), prev = v3.add(pc, x);
+  for (let i = 0; i < 1500; i++) {
+    const r = v3.len(x), h = 0.02 * r / v3.len(v);
+    const acc = v3.scale(x, -P.KE / (P.ME * r * r * r));
+    v = v3.add(v, v3.scale(acc, h)); x = v3.add(x, v3.scale(v, h));
+    const pt = v3.add(pc, x);
+    lines.seg(prev, pt, [0.6, 0.75, 1], 0.28);
+    prev = pt;
+    if (v3.len(x) > r0 + 1 || v3.len(x) > P.SPHERE_R) break;
+  }
+  const T = Q.captureTable(a.E), P_l = T.map(row => row.reduce((s, z) => s + z.P, 0)), best = Math.max(...P_l);
+  const e1 = v3.norm(v3.cross(dir, Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(dir, e1);
+  const lb = P.reducedWavelength(a.E) * vInf / vL;   // the miss distance that gives one unit of L from here
+  for (let l = 0; l < Math.min(5, P_l.length); l++) {
+    const R = (l + 0.5) * lb, k = P_l[l] / best;
+    let q = null;
+    for (let i = 0; i <= 48; i++) {
+      const t = 2 * Math.PI * i / 48, pt = v3.add(pc, v3.add(v3.scale(e1, Math.cos(t) * R), v3.scale(e2, Math.sin(t) * R)));
+      if (q) lines.seg(q, pt, [0.36, 0.95, 0.6], 0.06 + 0.4 * k);
+      q = pt;
+    }
+  }
 }
 function coneLines(a) {
   const ax = v3.norm(v3.sub(a.aimPoint, a.muzzle));
@@ -1547,7 +1594,8 @@ function draw(views, panel) {
   }
   const strength = L => (L.launched && !L.caught ? 2 : 0) + W.envelope(L.em, Math.min(S.simFs, L.em.tEnd));
   for (const L of [...S.light].sort((x, y) => strength(y) - strength(x)).slice(0, MAX_DRAWN_LIGHTS)) lightLines(L);
-  for (const L of S.light) photonDot(L, glows);
+  for (const L of S.light) { if (L.launched && !L.caught) trackTrail(L); photonDot(L, glows); }
+  trailLines();
   for (const q of S.pairs) {   // strongly coupled atoms' electric fields: a faint link, brighter toward the atom holding more
     const t = q.members[q.top || 0], A = t.p.pos, wt = q.w[q.top || 0];
     q.members.forEach((m, j) => {
@@ -1564,7 +1612,7 @@ function draw(views, panel) {
       }
     });
   }
-  if (S.beat >= 2) coneLines(aimInfo());
+  if (S.beat >= 2) { const ai = aimInfo(); coneLines(ai); aimPath(ai); }
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
   renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: 72, bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });

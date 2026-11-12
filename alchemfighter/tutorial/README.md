@@ -50,15 +50,20 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   axis, as far as l allows. Then it steps down to 1s, often skipping levels (3p → 1s directly,
   for instance), with lifetimes and branching computed from the orbitals' overlaps (they match the
   measured ones: 2p 1.60 ns, 3d 15.5 ns, 3p → 1s in 88%). Capture above n = 6 is left out.
-- **2s** can't give off a single photon by itself. Left alone it gives off two, sharing 10.2 eV,
-  after about 0.12 s: 76 million times longer than 2p, and it is not cut short, so a lone 2s atom
-  just waits. What lets it go is the electric field of a loose charge (a bare proton or a free
-  electron), which mixes 2s with 2p (Stark mixing; the two sit only the Lamb shift, 4.4 µeV,
-  apart). The rate is Γ(2p) × the share of 2p mixed in: 2,740 per second at 1 V/cm (measured:
-  about 2,780), levelling off at half of 2p's rate above about 477 V/cm. Any loose charge inside
-  the 40 nm sphere is past that, so 2s then lasts about 3.2 ns and leaves as one Lyman-α photon,
-  its charge swinging along the field. With no loose charge anywhere, the tutor suggests firing an
-  electron past the atom.
+- **Steps down are driven by their causes, moment by moment.** There is no timer drawn in advance.
+  A nearby charge's field, where it is right now, blends the shell's orbitals (exactly, see "Clouds
+  in fields"). The instant a photon leaves has no known trigger, so it is a chance per moment: each
+  orbital's share right now (averaged over the fast slosh) times that orbital's own rate. 2s can't
+  give off a single photon by itself, so a lone 2s atom just sits there (two photons after about
+  0.12 s on average). A passing charge blends in 2p while it is close (fully above about 477 V/cm,
+  where the field beats the Lamb shift; a game check: an electron 1 nm away gives 50% 2p, so the
+  chance per moment is that of a 3.2 ns lifetime), and the chance falls back when it leaves.
+- **Aim path:** the predicted path around the aimed proton (that pair alone) and rings marking the
+  pass's angular momentum, L ≈ l + ½ where the aim line crosses ring l. Each ring is as bright as
+  that partial wave's real chance of being caught, so the brightest ring is the best aim; the rings
+  widen as the electron slows.
+- **Photon trail (pilot-wave view):** the photon's path is left as a trail that fades over one
+  second of play, whether it leaves through the wall or another atom takes it.
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
 - **Time: one clock, nothing pauses.** At full speed 1 screen second is 40 fs. The player picks
   a game speed (×0.1 to ×2). When something worth watching happens, the whole system slows down
