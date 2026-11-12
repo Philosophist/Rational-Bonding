@@ -3,6 +3,9 @@
 // point glows for flashes, and a line pass for photons, field lines, trails and the aim cone.
 
 export const MAX_CHARGES = 32, MAX_CLOUDS = 12, MAX_GLOWS = 48;
+// Orbitals one cloud can be a blend of, and the points in a free electron's radial table.
+export const MAX_TERMS = 8, FREE_N = 128;
+const ROW = 6 + 2 * MAX_TERMS;
 
 const VERT = `#version 300 es
 in vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -13,10 +16,9 @@ out vec4 outColor;
 uniform vec4 uViewport; uniform vec3 uCamPos; uniform mat4 uInvVP; uniform float uTime;
 uniform float uSphereR; uniform int uSteps;
 uniform vec4 uQ[${MAX_CHARGES}]; uniform float uQs[${MAX_CHARGES}]; uniform int uQN; uniform float uFieldGain;
-uniform int uNA; uniform vec3 uAP[${MAX_CLOUDS}]; uniform float uAR[${MAX_CLOUDS}]; uniform float uAS;
-uniform ivec3 uQA[${MAX_CLOUDS}]; uniform int uModeA[${MAX_CLOUDS}]; uniform float uNormA[${MAX_CLOUDS}]; uniform vec2 uCA[${MAX_CLOUDS}];
-uniform ivec3 uQB[${MAX_CLOUDS}]; uniform int uModeB[${MAX_CLOUDS}]; uniform float uNormB[${MAX_CLOUDS}]; uniform vec2 uCB[${MAX_CLOUDS}];
-uniform float uInvMax[${MAX_CLOUDS}]; uniform float uIso[${MAX_CLOUDS}]; uniform float uFade[${MAX_CLOUDS}]; uniform vec4 uLean[${MAX_CLOUDS}]; uniform float uInc[${MAX_CLOUDS}];
+// Clouds: one row of uCloud per cloud (see packCloud), plus a radial table row in uFree for a free
+// electron's wave. Each cloud is a sum of up to MAX_TERMS orbitals in the cloud's own frame.
+uniform int uNA; uniform float uAS; uniform highp sampler2D uCloud; uniform highp sampler2D uFree;
 uniform vec4 uG[${MAX_GLOWS}]; uniform vec3 uGC[${MAX_GLOWS}]; uniform int uGN;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -48,6 +50,18 @@ vec2 psi(ivec3 q, int mode, float norm, vec3 p){
   if (mode == 1) return vec2(A * cos(float(am)*phi), 0.0);
   return vec2(A * sin(float(am)*phi), 0.0);
 }
+// A free electron's partial wave: its radial part comes from a table (√r spacing out to rmax).
+vec2 psiFree(int i, ivec3 q, int mode, float norm, float rmax, vec3 p){
+  float r = length(p) + 1e-5;
+  if (r >= rmax) return vec2(0.0);
+  float x = sqrt(r / rmax) * ${FREE_N - 1}.0; int j = int(x); float f = x - float(j);
+  float R = mix(texelFetch(uFree, ivec2(j, i), 0).r, texelFetch(uFree, ivec2(min(j + 1, ${FREE_N - 1}), i), 0).r, f);
+  int am = abs(q.z);
+  float A = norm * R * legendre(q.y, am, p.y / r), phi = atan(p.z, p.x);
+  if (mode == 0) return A * vec2(cos(float(q.z)*phi), sin(float(q.z)*phi));
+  if (mode == 1) return vec2(A * cos(float(am)*phi), 0.0);
+  return vec2(A * sin(float(am)*phi), 0.0);
+}
 vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 // Wave phase: +real cyan, −real magenta, ±imaginary violet / amber (prototype convention).
 vec3 phaseColor(vec2 w){
@@ -56,42 +70,54 @@ vec3 phaseColor(vec2 w){
          + vec3(0.58,0.42,1.0)*max(sa,0.0) + vec3(1.0,0.72,0.25)*max(-sa,0.0);
   return c / (abs(ca) + abs(sa));
 }
-// How nearby charges' electric field bends the cloud (game.js works it out from the same field that
-// moves the atom). w = 0: a 1s cloud, xyz = the field in atomic units. To first order the exact 1s
-// wave in a field F becomes ψ·(1 − (F·r)(1 + r/2)) (Dalgarno and Lewis), which gives hydrogen's real
-// polarizability, 4.5 a₀³: the electron leans toward a proton and away from an electron. w = 1: an
-// excited cloud, shifted as a whole by xyz (Bohr radii), the size of its real Stark dipole.
-float leanFactor(int i, inout vec3 p){
-  vec4 L = uLean[i];
-  if (L.w > 0.5) { p -= L.xyz; return 1.0; }
-  return clamp(1.0 - dot(L.xyz, p) * (1.0 + 0.5 * length(p)), 0.0, 2.0);
-}
-vec4 sampleCloud(int i, vec3 pw){
-  vec3 p = (pw - uAP[i]) * uAS;
-  float f = leanFactor(i, p);
-  vec2 w = cmul(uCA[i], psi(uQA[i], uModeA[i], uNormA[i], p)) * f;
-  if (dot(uCB[i], uCB[i]) > 0.0) {
-    vec2 b = cmul(uCB[i], psi(uQB[i], uModeB[i], uNormB[i], p)) * f;
-    // uInc 1: two shapes whose densities add (no interference between them). 0: they interfere
-    // (the beat that swings the charge). In between: a blend, as a fast beat blurs into its average.
-    float da = dot(w, w), db = dot(b, b);
-    vec4 added = vec4((phaseColor(w) * da + phaseColor(b) * db) / max(da + db, 1e-30), da + db);
-    if (uInc[i] >= 1.0) return added;
-    w += b;
-    return mix(vec4(phaseColor(w), dot(w, w)), added, uInc[i]);
+// One cloud's terms, read once per pixel.
+struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax;
+  ivec3 q[${MAX_TERMS}]; int mode[${MAX_TERMS}]; float norm[${MAX_TERMS}]; vec2 c[${MAX_TERMS}]; int g[${MAX_TERMS}]; };
+vec4 tx(int i, int k){ return texelFetch(uCloud, ivec2(k, i), 0); }
+Cloud loadCloud(int i){
+  Cloud C;
+  vec4 a = tx(i, 0), x = tx(i, 1), y = tx(i, 2), z = tx(i, 3), m = tx(i, 5);
+  C.pos = a.xyz; C.radius = a.w; C.frame = mat3(x.xyz, y.xyz, z.xyz); C.invMax = x.w; C.iso = y.w; C.fade = z.w;
+  C.lean = tx(i, 4); C.nt = int(m.x); C.rmax = m.y;
+  for (int t = 0; t < ${MAX_TERMS}; t++) {
+    if (t >= C.nt) break;
+    vec4 qq = tx(i, 6 + t), cc = tx(i, 6 + ${MAX_TERMS} + t);
+    C.q[t] = ivec3(int(qq.x), int(qq.y), int(qq.z)); C.norm[t] = qq.w; C.c[t] = cc.xy; C.g[t] = int(cc.z); C.mode[t] = int(cc.w);
   }
-  return vec4(phaseColor(w), dot(w, w));
+  return C;
 }
-void marchCloud(int i, vec3 ro, vec3 rd, float t0, float t1, inout vec3 acc, inout float T){
+// How nearby charges' electric field bends a 1s cloud (game.js works it out from the same field that
+// moves the atom). To first order the exact 1s wave in a field F becomes ψ·(1 − (F·r)(1 + r/2))
+// (Dalgarno and Lewis), which gives hydrogen's real polarizability, 4.5 a₀³: the electron leans
+// toward a proton and away from an electron. Excited clouds need no factor: the field mixes their
+// shell's orbitals, and game.js sends that mixture as the terms.
+vec4 sampleCloud(int i, Cloud C, vec3 pw){
+  vec3 pr = (pw - C.pos) * uAS;
+  float f = C.lean.w > 0.5 ? clamp(1.0 - dot(C.lean.xyz, pr) * (1.0 + 0.5 * length(pr)), 0.0, 2.0) : 1.0;
+  vec3 p = pr * C.frame;   // into the cloud's own frame (its y is the axis m is counted about)
+  vec2 w0 = vec2(0.0), w1 = vec2(0.0);
+  for (int t = 0; t < ${MAX_TERMS}; t++) {
+    if (t >= C.nt) break;
+    vec2 s = C.q[t].x == 0 ? psiFree(i, C.q[t], C.mode[t], C.norm[t], C.rmax, p) : psi(C.q[t], C.mode[t], C.norm[t], p);
+    s = cmul(C.c[t], s) * f;
+    if (C.g[t] == 0) w0 += s; else w1 += s;
+  }
+  // Group 1 is a second, separate possibility (an atom sharing an excitation with others): its
+  // density adds to group 0's. One electron on its own is always a single wave (group 0 only).
+  float d0 = dot(w0, w0), d1 = dot(w1, w1);
+  if (d1 <= 0.0) return vec4(phaseColor(w0), d0);
+  return vec4((phaseColor(w0) * d0 + phaseColor(w1) * d1) / max(d0 + d1, 1e-30), d0 + d1);
+}
+void marchCloud(int i, Cloud C, vec3 ro, vec3 rd, float t0, float t1, inout vec3 acc, inout float T){
   float dt = (t1 - t0) / float(uSteps);
   float t = t0 + dt * hash(gl_FragCoord.xy + fract(uTime) * 61.0 + float(i) * 7.3);
-  float k = dt / uAR[i];
+  float k = dt / C.radius;
   for (int s = 0; s < 256; s++) {
     if (s >= uSteps) break;
-    vec4 c = sampleCloud(i, ro + rd*t);
-    float dn = clamp(c.a * uInvMax[i], 0.0, 1.0);
-    float e = pow(dn, 0.5) * uFade[i];
-    if (uIso[i] > 0.0) { float x = log(max(dn, 1e-9) / uIso[i]) / 0.28; e += 1.4 * exp(-x*x) * uFade[i]; }
+    vec4 c = sampleCloud(i, C, ro + rd*t);
+    float dn = clamp(c.a * C.invMax, 0.0, 1.0);
+    float e = pow(dn, 0.5) * C.fade;
+    if (C.iso > 0.0) { float x = log(max(dn, 1e-9) / C.iso) / 0.28; e += 1.4 * exp(-x*x) * C.fade; }
     acc += T * c.rgb * e * 1.3 * k;
     T *= exp(-e * 1.6 * k);
     t += dt;
@@ -150,8 +176,9 @@ void main(){
   float T = 1.0; vec3 acc = vec3(0.0);
   for (int i = 0; i < ${MAX_CLOUDS}; i++) {
     if (i >= uNA) break;
-    vec3 oc = ro - uAP[i]; float bb = dot(oc, rd), cc = dot(oc, oc) - uAR[i]*uAR[i], hh = bb*bb - cc;
-    if (hh > 0.0) { hh = sqrt(hh); float t0 = max(-bb - hh, 0.0), t1 = -bb + hh; if (t1 > t0) marchCloud(i, ro, rd, t0, t1, acc, T); }
+    vec4 a = tx(i, 0);
+    vec3 oc = ro - a.xyz; float bb = dot(oc, rd), cc = dot(oc, oc) - a.w*a.w, hh = bb*bb - cc;
+    if (hh > 0.0) { hh = sqrt(hh); float t0 = max(-bb - hh, 0.0), t1 = -bb + hh; if (t1 > t0) marchCloud(i, loadCloud(i), ro, rd, t0, t1, acc, T); }
   }
   col = col * T + acc;
 
@@ -197,7 +224,7 @@ export function createRenderer(canvas) {
   const prog = link(VERT, FRAG, ['aPos']);
   const U = {};
   for (const n of ['uViewport', 'uCamPos', 'uInvVP', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
-    'uNA', 'uAP', 'uAR', 'uAS', 'uQA', 'uModeA', 'uNormA', 'uCA', 'uQB', 'uModeB', 'uNormB', 'uCB', 'uInvMax', 'uIso', 'uFade', 'uLean', 'uInc',
+    'uNA', 'uAS', 'uCloud', 'uFree',
     'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(prog, n);
   const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
   const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb);
@@ -227,12 +254,33 @@ export function createRenderer(canvas) {
 
   const qArr = new Float32Array(MAX_CHARGES * 4), qsArr = new Float32Array(MAX_CHARGES);
   const gArr = new Float32Array(MAX_GLOWS * 4), gcArr = new Float32Array(MAX_GLOWS * 3);
-  const cl = {
-    ap: new Float32Array(MAX_CLOUDS * 3), ar: new Float32Array(MAX_CLOUDS),
-    qa: new Int32Array(MAX_CLOUDS * 3), ma: new Int32Array(MAX_CLOUDS), na: new Float32Array(MAX_CLOUDS), ca: new Float32Array(MAX_CLOUDS * 2),
-    qb: new Int32Array(MAX_CLOUDS * 3), mb: new Int32Array(MAX_CLOUDS), nb: new Float32Array(MAX_CLOUDS), cb: new Float32Array(MAX_CLOUDS * 2),
-    inv: new Float32Array(MAX_CLOUDS), iso: new Float32Array(MAX_CLOUDS), fade: new Float32Array(MAX_CLOUDS), lean: new Float32Array(MAX_CLOUDS * 4), inc: new Float32Array(MAX_CLOUDS),
+  // Float textures for the clouds: one row each.
+  const tex = () => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
   };
+  const cloudTex = tex(), freeTex = tex();
+  const cloudArr = new Float32Array(MAX_CLOUDS * ROW * 4), freeArr = new Float32Array(MAX_CLOUDS * FREE_N);
+  gl.bindTexture(gl.TEXTURE_2D, cloudTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, ROW, MAX_CLOUDS, 0, gl.RGBA, gl.FLOAT, cloudArr);
+  gl.bindTexture(gl.TEXTURE_2D, freeTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, FREE_N, MAX_CLOUDS, 0, gl.RED, gl.FLOAT, freeArr);
+  // One cloud: { pos, radius (nm), frame: [x, y, z] unit vectors (y = the axis m is counted about),
+  //   terms: [{ n (0 = free wave), l, m, mode, norm, c: [re, im], g }], free?: { table, rmax (a₀) },
+  //   invMax, iso, fade, lean?: [x, y, z, on] }
+  function packCloud(i, c) {
+    const o = i * ROW * 4, put = (k, v) => cloudArr.set(v, o + k * 4);
+    const [X, Y, Z] = c.frame || [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const nt = Math.min(MAX_TERMS, c.terms.length);
+    put(0, [...c.pos, c.radius]); put(1, [...X, c.invMax]); put(2, [...Y, c.iso]); put(3, [...Z, c.fade]);
+    put(4, c.lean || [0, 0, 0, 0]); put(5, [nt, c.free ? c.free.rmax : 0, 0, 0]);
+    for (let t = 0; t < nt; t++) {
+      const T = c.terms[t];
+      put(6 + t, [T.n, T.l, T.m, T.norm]); put(6 + MAX_TERMS + t, [T.c[0], T.c[1], T.g || 0, T.mode]);
+    }
+    if (c.free) freeArr.set(c.free.table.subarray(0, FREE_N), i * FREE_N);
+  }
 
   // scene: { views:[{viewport:[x,y,w,h], camPos, VP, invVP}], time, sphereR, steps, bohrPerUnit,
   //          charges:[{pos,q,smear}], clouds:[...], glows:[{pos,size,col}], lines:Float32Array,
@@ -247,18 +295,14 @@ export function createRenderer(canvas) {
     gl.uniform4fv(U.uQ, qArr); gl.uniform1fv(U.uQs, qsArr); gl.uniform1i(U.uQN, nq); gl.uniform1f(U.uFieldGain, 2.0);   // glow brightens inside about 0.3 nm, the capture range
 
     const na = Math.min(MAX_CLOUDS, scene.clouds.length);
-    for (let i = 0; i < na; i++) {
-      const c = scene.clouds[i];
-      cl.ap.set(c.pos, i * 3); cl.ar[i] = c.radius;
-      cl.qa.set([c.A.n, c.A.l, c.A.m], i * 3); cl.ma[i] = c.A.mode; cl.na[i] = c.A.norm; cl.ca.set(c.cA, i * 2);
-      cl.qb.set([c.B.n, c.B.l, c.B.m], i * 3); cl.mb[i] = c.B.mode; cl.nb[i] = c.B.norm; cl.cb.set(c.cB, i * 2);
-      cl.inv[i] = c.invMax; cl.iso[i] = c.iso; cl.fade[i] = c.fade; cl.lean.set(c.lean || [0, 0, 0, 0], i * 4); cl.inc[i] = c.inc || 0;
-    }
+    for (let i = 0; i < na; i++) packCloud(i, scene.clouds[i]);
     gl.uniform1i(U.uNA, na); gl.uniform1f(U.uAS, scene.bohrPerUnit);
-    gl.uniform3fv(U.uAP, cl.ap); gl.uniform1fv(U.uAR, cl.ar);
-    gl.uniform3iv(U.uQA, cl.qa); gl.uniform1iv(U.uModeA, cl.ma); gl.uniform1fv(U.uNormA, cl.na); gl.uniform2fv(U.uCA, cl.ca);
-    gl.uniform3iv(U.uQB, cl.qb); gl.uniform1iv(U.uModeB, cl.mb); gl.uniform1fv(U.uNormB, cl.nb); gl.uniform2fv(U.uCB, cl.cb);
-    gl.uniform1fv(U.uInvMax, cl.inv); gl.uniform1fv(U.uIso, cl.iso); gl.uniform1fv(U.uFade, cl.fade); gl.uniform4fv(U.uLean, cl.lean); gl.uniform1fv(U.uInc, cl.inc);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, cloudTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ROW, MAX_CLOUDS, gl.RGBA, gl.FLOAT, cloudArr);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, freeTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FREE_N, MAX_CLOUDS, gl.RED, gl.FLOAT, freeArr);
+    gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uFree, 2);
+    gl.activeTexture(gl.TEXTURE0);
 
     const ng = Math.min(MAX_GLOWS, scene.glows.length);
     gArr.fill(0); gcArr.fill(0);
