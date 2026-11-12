@@ -136,6 +136,8 @@ const phone = matchMedia('(max-width: 900px)');
 function setTutorOpen(open) {
   $('tutor').classList.toggle('collapsed', !open);
   $('tutorToggle').setAttribute('aria-expanded', String(open));
+  $('tutorToggle').textContent = open ? '−' : 'ⓘ';
+  $('tutorToggle').title = open ? 'Minimize the tutor (I)' : 'Show the tutor and options (I)';
   if (open) delete $('tutor').dataset.unread;
 }
 $('tutorToggle').addEventListener('click', () => setTutorOpen($('tutor').classList.contains('collapsed')));
@@ -446,7 +448,7 @@ function capture(e, p, E) {
   e.active = false;
   S.ps = S.ps.filter(x => x !== e);
   p.q = 0;                                  // the pair is neutral now: only the atom's weak pulls (see physics.js)
-  const atom = { p, st, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', to: st }] };
+  const atom = { p, st, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', from: null, to: st }] };
   S.atoms.push(atom);
   // Momentum is kept: the atom moves on with the pair's shared momentum, minus the photon's kick.
   p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
@@ -658,7 +660,7 @@ function endGroup(q, how, M) {
     if (!L) { L = startLight({ pos: x.p.pos, lam: q.lam, pattern, axis: [0, 1, 0], from: x, show: q.reex ? LIGHT_QUICK : LIGHT_SHOW, tau: Infinity, launchIn: Infinity, gain: Math.hypot(q.c.re[xi], q.c.im[xi]) }); }
     launchPhoton(L, dir);
     x.p.vel = v3.sub(x.p.vel, v3.scale(dir, (P.HC / q.lam) / P.C / P.MP));
-    x.steps.push({ lam: [q.lam], to: GROUND, delayNs: realNs, reemit: q.reex });
+    x.steps.push({ lam: [q.lam], from: q.up, to: GROUND, delayNs: realNs, reemit: q.reex });
     S.lastPhoton = { lam: q.lam, nLow: 1, extra: 0 };
     const rate = P.groupLightRate(M, q.c) / n2;
     if (!q.reex || S.paired <= 3) log(`${N > 2 ? `A group of ${N} atoms` : 'Two atoms'} let the shared photon go after ${realNs.toFixed(1)} ns${rate > 1.3 ? `, flashing together (${rate.toFixed(1)}× one atom's rate)` : rate < 0.5 ? ', after holding it back' : ''}: ${q.lam.toFixed(1)} nm ${describe(q.lam, 1)}`);
@@ -709,7 +711,7 @@ function startEmission(a, d) {
 }
 // The record and the log line for one step down.
 function stepDone(a, d) {
-  a.steps.push({ lam: d.photons, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
+  a.steps.push({ lam: d.photons, from: a.st, to: d.to, delayNs: d.delayNs, twoPhoton: d.twoPhoton, reemit: !!a.reex });
   const names = d.photons.map(l => `${l.toFixed(1)} nm ${d.twoPhoton ? P.classify(l).name : describe(l, d.to.n)}`).join(' + ');
   S.lastPhoton = { lam: d.photons[0], nLow: d.twoPhoton ? 0 : d.to.n, extra: d.photons.length - 1 };
   const when = d.twoPhoton ? `${(d.delayNs / 1e9).toFixed(2)} s` : `${d.delayNs.toFixed(1)} ns`;
@@ -774,16 +776,29 @@ function updateAtoms(dt, dtFs) {
 }
 const fmtC = K => `${Math.round((K - 273) / (K > 2000 ? 100 : 10)) * (K > 2000 ? 100 : 10)} °C`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 function showDone() {
-  const photons = [...S.oldSteps, ...S.atoms.flatMap(a => a.steps)].filter(s => !s.reemit).flatMap(s => [].concat(s.lam));
-  const count = new Map();
-  const cls = new Map();
-  for (const l of photons) { const c = P.classify(l); cls.set(c.name, c); count.set(c.name, (count.get(c.name) || 0) + 1); }
+  const steps = [...S.oldSteps, ...S.atoms.flatMap(a => a.steps)].filter(s => !s.reemit);
+  // Each kind of light on its own line, with the drops (orbital to orbital) that released it.
+  const kinds = new Map();
+  let total = 0;
+  for (const st of steps) for (const l of [].concat(st.lam)) {
+    total++;
+    const c = P.classify(l);
+    if (!kinds.has(c.name)) kinds.set(c.name, { lam: l, n: 0, drops: new Map() });
+    const k = kinds.get(c.name); k.n++; k.lam = Math.min(k.lam, l);
+    const drop = st.from ? `${P.stateName(st.from)} → ${P.stateName(st.to)}${st.twoPhoton ? ' (two photons)' : ''}` : `free electron caught into ${P.stateName(st.to)}`;
+    k.drops.set(drop, (k.drops.get(drop) || 0) + 1);
+  }
   $('doneTitle').textContent = 'Congratulations, you solved the system!';
-  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${photons.length} photons: ${[...count].map(([name, k]) => `${k} ${name}`).join(', ')}. ${S.lightOut} photons left the system, carrying away ${S.lightOutE.toFixed(0)} eV.`;
-  const kinds = [...cls.values()].map(c => `${c.name[0].toUpperCase()}${c.name.slice(1)}: ${c.note === 'visible' ? 'light you can see' : c.note}`);
   const extra = [S.paired ? ` Atoms shared an excitation ${S.paired} time${S.paired === 1 ? '' : 's'}.` : '',
     S.ionized ? ` Light and fast electrons knocked atoms apart ${S.ionized} time${S.ionized === 1 ? '' : 's'}.` : ''].join('');
-  $('doneKinds').textContent = kinds.join('. ') + '.' + extra;
+  $('doneText').textContent = `It took ${S.shots} shot${S.shots === 1 ? '' : 's'} to make ${S.atoms.length} hydrogen atoms. On the way down they gave off ${total} photons; ${S.lightOut} left the system, carrying away ${S.lightOutE.toFixed(0)} eV.${extra}`;
+  const list = $('doneKinds'); list.replaceChildren();
+  for (const [name, k] of [...kinds].sort((a, b) => a[1].lam - b[1].lam)) {
+    const li = document.createElement('li'), b = document.createElement('b');
+    b.textContent = `${name[0].toUpperCase()}${name.slice(1)} ×${k.n}`;
+    li.append(b, `: ${[...k.drops].sort((a, b) => b[1] - a[1]).map(([d, m]) => m > 1 ? `${d} ×${m}` : d).join(', ')}`);
+    list.append(li);
+  }
   $('doneBox').hidden = false;
 }
 
@@ -904,6 +919,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); fire(); }
   if (e.code === 'KeyV') toggleField();
   if (e.code === 'KeyP') togglePilot();
+  if (e.code === 'KeyI') setTutorOpen($('tutor').classList.contains('collapsed'));
   if (e.code === 'BracketLeft') setDial(S.dial - 1);
   if (e.code === 'BracketRight') setDial(S.dial + 1);
   if (e.code === 'Comma') setSpeed(S.speed - 1);
