@@ -7,6 +7,7 @@ import { waveDesc, extentBohr, angularNorm, legendre } from './orbitals.js';
 import * as Q from './quantum.js';
 import { createRenderer, Lines } from './render.js';
 import * as W from './light.js';
+import * as MW from './matterwave.js';
 import * as M from './mat4.js';
 
 const $ = id => document.getElementById(id);
@@ -131,7 +132,7 @@ const BEATS = {
   },
   2: {
     title: 'First capture',
-    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point, riding inside its own wave (the faint rings around it). Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc (see the Target window). Fire 10 electrons at the proton, with real odds.',
+    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger\'s equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc (see the Target window). Fire 5 electrons at the proton, with real odds.',
   },
   3: {
     title: 'Acid Neutrality',
@@ -182,7 +183,7 @@ function goals() {
     ];
   }
   if (S.beat === 2) {
-    if (!S.b2.lesson) return [[`Fire 10 electrons at the proton (${Math.min(S.shots, UNAIDED)} of ${UNAIDED})`, S.shots >= UNAIDED]];
+    if (!S.b2.lesson) return [[`Fire 5 electrons at the proton (${Math.min(S.shots, UNAIDED)} of ${UNAIDED})`, S.shots >= UNAIDED]];
     return [
       ['Hold the crosshair on the proton until the lock closes', S.lock.locked || S.b2.captured],
       ['Fire while locked: make a neutral hydrogen atom', S.b2.captured],
@@ -312,7 +313,7 @@ const launchKE = (E, dist) => E + P.KE / Math.max(dist, 0.5);
 // same spot in its wave every time and steers it through the disc, so the proton catches it. What
 // stays real: which orbital it lands in is rolled from the computed odds for the pass's angular
 // momentum (where on the rings you aim), and everything after the catch.
-const UNAIDED = 10;            // shots with real odds before the lesson and the lock-on
+const UNAIDED = 5;             // shots with real odds before the lesson and the lock-on
 const LOCK_TIME = 1.0;         // s of steady aim to close the lock
 const LOCK_LMAX = Q.NMAX + 0.5;   // the lock holds only inside the rings (angular momentum the odds cover)
 const lockReady = () => S.beat >= 3 || (S.beat === 2 && S.b2.lesson);
@@ -1095,6 +1096,7 @@ function step(dtReal) {
   const dtFs = dt * FS_PER_S * S.slow;
   S.simFs += dtFs;
   for (const a of S.atoms) a.p.pol = P.atomPol(a.st.n);   // how strongly fields pull on each atom
+  updateGuides();
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
   for (const e of freeElectrons()) {
@@ -1102,6 +1104,8 @@ function step(dtReal) {
     // capped at SWING_HZ crests per screen second so nothing flickers.
     const v = v3.len(e.vel), lam = 2 * Math.PI * P.reducedWavelength(Math.max(1e-3, 0.5 * P.ME * v * v));
     e.waveS = ((e.waveS || 0) + Math.min(0.5 * v * dtFs, SWING_HZ * lam * dtReal)) % lam;
+    // A guided wave turns as e^{−iEt/ħ}: its crests move (capped at SWING_HZ per screen second).
+    if (e.gd) e.gd.ph = (e.gd.ph + Math.min(e.gd.E / P.HBAR * dtFs, 2 * Math.PI * SWING_HZ * dtReal)) % (2 * Math.PI);
     e.trailT -= dt;
     if (e.trailT <= 0) { e.trailT = 0.04 * Math.max(S.slow, 0.15); e.trail.push([...e.pos]); if (e.trail.length > 90) e.trail.shift(); }
   }
@@ -1300,8 +1304,14 @@ $('fieldBtn').addEventListener('click', toggleField);
 // Pilot-wave view (the default): each photon is drawn as a particle riding its wave as well as the
 // wave itself. Off, only the wave is drawn. The physics is the same either way: in both, the photon
 // is taken where its path runs.
+function linesNote() {
+  $('linesNote').textContent = S.pilot
+    ? 'Pilot-wave view: blue curves near a proton are crests of the electron\'s matter wave (a slice through it), brighter where the wave is denser; the point rides it. Glow brightness follows the electric field (log scale, capped at the centre). P for field lines.'
+    : 'Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).';
+}
 function togglePilot() {
   S.pilot = !S.pilot;
+  linesNote();
   $('pilotBtn').setAttribute('aria-pressed', String(S.pilot));
   panelDirty();
 }
@@ -1322,7 +1332,7 @@ function restart() {
   logLines.length = 0; $('logBox').innerHTML = '';
   renderPasses(); setDial(1); setSpeed(S.speed); startBeat(1);
   $('fieldBtn').setAttribute('aria-pressed', 'false');
-  $('pilotBtn').setAttribute('aria-pressed', 'true');
+  $('pilotBtn').setAttribute('aria-pressed', 'true'); linesNote();
   $('lockBtn').hidden = true; $('lockBtn').setAttribute('aria-pressed', 'true'); $('rateTag').hidden = true;
   panelDirty();
 }
@@ -1687,8 +1697,18 @@ function fallPos(f, t = f.t) {
   const x = Math.min(1, t / (0.5 * FALL_DUR)), s = x * x * (3 - 2 * x);
   return v3.add(f.atom.p.pos, v3.scale(f.off, 1 - s));
 }
+// Drawing resolution adapts to the device: when frames take too long (an electron cloud filling a
+// phone's screen is the heaviest thing to draw), the picture is drawn with fewer pixels and fewer
+// steps through each cloud, and it climbs back when there is time to spare.
+let renderScale = 1, frameAvg = 16;
+function adaptResolution(dtMs) {
+  frameAvg += (dtMs - frameAvg) * 0.1;
+  if (frameAvg > 45 && renderScale > 0.35) { renderScale = Math.max(0.35, renderScale * 0.85); frameAvg = 30; }
+  else if (frameAvg < 20 && renderScale < 1) renderScale = Math.min(1, renderScale * 1.03);
+}
+const cloudSteps = () => Math.round((phone.matches ? 48 : 72) * Math.max(0.6, renderScale));
 function flatViews() {
-  const dpr = Math.min(devicePixelRatio || 1, 1.5);
+  const dpr = Math.min(devicePixelRatio || 1, 1.5) * renderScale;
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const B = flatBasis();
@@ -1758,14 +1778,14 @@ function draw(views, panel) {
   }
 
   lines.begin();
-  if (S.fieldView) fieldLines();
+  if (S.fieldView && !S.pilot) fieldLines();   // the pilot-wave view shows matter waves instead
   for (const e of freeElectrons()) {
     // Its path only where it swings close by a proton (inside TRAIL_NEAR nm), where the pull bends it.
     const near = x => { let d = Infinity; for (const p of S.ps) if (p.kind === 'proton' && p.active) d = Math.min(d, v3.len(v3.sub(x, p.pos))); return Math.max(0, Math.min(1, (TRAIL_NEAR - d) / 1.5)); };
     const pts = [...e.trail, e.pos];
     for (let i = 1; i < pts.length; i++) { const k = near(pts[i]); if (k > 0) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], k * (0.08 + 0.4 * i / pts.length)); }
   }
-  if (S.pilot) for (const e of freeElectrons()) electronWave(e);
+  if (S.pilot) for (const e of freeElectrons()) { if (e.gd) guidedWave(e); else electronWave(e); }
   const strength = L => (L.launched && !L.caught ? 2 : 0) + W.envelope(L.em, Math.min(S.simFs, L.em.tEnd));
   for (const L of [...S.light].sort((x, y) => strength(y) - strength(x)).slice(0, MAX_DRAWN_LIGHTS)) lightLines(L);
   for (const L of S.light) { if (L.launched && !L.caught) trackTrail(L); photonDot(L, glows); }
@@ -1790,9 +1810,61 @@ function draw(views, panel) {
   if (S.beat >= 2) { const ai = aimInfo(); coneLines(ai); aimPath(ai); lockReticle(); }
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
-  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: 72, bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
+  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: xr.session ? 72 : cloudSteps(), bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
 }
 
+// ---------------------------------------------------------------------------
+// The matter wave near a proton (pilot-wave dynamics, matterwave.js)
+// ---------------------------------------------------------------------------
+// Inside guideRadius of a bare proton, a free electron with enough energy to leave again is
+// described by the exact Coulomb scattering wave for its energy and the direction it came in from,
+// and its point moves with that wave's flow (de Broglie–Bohm). Outside, and for electrons bound
+// to a proton (energy below zero), it moves by the forces as before. While guided, the other
+// charges' pulls on it are left out (the wave is the one-proton solution).
+function updateGuides() {
+  for (const e of freeElectrons()) {
+    let p = null, d = Infinity;
+    for (const q of bareProtons()) { const r = v3.len(v3.sub(e.pos, q.pos)); if (r < d) { d = r; p = q; } }
+    const g = e.gd;
+    if (g) {
+      const r = v3.len(v3.sub(e.pos, g.p.pos));
+      if (g.p.q !== 1 || !g.p.active || r > g.R * 1.02) {
+        // Leaving: keep the direction the wave gave it, at the speed its energy gives it here.
+        const rel = v3.sub(e.vel, g.p.vel), sp = Math.sqrt(2 * Math.max(1e-6, g.E + P.KE / Math.max(r, 0.01)) / P.ME);
+        e.vel = v3.add(g.p.vel, v3.scale(v3.norm(rel), sp));
+        e.gd = null; e.guide = null;
+      }
+      continue;
+    }
+    if (!p) continue;
+    const rel = v3.sub(e.vel, p.vel), E = 0.5 * P.ME * v3.dot(rel, rel) - P.KE / Math.max(d, 0.01);
+    if (E < 0.01) continue;
+    const R = MW.guideRadius(E);
+    if (d > R || v3.dot(v3.sub(e.pos, p.pos), rel) > 0) continue;   // only on the way in
+    const gd = { p, E, R, u: v3.norm(rel), ph: 0, slice: null, sliceW: null };
+    e.gd = gd;
+    e.guide = pos => {
+      const r = v3.sub(pos, gd.p.pos), rl = Math.max(v3.len(r), 0.005);
+      const vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME);   // the flow is fast only right at the wave's zeros
+      return v3.add(gd.p.vel, MW.guideVelocity(gd.E, gd.u, r, vmax));
+    };
+  }
+}
+// The wave's crests in the plane through the proton that holds the electron's way in and the
+// point itself (a slice of the 3-D wave). Brighter where the wave is denser (log scale).
+function guidedWave(e) {
+  const g = e.gd, off = v3.sub(e.pos, g.p.pos);
+  let w = v3.sub(off, v3.scale(g.u, v3.dot(off, g.u)));
+  if (v3.len(w) < 1e-3) w = v3.cross(g.u, Math.abs(g.u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
+  w = v3.norm(w);
+  if (!g.slice || v3.dot(w, g.sliceW) < 0.97) { g.slice = MW.waveSlice(g.E, g.u, w, g.R, phone.matches ? 36 : 52); g.sliceW = w; }
+  const W2 = g.sliceW, pc = g.p.pos, col = [0.45, 0.65, 1];
+  for (const [a1, b1, a2, b2, rho] of MW.crests(g.slice, g.ph)) {
+    const k = Math.min(1, Math.log10(1 + rho) / 2);
+    const P1 = v3.add(pc, v3.add(v3.scale(g.u, a1), v3.scale(W2, b1))), P2 = v3.add(pc, v3.add(v3.scale(g.u, a2), v3.scale(W2, b2)));
+    lines.seg(P1, P2, col, 0.12 + 0.5 * k);
+  }
+}
 // The electron's wave in the pilot-wave view: crests square to its motion, one de Broglie wavelength
 // apart (3.9 nm at 0.1 eV), as wide as the gun's spot, inside an envelope a couple of wavelengths
 // long. The point (the electron itself) rides inside it. Drawn as the free wave; close to a proton
@@ -1912,7 +1984,8 @@ function atomLabels(eye) {
 let last = performance.now();
 function frame(now) {
   if (xr.session) return;   // the headset drives the loop while in VR
-  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;
+  const dtMs = now - last, dt = Math.min(0.05, Math.max(0, dtMs / 1000)); last = now;
+  adaptResolution(dtMs);
   const paused = !$('startBox').hidden || !$('doneBox').hidden;
   fly(paused ? 0 : dt);
   if (!paused) { step(dt); updateLock(dt); }

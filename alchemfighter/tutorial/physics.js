@@ -72,7 +72,15 @@ export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01)
 // This is an equal-area stand-in for the odds, not something pilot-wave theory says: whether the
 // real electron is caught also depends on the light field's state. On average it gives the real
 // rate exactly, because a uniform beam crosses the disc in proportion to its area.
-export const captureDiscRadius = E => Math.sqrt(captureSigma(E) / Math.PI);
+// σ(E) is looked up on a fixed grid (10 points per decade, log–log interpolation), so electrons
+// passing at many slightly different energies don't each need a fresh quantum table.
+const sigGrid = new Map();
+function sigmaAt(i) { if (!sigGrid.has(i)) sigGrid.set(i, captureSigma(10 ** (i / 10))); return sigGrid.get(i); }
+export function captureSigmaFast(E) {
+  const x = 10 * Math.log10(Math.min(100, Math.max(E, 0.01))), i = Math.floor(x), f = x - i;
+  return Math.exp(Math.log(sigmaAt(i)) * (1 - f) + Math.log(sigmaAt(i + 1)) * f);
+}
+export const captureDiscRadius = E => Math.sqrt(captureSigmaFast(E) / Math.PI);
 // A pass's impact parameter (nm): how far off-centre its straight line in from far away would pass
 // the proton, from its angular momentum L (ħ) and energy E: b = L·ħ/(mv) = L·ƛ.
 export const impactParameter = (E, L) => L * reducedWavelength(Math.max(E, 1e-4));
@@ -344,13 +352,19 @@ export function stepCharges(ps, dt, enc = new Map(), R = SPHERE_R, maxSub = 4000
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       if (!p.active) continue;
+      if (p.guide) {
+        // Moved by its wave (pilot-wave view, matterwave.js): midpoint step along the wave's flow.
+        const v1 = p.guide(p.pos), mid = [0, 1, 2].map(k => p.pos[k] + 0.5 * h * v1[k]), v2 = p.guide(mid);
+        for (let k = 0; k < 3; k++) { p.vel[k] = v2[k]; p.pos[k] += h * v2[k]; }
+        continue;
+      }
       for (let k = 0; k < 3; k++) { p.vel[k] += 0.5 * h * acc[i][k]; p.pos[k] += h * p.vel[k]; }
     }
     accelerations(ps, acc);
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       if (!p.active) continue;
-      for (let k = 0; k < 3; k++) p.vel[k] += 0.5 * h * acc[i][k];
+      if (!p.guide) for (let k = 0; k < 3; k++) p.vel[k] += 0.5 * h * acc[i][k];
       // The wall: matter bounces off like a ball off a curved mirror, without losing energy. The
       // velocity is mirrored about the wall's normal where it hits (angle in = angle out).
       const r = Math.hypot(p.pos[0], p.pos[1], p.pos[2]);

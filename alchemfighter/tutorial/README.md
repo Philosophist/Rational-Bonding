@@ -49,7 +49,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   something pilot-wave theory says, because whether a real electron is caught also depends on the
   light field's state. An unaided catch lands in an orbital drawn from all partial waves in
   proportion to their cross sections (at 1 eV: 1s 49%, 2p 16%, 2s 7%, ...).
-- **The first 10 shots have real odds.** The point starts at a random spot in its wave (the Born
+- **The first 5 shots have real odds.** The point starts at a random spot in its wave (the Born
   rule), spread over the gun's spot, so an unaided shot almost never comes in through the disc
   (about 1 in 400,000 for a perfectly centred 0.1 eV shot, far less off-centre; the HUD shows it).
   Then the tutor explains the odds (about 20 million passes per catch at 1 eV) and how long
@@ -135,8 +135,21 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   radiate, and when its photon leaves) is not in Schrödinger's equation: it needs the quantum
   theory of light, so it keeps the measured lifetimes. Resting atoms answering Lyman light is the
   group model below.
+- **The matter wave near a proton (matterwave.js, tests in matterwave.test.mjs).** Within up to
+  4 nm of a bare proton, a free electron that can leave again (energy above zero) is described by
+  the exact Coulomb scattering solution of Schrödinger's equation for its energy and the
+  direction it came in from, ψ = e^{ikz}·₁F₁(i/k; 1; ik(r − z)) (₁F₁ integrated from Kummer's
+  equation and tabulated; checked against its power series), normalised so the incoming wave has
+  density 1. Its point moves with the wave's flow, v = (ħ/m)·∇(phase) (de Broglie–Bohm); the
+  test checks that this flow conserves probability. So the point is pulled round the proton,
+  focused behind it, and wiggles where the incoming and scattered parts of the wave meet. While
+  guided, the other charges' pulls on it are left out (the wave is the one-proton solution).
+  In the pilot-wave view the electric field lines are replaced by this wave: its crests in the
+  plane holding the electron's way in and the point, brighter where the wave is denser.
+- **Drawing resolution adapts** when frames get slow (an electron cloud filling a phone screen
+  is the heaviest thing to draw), down to 35% of the pixels and fewer steps through each cloud.
 - **Pilot-wave view (on by default; P, the "Pilot-wave view" button, or the left stick click in
-  VR):** each free electron is drawn as a point inside its wave: crests square to its motion, one
+  VR):** away from protons, each free electron is drawn as a point inside its wave: crests square to its motion, one
   de Broglie wavelength apart (3.9 nm at 0.1 eV), as wide as the gun's spot, drifting back through
   the packet at the phase speed v/2 (capped at 1.2 crests per screen second). It is drawn as the
   free wave; near a proton the real wave bends round it, while the point's path there comes from
