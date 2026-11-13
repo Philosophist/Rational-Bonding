@@ -50,15 +50,20 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   axis, as far as l allows. Then it steps down to 1s, often skipping levels (3p → 1s directly,
   for instance), with lifetimes and branching computed from the orbitals' overlaps (they match the
   measured ones: 2p 1.60 ns, 3d 15.5 ns, 3p → 1s in 88%). Capture above n = 6 is left out.
-- **2s** can't give off a single photon by itself. Left alone it gives off two, sharing 10.2 eV,
-  after about 0.12 s: 76 million times longer than 2p, and it is not cut short, so a lone 2s atom
-  just waits. What lets it go is the electric field of a loose charge (a bare proton or a free
-  electron), which mixes 2s with 2p (Stark mixing; the two sit only the Lamb shift, 4.4 µeV,
-  apart). The rate is Γ(2p) × the share of 2p mixed in: 2,740 per second at 1 V/cm (measured:
-  about 2,780), levelling off at half of 2p's rate above about 477 V/cm. Any loose charge inside
-  the 40 nm sphere is past that, so 2s then lasts about 3.2 ns and leaves as one Lyman-α photon,
-  its charge swinging along the field. With no loose charge anywhere, the tutor suggests firing an
-  electron past the atom.
+- **Steps down are driven by their causes, moment by moment.** There is no timer drawn in advance.
+  A nearby charge's field, where it is right now, blends the shell's orbitals (exactly, see "Clouds
+  in fields"). The instant a photon leaves has no known trigger, so it is a chance per moment: each
+  orbital's share right now (averaged over the fast slosh) times that orbital's own rate. 2s can't
+  give off a single photon by itself, so a lone 2s atom just sits there (two photons after about
+  0.12 s on average). A passing charge blends in 2p while it is close (fully above about 477 V/cm,
+  where the field beats the Lamb shift; a game check: an electron 1 nm away gives 50% 2p, so the
+  chance per moment is that of a 3.2 ns lifetime), and the chance falls back when it leaves.
+- **Aim path:** the predicted path around the aimed proton (that pair alone) and rings marking the
+  pass's angular momentum, L ≈ l + ½ where the aim line crosses ring l. Each ring is as bright as
+  that partial wave's real chance of being caught, so the brightest ring is the best aim; the rings
+  widen as the electron slows.
+- **Photon trail (pilot-wave view):** the photon's path is left as a trail that fades over one
+  second of play, whether it leaves through the wall or another atom takes it.
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
 - **Time: one clock, nothing pauses.** At full speed 1 screen second is 40 fs. The player picks
   a game speed (×0.1 to ×2). When something worth watching happens, the whole system slows down
@@ -69,10 +74,11 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     for 5 s the first two times (2 s after), then easing back up (e-fold per second);
   - a photon in flight: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
     from an atom a fast electron bumped up slows things less, to 300 nm per second.
-  Rare events (captures, steps down, collisions) all run RATE_BOOST = 600,000 times faster than in
-  nature, so a 1.6 ns step down takes 2.7 fs here, and they keep their real proportions. An
-  excited atom waits its sampled real lifetime with no fixed hold, so 2p steps down almost at once
-  and 3s (159 ns) lingers about 100 times longer. 2s keeps its real 0.12 s too (see above).
+  Chance encounters (captures, electron collisions) run RATE_BOOST = 600,000 times more often than
+  in nature, or the level couldn't be played (the HUD tag "catches ×600,000"). Steps down are NOT
+  sped up (Steve, 2026-11-12): every level lasts its real lifetime on the game's clock, so even 2p
+  (1.6 ns) lasts about 11 hours of play at normal speed, and an atom almost always keeps the orbital
+  it was caught in. A neutral atom in any orbital counts toward the goal.
   - atoms swinging an excitation between them (below): until one swing there and back takes
     3 screen seconds. That is held for 6 s the first two times (2.5 s after), then the clock eases
     back up and the swinging speeds up into a blur.
@@ -191,13 +197,17 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     shells (the field's effect inside a shell is first order). The pull on excited atoms (above)
     still uses the leaning Stark state; the clouds now show that a state that starts as one orbital
     keeps its charge centred, so that pull is due to be brought in line.
+- **Windows:** the HUD windows have fully clear backgrounds (only a thin outline). Every one has a − button (top right) that folds it to
+  its title row, and + opens it again (remembered between visits; I folds the tutor). The Game time
+  row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a faint "H" label.
 - **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
-  7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every atom has settled. Protons this far apart barely move:
+  7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every catch has settled (in any orbital). Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the capture takes 3 s on screen. Each step down then swings for its
-  real (sped-up) lifetime while sending its wave, and when its photon is found the atom settles
+  real lifetime while sending its wave (drawn as faint as it really is: a 2p atom's wave packet is
+  48 cm long, so only a sliver of it is ever inside the system, and it is invisible), and when its photon is found the atom settles
   into the lower level over 0.5 s.
 - **Capture moment: one wave the whole way.** The free electron's own partial wave near the
   proton (computed at its energy, the l it came in with) turns smoothly into the orbital it lands
@@ -232,9 +242,10 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 
 ## Views and controls
 
-- **Field view** (default): electric field lines, green magnetic rings around moving electrons, and
-  each photon's electric and magnetic waves at 90° to each other. The magnetic field is drawn 400×
-  brighter than its true share (it is about v/c ≈ 1/1000 of the electric field at these speeds).
+- **Field view** (default): electric field lines, and each photon's electric wave. Nothing is drawn
+  stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn
+  (still counted in the physics): the magnetic fields of moving electrons and of light push on
+  these slow charges about 1,000 times less than the electric fields, so they are left out.
 - **Glow view** (V): the calmer view, glows only.
 - **Window:** drag to look, or double-click for mouse look (double-click again or Esc frees the cursor; raw movement, first reading and big jumps skipped to stop drift), click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
   [ ] or the wheel for electron speed, , and . for game speed.
