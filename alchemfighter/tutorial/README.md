@@ -38,9 +38,32 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   being caught into each orbital (photo-recombination, by detailed balance with photoionization).
   Checks: photoionization of 1s at threshold comes out 6.30e-18 cm² (the known value); the total
   matches Kramers' formula with its known Gaunt factors; averaged over a uniform beam the per-pass
-  odds give back the total. The HUD shows L, the real chance and the game's (the real one ×
-  600,000, `RATE_BOOST`). The best slow shot is not dead centre: a head-on pass is the l = 0 wave,
-  which can only land in p orbitals and is caught less often than the l = 1 wave.
+  odds give back the total. Nothing is boosted any more (Steve, 2026-11-13): every catch has its
+  real odds.
+- **The capture target (pilot-wave view).** The electron is a point riding inside its wave. The
+  proton catches it if the point comes in through a disc of area σ (the computed cross section,
+  all orbitals to n = 6), seen square-on to its path from far away: 2.7 pm across at 0.1 eV,
+  0.75 pm at 1 eV, against a 1s cloud 106 pm across and a proton 0.0017 pm across. A pass comes
+  in at b = L·ƛ from the centre. **This is a simplification, flagged in the game:** the disc is an
+  equal-area stand-in for the odds (a uniform beam crosses it at exactly the real rate), not
+  something pilot-wave theory says, because whether a real electron is caught also depends on the
+  light field's state. An unaided catch lands in an orbital drawn from all partial waves in
+  proportion to their cross sections (at 1 eV: 1s 49%, 2p 16%, 2s 7%, ...).
+- **The first 10 shots have real odds.** The point starts at a random spot in its wave (the Born
+  rule), spread over the gun's spot, so an unaided shot almost never comes in through the disc
+  (about 1 in 400,000 for a perfectly centred 0.1 eV shot, far less off-centre; the HUD shows it).
+  Then the tutor explains the odds (about 20 million passes per catch at 1 eV) and how long
+  nature takes: a neon sign's glow about 25 s per proton, the thin upper air months to years,
+  ordinary air billionths of a second (the proton takes an electron from a molecule), and this
+  80 nm system with ten free electrons about 25 µs, which is about 20 years of play.
+- **Atomic lock-on (made-up technology, labelled so in the HUD).** After the lesson: L, the
+  Lock-on button, or the right stick click in VR. Hold the crosshair on a proton (inside the
+  rings) for one second and the lock closes. A shot fired while locked starts from the same spot
+  in its wave every time and is steered through the disc on its pass by that proton, so it is
+  caught. What stays real: the orbital is rolled from the computed odds for that pass's angular
+  momentum (the HUD lists the top three for your aim), and everything after the catch. The
+  Target window shows the target at three zooms (1 nm, 10 pm, 0.01 pm wide) with the gun's
+  spread, where your aim brings the shot in, and where the last passes came in.
 - **Aim cone:** the gun focuses the electron's wave from a 30 nm aperture, so the spot is about
   ƛ·D / 30 nm (ƛ is the electron's reduced wavelength, D the distance).
 - **Where the electron lands:** one photon takes it straight from free to one orbital, any n up
@@ -74,8 +97,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     for 5 s the first two times (2 s after), then easing back up (e-fold per second);
   - a photon in flight: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
     from an atom a fast electron bumped up slows things less, to 300 nm per second.
-  Chance encounters (captures, electron collisions) run RATE_BOOST = 600,000 times more often than
-  in nature, or the level couldn't be played (the HUD tag "catches ×600,000"). Steps down are NOT
+  Chance encounters (captures, electron collisions) have their real odds; the atomic lock-on is
+  what lets the player catch electrons. Steps down are NOT
   sped up (Steve, 2026-11-12): every level lasts its real lifetime on the game's clock, so even 2p
   (1.6 ns) lasts about 11 hours of play at normal speed, and an atom almost always keeps the orbital
   it was caught in. A neutral atom in any orbital counts toward the goal.
@@ -112,8 +135,12 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   radiate, and when its photon leaves) is not in Schrödinger's equation: it needs the quantum
   theory of light, so it keeps the measured lifetimes. Resting atoms answering Lyman light is the
   group model below.
-- **Pilot-wave view (on by default; P, the "Photon particle" button, or the left stick click in
-  VR):** each photon is also drawn as a particle riding its wave, as in de Broglie–Bohm theory.
+- **Pilot-wave view (on by default; P, the "Pilot-wave view" button, or the left stick click in
+  VR):** each free electron is drawn as a point inside its wave: crests square to its motion, one
+  de Broglie wavelength apart (3.9 nm at 0.1 eV), as wide as the gun's spot, drifting back through
+  the packet at the phase speed v/2 (capped at 1.2 crests per screen second). It is drawn as the
+  free wave; near a proton the real wave bends round it, while the point's path there comes from
+  the forces. Each photon is also drawn as a particle riding its wave, as in de Broglie–Bohm theory.
   It leaves when the atom's sampled lifetime is up, along a straight path drawn from the wave's
   brightness (averaged over a cycle a dipole's energy flows straight out), at c. An atom takes it
   only if the path runs through its target, a cone of solid angle σ/R² around the direction to it
@@ -168,8 +195,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - *Collisions:* an electron faster than 10.2 eV can bump a 1s atom to n = 2 (σ ≈ 0.02 ln x / x
     nm², x = E/10.2 eV), and one faster than 13.6 eV can ionize it (Lotz formula). Only atoms the
     electron actually passes can be hit: each pass has chance σ·e^(−b²/s²)/(πs²) over the reach
-    s = ħv/ΔE (at least 2 a₀), which sums to the real σ, times RATE_BOOST like captures, so hits
-    happen within about 1 nm. The collision is done in the pair's centre-of-mass frame: the electron
+    s = ħv/ΔE (at least 2 a₀), which sums to the real σ (real odds: even a dead-centre pass hits
+    only about one time in eight). The collision is done in the pair's centre-of-mass frame: the electron
     is turned by a mostly small angle (Born, dσ/dΩ ∝ 1/(θ² + θm²)) and the atom recoils, at
     hundreds of m/s (over 100 times a photon's kick).
   - *Momentum:* a capture keeps the pair's momentum (the atom then weighs proton + electron), every

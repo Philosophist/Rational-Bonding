@@ -60,9 +60,25 @@ test('capture odds: what matters is the pass\'s angular momentum, by the real ra
   assert.ok(good > 10 * wide);
   assert.ok(good > headOn);                                   // dead centre is the l = 0 wave: p orbitals only
   assert.ok(good < 1e-5);
-  const g = P.captureChanceGame(0.1, 0.5 / lb);
-  assert.ok(g > 0.1 && g < 0.6, `good slow shot: ${g}`);
-  assert.ok(Math.abs(g / good - P.RATE_BOOST) / P.RATE_BOOST < 1e-9);
+});
+
+test('capture disc: equal area to the cross section, a few pm across, and a beam through it gives the real odds', () => {
+  for (const E of [0.1, 1]) {
+    const R = P.captureDiscRadius(E);
+    assert.ok(Math.abs(Math.PI * R * R / P.captureSigma(E) - 1) < 1e-9);
+    // A pass with L ħ comes in at b = L·ƛ: just inside the disc is a hit, just outside a miss.
+    const lb = P.reducedWavelength(E);
+    assert.ok(P.hitsCaptureDisc(E, 0.99 * R / lb) && !P.hitsCaptureDisc(E, 1.01 * R / lb));
+  }
+  assert.ok(P.captureDiscRadius(1) * 2e3 > 0.6 && P.captureDiscRadius(1) * 2e3 < 0.9);   // pm across, n ≤ 6
+  assert.ok(P.captureDiscRadius(0.1) > 3 * P.captureDiscRadius(1));                      // slower: bigger target
+  // Beam-averaged landing shares: 1s is the most common, then 2p.
+  const s = Q.captureShares(1);
+  assert.ok(s['1s'] > 0.4 && s['1s'] < 0.55 && s['2p'] > 0.1 && s['2p'] < s['1s']);
+  const r = rng(5);
+  let n1 = 0;
+  for (let i = 0; i < 4000; i++) { const st = P.pickCaptureState(1, null, r); if (st.n === 1) n1++; assert.ok(Math.abs(st.l - st.lIn) === 1); }
+  assert.ok(Math.abs(n1 / 4000 - s['1s']) < 0.03);
 });
 
 test('capture lands where the pass\'s angular momentum allows: l changes by exactly one', () => {
@@ -336,8 +352,8 @@ test('electron impact: local reach, real total cross section, momentum and energ
   for (let i = 0; i < 4000; i++) { const b = (i + 0.5) * 0.001; sum += 2 * Math.PI * b * 0.001 * P.impactChanceReal(E, b); }
   const sig = P.collExciteSigma(E) + P.collIonSigma(E);
   assert.ok(Math.abs(sum / sig - 1) < 0.01, `${sum} vs ${sig}`);
-  // In the game, a 2 nm pass has almost no chance; a 0.3 nm pass almost always hits.
-  assert.ok(P.impactChanceGame(E, 2.5) < 0.01 && P.impactChanceGame(E, 0.3) > 0.5);
+  // Real odds, no boost: a 2.5 nm pass essentially never hits; a dead-centre pass sometimes does.
+  assert.ok(P.impactChanceReal(E, 2.5) < 1e-6 && P.impactChanceReal(E, 0) > 0.05);
   const r = rng(3);
   for (let k = 0; k < 20; k++) {
     const e = { m: P.ME, vel: [P.electronSpeed(E), 0, 0] }, a = { m: P.MP + P.ME, vel: [0, 0, 0] };

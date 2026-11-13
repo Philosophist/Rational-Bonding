@@ -15,10 +15,9 @@ export const ME = MEC2 / (C * C);    // eV·fs²/nm²
 export const MP = MPC2 / (C * C);
 export const SPHERE_R = 40;          // nm, radius of the sealed system sphere
 
-// The one factor every capture chance is multiplied by (design doc §7: "rates ×N").
-// Real per-pass odds for a well-aimed slow electron are about one in a million; this factor makes
-// a good slow shot work about one time in three, and keeps every ratio between shots real.
-export const RATE_BOOST = 6e5;
+// Chance encounters are no longer boosted: every catch and collision has its real odds. What helps
+// the player catch electrons is the ship's atomic lock-on (game.js), a made-up technology that is
+// labelled as such in the game.
 
 export const levelE = n => -RY / (n * n);
 export const lambdaFor = (n1, n2) => HC / Math.abs(levelE(n2) - levelE(n1));
@@ -66,7 +65,19 @@ export const angularL = h => ME * h / HBAR;
 // computed chance of being caught, into its own orbitals: light changes l by exactly one, so
 // l = 0 (head-on) can only land in p orbitals, l = 1 lands mostly in 1s, l = 3 mostly in 3d.
 export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01), L);
-export const captureChanceGame = (E, L) => Math.min(0.9, RATE_BOOST * captureChanceReal(E, L));
+
+// The capture target, pilot-wave view. The electron is a point riding its wave; the proton catches
+// it if the point comes in through a disc whose area is the capture cross section σ (all orbitals
+// up to n = 6), seen square-on to the electron's path far from the proton: radius √(σ/π).
+// This is an equal-area stand-in for the odds, not something pilot-wave theory says: whether the
+// real electron is caught also depends on the light field's state. On average it gives the real
+// rate exactly, because a uniform beam crosses the disc in proportion to its area.
+export const captureDiscRadius = E => Math.sqrt(captureSigma(E) / Math.PI);
+// A pass's impact parameter (nm): how far off-centre its straight line in from far away would pass
+// the proton, from its angular momentum L (ħ) and energy E: b = L·ħ/(mv) = L·ƛ.
+export const impactParameter = (E, L) => L * reducedWavelength(Math.max(E, 1e-4));
+// Did this pass come in through the disc?
+export const hitsCaptureDisc = (E, L) => impactParameter(E, L) < captureDiscRadius(E);
 
 // The gun's aim cone. The gun focuses its electron beam on the aimed point from a 30 nm aperture,
 // so the spot there can't be smaller than about ƛ·D/a (diffraction of the electron's wave).
@@ -93,7 +104,7 @@ export function gaussian(rand = Math.random) {
 // computed odds of every partial wave into every orbital. m is uniform here; the game ties it to
 // the pass (see capture in game.js). Returns { n, l, m, lIn }.
 export function pickCaptureState(E, L = 1, rand = Math.random) {
-  const x = Q.pickCapture(Math.max(E, 0.01), L, rand);
+  const x = L === null ? Q.pickCaptureBeam(Math.max(E, 0.01), rand) : Q.pickCapture(Math.max(E, 0.01), L, rand);
   const m = Math.floor(rand() * (2 * x.l + 1)) - x.l;
   return { n: x.n, l: x.l, m, lIn: x.lIn };
 }
@@ -442,8 +453,6 @@ export function impactChanceReal(E, b) {
   const sig = collExciteSigma(E) + collIonSigma(E), s = impactReach(E);
   return Math.min(1, sig * Math.exp(-b * b / (s * s)) / (Math.PI * s * s));
 }
-// The game multiplies it by the same RATE_BOOST as capture, so hits happen within about 1 nm.
-export const impactChanceGame = (E, b) => Math.min(0.9, RATE_BOOST * impactChanceReal(E, b));
 
 // v3 helpers for the collision maths below.
 const vadd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];

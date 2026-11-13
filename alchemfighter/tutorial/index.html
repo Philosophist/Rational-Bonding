@@ -89,6 +89,7 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 #aimOut { font-size: 12px; }
 #spectro { width: 100%; height: 70px; display: block; }
 #ladder { width: 176px; height: 170px; display: block; }
+#zoom { width: 100%; height: auto; display: block; }
 .keys { color: var(--muted); font: 11px/1.5 var(--font-data); }
 .keys.touch { display: none; }
 @media (pointer: coarse) { .keys { display: none; } .keys.touch { display: block; } #dpad { display: grid !important; } }
@@ -152,7 +153,7 @@ a { color: var(--cyan); }
     <h1 class="keep">Alchemfighter · Level 1</h1>
     <div class="head keep"><h2 id="beatTitle">Meet the proton</h2><ul class="goals" id="goals"></ul><button type="button" id="tutorToggle" aria-expanded="false" aria-controls="tutorText" title="Show the tutor and options">ⓘ</button></div>
     <div class="say" id="tutorText"></div>
-    <div class="row"><button type="button" id="fieldBtn" aria-pressed="false" title="Glow view: a calmer view without field lines (V)">Glow view</button><button type="button" id="pilotBtn" aria-pressed="true" title="Pilot-wave view: each photon is also a particle riding its wave (P). Off: the wave alone.">Photon particle</button><button type="button" id="vrBtn" title="Play in a PC VR headset">Enter VR</button><button type="button" id="skipBtn" title="Skip ahead to the electron gun">Skip to the gun</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
+    <div class="row"><button type="button" id="fieldBtn" aria-pressed="false" title="Glow view: a calmer view without field lines (V)">Glow view</button><button type="button" id="pilotBtn" aria-pressed="true" title="Pilot-wave view: each electron and photon is a point riding its wave (P). Off: the waves alone.">Pilot-wave view</button><button type="button" id="vrBtn" title="Play in a PC VR headset">Enter VR</button><button type="button" id="skipBtn" title="Skip ahead to the electron gun">Skip to the gun</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
   </section>
 
   <div class="right">
@@ -164,12 +165,17 @@ a { color: var(--cyan); }
     <section class="panel" id="timeBox" data-name="time">
       <div class="row keep" style="justify-content:space-between"><span class="label" title="How much real time passes in one second of play">Game time</span><span class="data" id="timeOut"></span></div>
       <div class="row" style="justify-content:space-between;margin-top:4px"><button type="button" id="speedBtn" title="Game speed (, and . keys)">game speed ×1</button><span class="data fine">ship <span id="shipOut">still</span></span></div>
-      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" title="Chance encounters (catches, collisions) are this many times more likely than in nature, all by the same factor. How long atoms stay in each level is real.">catches ×</span><span class="fine" id="lightNote">light at its real speed</span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" hidden title="All odds are real. The one made-up thing is the ship's atomic lock-on: it steers a locked shot through the proton's capture disc. Which orbital the electron lands in is still rolled from the real odds.">lock-on: made-up tech</span><span class="fine" id="lightNote">light at its real speed</span></div>
       <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
       <div class="fine">Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).</div>
     </section>
+    <section class="panel" id="zoomBox" data-name="target" hidden>
+      <div class="label keep">Target, seen along your shot</div>
+      <canvas id="zoom" width="600" height="250" aria-label="The proton's capture target at three zooms: the 1s cloud, the capture disc and the proton itself"></canvas>
+      <div class="fine" id="zoomNote">Each box zooms into the middle of the one before. The disc is an equal-area stand-in for the real odds, not a literal bullseye.</div>
+    </section>
     <section class="panel" id="passBox" data-name="passes">
-      <div class="label keep">Passes (closest approach, angular momentum L · chance)</div>
+      <div class="label keep">Passes (where each came in, against the target)</div>
       <div id="passes"><div class="miss">No passes yet.</div></div>
     </section>
     <section class="panel" id="logPanel" data-name="light and events">
@@ -192,7 +198,7 @@ a { color: var(--cyan); }
           <button type="button" id="dialUp" aria-label="Faster" title="Faster (] or mouse wheel)">▶</button>
           <span class="data fine" id="speedOut"></span>
         </div>
-        <div class="row"><span id="moveBtns"><button type="button" id="fwdBtn">▲ fly</button><button type="button" id="backBtn">▼ back</button><button type="button" id="brakeBtn">■ brake</button></span><button type="button" class="fire" id="fireBtn">FIRE</button></div>
+        <div class="row"><span id="moveBtns"><button type="button" id="fwdBtn">▲ fly</button><button type="button" id="backBtn">▼ back</button><button type="button" id="brakeBtn">■ brake</button></span><button type="button" id="lockBtn" hidden aria-pressed="true" title="Atomic lock-on (L), made-up technology: hold the crosshair on a proton until it locks, and the shot is steered through the capture disc">Lock-on</button><button type="button" class="fire" id="fireBtn">FIRE</button></div>
       </div>
       <div class="data" id="aimOut"></div>
       <canvas id="spectro" width="1400" height="140" aria-label="Spectrometer: every photon that reaches the wall, at its real wavelength"></canvas>
