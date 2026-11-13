@@ -64,6 +64,15 @@
     .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     @media (max-width: 860px) { .cols2 { grid-template-columns: 1fr; } }
     canvas.chart { width: 100%; height: 220px; display: block; }
+    .stage { position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 78vh; background: #000; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .stage.small { aspect-ratio: 1 / 1; }
+    canvas.v3d { width: 100%; height: 100%; display: block; cursor: grab; }
+    .hud { position: absolute; left: 8px; top: 8px; right: 8px; color: #e8ecf4; font-size: 13px; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; line-height: 1.35; }
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .seg button { border: 0; border-radius: 0; padding: 6px 10px; background: #0f1320; }
+    .seg button.on { background: var(--blue); color: #fff; }
+    .tools { gap: 10px; }
+    .chk { margin: 0; gap: 6px; justify-content: flex-start; }
     footer { color: var(--dim); font-size: 13px; padding: 10px 16px 30px; }
   </style>
 </head>
@@ -89,13 +98,23 @@
       </section>
 
       <section class="panel">
-        <h2>The electron wave</h2>
-        <div class="views">
-          <figure><canvas class="view" id="wide" width="400" height="400"></canvas><figcaption id="capWide">Whole region: 17 nm top to bottom. The proton is at the centre; the electron comes in from below.</figcaption></figure>
-          <figure><canvas class="view" id="near" width="256" height="256"></canvas><figcaption>Near the proton: 1.7 nm top to bottom.</figcaption></figure>
+        <h2>The electron wave, in 3D</h2>
+        <div class="row tools">
+          <span class="seg" id="modeSeg"><button data-v="cloud" class="on">3D cloud</button><button data-v="slice">Flat cut</button></span>
+          <span class="seg" id="scaleSeg"><button data-v="linear" class="on">True amounts</button><button data-v="log">Log (×10 steps)</button></span>
+          <label class="chk"><input type="checkbox" id="showE" /> Electric field lines</label>
+          <label class="chk"><input type="checkbox" id="showJ" /> Electron flow</label>
         </div>
-        <div class="legend"><span>less</span><canvas id="legend" width="180" height="10"></canvas><span>more: electron density, each colour step ×10</span></div>
-        <div class="note" id="legendTop"></div>
+        <div class="stage">
+          <canvas id="view" class="v3d"></canvas>
+          <div class="hud" id="hud"></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <span class="note">Drag to turn · scroll or pinch to zoom</span>
+          <span class="seg" id="zoomSeg"><button data-r="320">Whole box (34 nm)</button><button data-r="40">4 nm</button><button data-r="6">Proton (0.6 nm)</button></span>
+        </div>
+        <div class="legend"><span id="legLo">none</span><canvas id="legend" width="180" height="10"></canvas><span id="legHi">most</span></div>
+        <div class="note" id="legendNote"></div>
         <div class="row" style="margin-top:10px">
           <button id="play" disabled>Play</button>
           <button id="back" disabled title="Back one frame">◀</button>
@@ -104,7 +123,7 @@
           <span class="note" id="clock"></span>
         </div>
         <input id="scrub" type="range" min="0" max="0" value="0" disabled />
-        <div class="note">On screen, 1 second of playback at 1× is 2.4 femtoseconds of the electron's time (10¹⁵ times slower than real).</div>
+        <div class="note">At 1× speed, 1 second of playback is 2.4 femtoseconds of the electron's time (10¹⁵ times slower than real).</div>
         <div class="stats" id="stats"></div>
         <div class="row" style="margin-top:10px">
           <textarea id="flagNote" rows="2" placeholder="Optional note for this moment"></textarea>
@@ -124,7 +143,7 @@
           <p class="note" id="textbook"></p>
         </div>
         <div>
-          <figure><canvas class="view" id="captured" width="256" height="256"></canvas><figcaption id="capCaption">The captured electron, if its photon came out (that branch is shown at full brightness; its share is in the table).</figcaption></figure>
+          <figure><div class="stage small"><canvas id="captured" class="v3d"></canvas><div class="hud" id="capHud"></div></div><figcaption id="capCaption">The captured electron, if its photon came out. This branch is tiny (its share is in the table), so here it is scaled to its own brightest point, as labelled. Drag to turn, scroll to zoom.</figcaption></figure>
           <label>Time after the collision <input id="tau" type="range" min="0" max="400" value="0" /></label>
           <div class="note" id="tauLabel"></div>
         </div>
@@ -143,7 +162,7 @@
       <h2>What is in the equations, and what is left out</h2>
       <p><b>In:</b> the Coulomb pull; the proton's motion (exact for two bodies); the electron's spin with spin–orbit coupling, the relativistic speed correction and the Darwin term; and quantized light in free space, at first order in its coupling, so a photon can grow out of the field's vacuum while the electron drops into a bound shape. After the collision the captured electron cascades down by the same coupling.</p>
       <p><b>Left out:</b> the Lamb shift (0.000004 eV; it needs loop corrections of quantum electrodynamics), the proton's own magnetism (hyperfine, the 21 cm line, which takes millions of years), the 2s state's two-photon decay (0.12 s), gravity (10⁻³⁹ of the pull), the proton's size and the nuclear forces (about 10⁻¹⁰), and pair creation (a million times more energy). Light given off by an electron that stays free (bremsstrahlung) is not counted yet.</p>
-      <p class="note">How it is solved: the wave is fully 3D, on spheres around the proton: 81 angular patterns times radial points 0.05 Bohr radii apart near the proton (0.2 far out), out to 17 nm, where the edge absorbs whatever reaches it. Each step is 2.4 attoseconds. A run is exactly repeatable: the same settings always give the same numbers, to the last digit, on any computer.</p>
+      <p class="note">How it is solved: the wave is fully 3D, on spheres around the proton: 81 angular patterns times radial points 0.05 Bohr radii apart near the proton (0.2 far out), out to 17 nm, where the edge absorbs whatever reaches it. Each step is 2.4 attoseconds. The 3D view shows the cloud as glowing gas: a pixel's brightness is how much electron lies along that line of sight, inside a sphere around the proton whose size is the zoom. The wave is the same all the way round the line it came in on, so the computer stores one half-slice through that line and the view turns it round. A run is exactly repeatable: the same settings always give the same numbers, to the last digit, on any computer.</p>
     </section>
   </main>
   <footer><a href="../../">Rational Bonding</a> · <a href="../../privacy/">Privacy</a> · Nothing is sent anywhere: the run happens in your browser, and the report is a file you download.</footer>

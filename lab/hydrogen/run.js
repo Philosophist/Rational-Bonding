@@ -1,25 +1,21 @@
 // Runs one experiment from its settings: the same code in the browser worker and in Node, so a
 // run is reproduced exactly from its settings. No DOM code.
 import { Sim, DEFAULTS, VERSION, HARTREE_EV, A0_NM, FS_PER_AU } from './sim.js';
+import { GRIDS, fieldFrame, packLog } from './fields.js';
 
-export const VIEWS = {
-  wide: { nx: 100, nz: 200, half: 160 },   // ±160 a₀ (±8.5 nm) along the axis
-  near: { nx: 64, nz: 128, half: 16 },     // ±16 a₀ (±0.85 nm) around the proton
-};
-
-// onFrame(frame) gets { i, obs, wide, near } every frameEvery steps; onProgress(fraction).
+// onFrame(frame) gets { i, obs, dens: [Uint16Array per grid], cum, phi, cur } every frameEvery steps.
 export function runExperiment(settings, { onFrame, onProgress, images = true, now = () => Date.now() } = {}) {
   const t0 = now();
   const sim = new Sim(settings), s = sim.s;
   const setupMs = now() - t0;
-  const views = images ? { wide: sim.makeView(VIEWS.wide.nx, VIEWS.wide.nz, VIEWS.wide.half), near: sim.makeView(VIEWS.near.nx, VIEWS.near.nz, VIEWS.near.half) } : null;
+  const views = images ? GRIDS.map(g => sim.makeView(g.nx, g.nz, g.half)) : null;
   const steps = Math.round(s.tEndAu / s.dt), table = [];
   const start = sim.observables(), startPerL = start.perL;
   const frame = i => {
     const obs = i === 0 ? start : sim.observables();
     delete obs.perL;
     table.push(obs);
-    if (onFrame) onFrame({ i: table.length - 1, obs, wide: views && sim.densityImage(views.wide), near: views && sim.densityImage(views.near) });
+    if (onFrame) onFrame({ i: table.length - 1, obs, dens: views && views.map(v => packLog(sim.densityImage(v))), ...(views ? fieldFrame(sim) : {}) });
   };
   frame(0);
   const tRun = now();

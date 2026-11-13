@@ -8,7 +8,7 @@ self.onmessage = async ev => {
   if (m.type === 'run') {
     let lastP = 0;
     const res = runExperiment(m.settings, {
-      onFrame: f => self.postMessage({ type: 'frame', ...f }, [f.wide.buffer, f.near.buffer]),
+      onFrame: f => self.postMessage({ type: 'frame', ...f }, [...f.dens.map(d => d.buffer), f.cum.buffer, f.phi.buffer, ...f.cur.map(c => c.buffer)]),
       onProgress: p => { if (p - lastP > 0.002 || p === 1) { lastP = p; self.postMessage({ type: 'progress', p }); } },
       now: () => performance.now(),
     });
@@ -17,8 +17,8 @@ self.onmessage = async ev => {
     if (res.capture) res.textbook = await compareTextbook(res);
     self.postMessage({ type: 'done', result: res });
   } else if (m.type === 'captured' && last && lastRho) {
-    // the captured electron's cloud, τ a.u. after the collision
-    const img = last.capturedImage(m.nx, m.nz, m.half, lastRho, m.tau);
-    self.postMessage({ type: 'captured', img, tau: m.tau, key: m.key }, img ? [img.buffer] : []);
+    // the captured electron's cloud, τ a.u. after the collision, on the same nested grids as the view
+    const grids = m.grids.map(g => ({ ...g, log10: last.capturedImage(g.nx, g.nz, g.half, lastRho, m.tau) }));
+    self.postMessage({ type: 'captured', grids, tau: m.tau }, grids.filter(g => g.log10).map(g => g.log10.buffer));
   }
 };
