@@ -176,6 +176,28 @@ export function pickCapture(E, L, rand = Math.random) {
   for (const [x, p] of all) { r -= p; if (r <= 0) return x; }
   return all[all.length - 1][0];
 }
+// Where an electron lands when nothing about its pass picks the partial wave (it came in through
+// the equal-area capture disc): every orbital and partial wave in proportion to its cross section.
+export function pickCaptureBeam(E, rand = Math.random) {
+  const all = captureTable(E).flat(), tot = all.reduce((s, x) => s + x.sigma, 0);
+  let r = rand() * tot;
+  for (const x of all) { r -= x.sigma; if (r <= 0) return x; }
+  return all[all.length - 1];
+}
+// Each orbital's share of captures at energy E (for the tutor and tests): { '1s': 0.47, ... }.
+export function captureShares(E) {
+  const all = captureTable(E).flat(), tot = all.reduce((s, x) => s + x.sigma, 0), out = {};
+  for (const x of all) { const k = `${x.n}${'spdfghi'[x.l]}`; out[k] = (out[k] || 0) + x.sigma / tot; }
+  return out;
+}
+// Each orbital's share of captures for a pass with angular momentum Lħ (the lock-on's odds).
+export function captureSharesAt(E, L) {
+  const T = captureTable(E), w = partialWeights(L), out = {};
+  let tot = 0;
+  for (let lIn = 0; lIn < T.length; lIn++) for (const x of T[lIn]) { const k = `${x.n}${'spdfghi'[x.l]}`, p = w[lIn] * x.P; out[k] = (out[k] || 0) + p; tot += p; }
+  for (const k in out) out[k] /= tot || 1;
+  return out;
+}
 // The free partial wave's radial function R(r) = u/r near the proton, sampled for the shader on
 // a √r grid out to rmax (a₀), scaled so that the part inside rmax holds probability one.
 export function freeRadialTable(E, l, rmax, N = 128) {
