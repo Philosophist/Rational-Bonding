@@ -1,4 +1,4 @@
-// Checks of the grid against known physics.  node --test lab/hydrogen/
+// Checks of the grid against known physics.  node --test lab/hydrogen/sim.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sim, MP, C, FS_PER_AU } from './sim.js';
