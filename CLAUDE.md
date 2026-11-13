@@ -72,6 +72,7 @@ developer:
 | `reasonance/` | Ourgument, the argument-mapping app (formerly called Reasonance; see `reasonance/README.md`), also served at **https://ourgument.com** by a Cloudflare Worker (`reasonance/hosting/`). Arrows point from a claim out to its reasons. First visit shows a welcome card (sign up, tutorial, or the blank offline sandbox). Signed in, the home is a sea of orbs (three.js) behind a feed; maps are saved to the account and items can be posted publicly and rated privately (`rs_*` tables). |
 | `alchemfighter/` | Alchemfighter project page. The new version should be published under it (e.g. `alchemfighter/play/`) and linked from the page. |
 | `alchemfighter/vr/` | Steve's early attempt: the original A-Frame VR scene, linked from the project page |
+| `lab/hydrogen/` | Hydrogen Lab, Steve's dice-free science experiment (separate from the game): one electron and one proton solved on a spherical grid (Schrödinger, recoil, spin and relativity, quantized light at first order). `sim.js` physics, `run.js` driver, `headless.mjs` reruns a downloaded report exactly in Node, `sim.test.mjs` checks against known values (`node --test lab/hydrogen/`). No random numbers anywhere; `detmath.js` keeps runs identical across browsers. |
 | `CNAME` | `rationalbonding.com`, the custom domain for GitHub Pages |
 | `images/`, `favicon.png` | Site images, including `rational-bonding-logo.png` |
 
