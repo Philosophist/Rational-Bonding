@@ -263,6 +263,18 @@ function chargeLinks(ps, a) {
   }
   return { F, links };
 }
+// The share of an atom's electron inside radius r (nm), from its table scr = { q, R }.
+export function enclosedAt(scr, r) {
+  const x = Math.sqrt(Math.min(1, r / scr.R)) * (scr.q.length - 1), i = Math.min(scr.q.length - 2, Math.floor(x));
+  return scr.q[i] + (scr.q[i + 1] - scr.q[i]) * (x - i);
+}
+// The energy (eV) of a charge q at radius r inside that cloud, from the uncovered part of the proton.
+export function penEnergy(scr, r, q = -1) {
+  if (r >= scr.R) return 0;
+  const N = 200, a = Math.log(Math.max(r, 1e-3)), b = Math.log(scr.R); let U = 0;
+  for (let i = 0; i < N; i++) { const x = Math.exp(a + (b - a) * (i + 0.5) / N); U += (1 - enclosedAt(scr, x)) / x; }
+  return KE * q * U * (b - a) / N;
+}
 // The induced dipole (e·nm) of atom a in the field F.
 export function atomDipole(F, pol) {
   const Fm = Math.hypot(F[0], F[1], F[2]);
@@ -295,11 +307,26 @@ function accelerations(ps, out) {
     // Charge ↔ induced dipole. The force on the atom from charge j is (p·∇)F_j = k·q_j·(p − 3(p·n)n)/r³,
     // and charge j feels the opposite. Using the dipole made by the total field is the exact
     // gradient of the atom's energy −∫p dF, so energy is kept too.
-    const { F, links } = chargeLinks(ps, a), p = atomDipole(F, a.pol);
+    // In the gravity-well physics the dipole is the atom's own wave's (a.dip, e·nm, set by the game
+    // from the wave each frame) and a charge inside the cloud also feels the part of the proton the
+    // electron no longer screens (a.scr: the share of the electron inside each radius).
+    const { F, links } = chargeLinks(ps, a), s2 = a.dip ? (a.soft || 0) ** 2 : 0, c8 = a.dip ? atomPol(1).c8 : a.pol.c8;
+    let p;
+    if (a.dip) {
+      // p = p0 + A·F with F the softened field right now, so the stretch keeps step with the
+      // charges through every sub-step (a stale dipole would act as friction).
+      const Fs = [0, 0, 0], A = a.dipA;
+      for (const { b, n, r } of links) { const k = KE * b.q * r / (r * r + s2) ** 1.5; Fs[0] += k * n[0]; Fs[1] += k * n[1]; Fs[2] += k * n[2]; }
+      p = A ? [0, 1, 2].map(c => a.dip[c] + A[3 * c] * Fs[0] + A[3 * c + 1] * Fs[1] + A[3 * c + 2] * Fs[2]) : a.dip;
+    } else p = atomDipole(F, a.pol);
     for (const { j, b, n, r } of links) {
-      const pn = p[0] * n[0] + p[1] * n[1] + p[2] * n[2], k = KE * b.q / (r * r * r), core = 8 * a.pol.c8 / r ** 9;
+      // (with a.dip the charge's field at the atom is taken softened over the cloud's size s,
+      // q·R/(R²+s²)^1.5, the same field the wave is solved in, so the two stay a matched pair)
+      const pn = p[0] * n[0] + p[1] * n[1] + p[2] * n[2], rs2 = r * r + s2, k = KE * b.q / (rs2 * Math.sqrt(rs2)), kn = 3 * pn * r * r / rs2;
+      const bare = a.scr && r < a.scr.R ? KE * b.q * (1 - enclosedAt(a.scr, r)) / (r * r) : 0;
+      const core = 8 * c8 / r ** 9 + bare;
       for (let c = 0; c < 3; c++) {
-        const f = k * (p[c] - 3 * pn * n[c]) + core * n[c];   // on the atom; n points from the charge to the atom
+        const f = k * (p[c] - kn * n[c]) + core * n[c];   // on the atom; n points from the charge to the atom
         out[i][c] += f / a.m; out[j][c] -= f / b.m;
       }
     }
@@ -334,7 +361,11 @@ function timeStep(ps) {
       let f;   // how hard the pair pulls or pushes (eV/nm)
       if (qq) f = KE / (r * r);
       else if (ap && bp) { const s6 = (HH_RM / r) ** 6; f = 12 * HH_EPS * (s6 * s6 + s6) / r; }
-      else { const pol = ap ? a.pol : b.pol, F = KE / (r * r); f = dipoleMag(F, pol) * 2 * F / r + 8 * pol.c8 / r ** 9; }
+      else {
+        const at = ap ? a : b, pol = at.pol, F = KE / (r * r); f = dipoleMag(F, pol) * 2 * F / r + 8 * pol.c8 / r ** 9;
+        if (at.dip) f += 2 * KE * Math.hypot(at.dip[0], at.dip[1], at.dip[2]) / (r * r + (at.soft || 0) ** 2) ** 1.5;
+        if (at.scr && r < at.scr.R) f += KE * (1 - enclosedAt(at.scr, r)) / (r * r);
+      }
       // The atoms' short-range cores are stiffer than Coulomb's law, so they get twice the care.
       best = Math.min(best, (qq ? 1 : 0.5) * Math.min(r / (dv + 1e-9), Math.sqrt(mu * r / f)));
     }

@@ -85,3 +85,46 @@ test('the compiled wave matches the full one', () => {
     assert.ok(Math.abs(a[0] - b[0]) < 0.02 * Math.abs(b[0]) + 1e-4, `${a} vs ${b}`);
   }
 });
+
+test('other charges lower the rim: waves above it leak out, waves below it are held', () => {
+  const none = WL.edgeLip(W, []);
+  // alone: everything up to n = 7 is held, the box-held waves above −1/R are not
+  for (let n = 1; n <= 7; n++) assert.equal(WL.leakRate(W, W.index(n, 0, 0), none), 0);
+  const above = W.states.findIndex(s => s.E > -1 / W.R + 1e-4);
+  assert.ok(WL.leakRate(W, above, none) > 0);
+  // a bare proton 5 nm away spills n = 6 but not n = 3
+  const ch = [{ rel: [0, -5 / WL.A0_NM, 0], q: 1 }], lip = WL.edgeLip(W, ch), F = WL.tiltAndDent(ch).F;
+  const a = W.index(6, 1, 0);
+  assert.ok(WL.leakRate(W, a, lip) > 0);
+  assert.equal(WL.leakRate(W, W.index(3, 1, 0), lip), 0);
+  // an electron 1 nm away does not open 1s or 2p (it only raises the rim on its own side)
+  const lipE = WL.edgeLip(W, [{ rel: [0, 1 / WL.A0_NM, 0], q: -1 }]);
+  assert.equal(WL.leakRate(W, W.index(1, 0, 0), lipE), 0);
+  assert.equal(WL.leakRate(W, W.index(2, 1, 0), lipE), 0);
+  // the share that leaks in a step is the chance it left; it comes out toward the proton, with its energy
+  const wv = WL.makeWave(W, 6, 1, 0);
+  WL.stepNear(W, wv, [0, 0, 0], [0, 0, 0, 0, 0, 0], 1);
+  assert.equal(wv.lostEsc, 0);
+  const wv2 = WL.makeWave(W, 6, 1, 0);
+  WL.stepNear(W, wv2, F, [0, 0, 0, 0, 0, 0], 2, lip);
+  assert.ok(wv2.lostEsc > 0 && wv2.lostEsc < 0.01, `lost ${wv2.lostEsc}`);
+  assert.ok(Math.abs(wv2.lostEsc + wv2.lostLight - (1 - WL.normSq(wv2.s))) < 1e-12);
+  const ex = WL.escapeExit(W, a, lip);
+  assert.ok(ex.dir[1] < 0, 'it leaves on the side of the proton that pulled it');
+  const d = Math.hypot(ex.dir[0] * ex.r, ex.dir[1] * ex.r + 5 / WL.A0_NM, ex.dir[2] * ex.r), D = 5 / WL.A0_NM;
+  assert.ok(Math.abs(0.5 * ex.v * ex.v - 1 / ex.r - (1 / d - 1 / D) - W.energies[a]) < 1e-12);
+});
+
+test('the atom\'s dipole is its wave\'s own, and matches the full wave', () => {
+  const F = [0, 1e-3, 0], T = [0, 0, 0, 0, 0, 0], wv = WL.makeWave(W, 1, 0, 0);
+  WL.stepNear(W, wv, F, T, 1);
+  const wd = WL.waveDipole(W, wv), d = [0, 1, 2].map(i => wd.p0[i] + wd.A[3 * i] * F[0] + wd.A[3 * i + 1] * F[1] + wd.A[3 * i + 2] * F[2]), p = WL.meanPosition(W, WL.dressed(W, wv, F, T));
+  assert.ok(Math.abs(d[1] + p[1]) < 0.03 * Math.abs(p[1]), `${d[1]} vs ${-p[1]}`);
+});
+
+test('the share of the electron inside a radius', () => {
+  const q = WL.enclosed(W, WL.pureState(W, 1, 0, 0)), at = r => { const x = Math.sqrt(r / W.R) * (q.length - 1), i = Math.floor(x); return q[i] + (q[i + 1] - q[i]) * (x - i); };
+  assert.ok(Math.abs(at(2) - (1 - Math.exp(-4) * 13)) < 0.02, `${at(2)}`);   // 1s inside 2 a₀: 0.762
+  assert.ok(Math.abs(at(1) - (1 - Math.exp(-2) * 5)) < 0.02, `${at(1)}`);    // inside 1 a₀: 0.323
+  assert.ok(q[q.length - 1] === 1 && q[0] === 0);
+});
