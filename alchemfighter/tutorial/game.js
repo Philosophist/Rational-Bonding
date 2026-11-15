@@ -1657,7 +1657,7 @@ $('fieldBtn').addEventListener('click', toggleField);
 // is taken where its path runs.
 function linesNote() {
   $('linesNote').textContent = S.pilot
-    ? 'Pilot-wave view: blue curves near a proton are crests of the electron\'s matter wave (a slice through it), brighter where the wave is denser; the point rides it. Glow brightness follows the electric field (log scale, capped at the centre). P for field lines.'
+    ? 'Pilot-wave view: each electron is a point riding its matter wave; near a proton the wave bends its path. Glow brightness follows the electric field (log scale, capped at the centre). P for field lines.'
     : 'Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).';
 }
 function togglePilot() {
@@ -2155,7 +2155,8 @@ function draw(views, panel) {
     const pts = [...e.trail, e.pos];
     for (let i = 1; i < pts.length; i++) { const k = near(pts[i]); if (k > 0) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], k * (0.08 + 0.4 * i / pts.length)); }
   }
-  if (S.pilot) for (const e of freeElectrons()) { if (e.gd) guidedWave(e); else electronWave(e); }
+  // (Near a proton the wave is not drawn: Steve asked for its flat slice of crests to go, 2026-11-15. The point and its trail show the path.)
+  if (S.pilot) for (const e of freeElectrons()) if (!e.gd) electronWave(e);
   const strength = L => (L.launched && !L.caught ? 2 : 0) + W.envelope(L.em, Math.min(S.simFs, L.em.tEnd));
   for (const L of [...S.light].sort((x, y) => strength(y) - strength(x)).slice(0, MAX_DRAWN_LIGHTS)) lightLines(L);
   for (const L of S.light) { if (L.launched && !L.caught) trackTrail(L); photonDot(L, glows); }
@@ -2220,21 +2221,6 @@ function updateGuides() {
       const vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME);   // the flow is fast only right at the wave's zeros
       return v3.add(gd.p.vel, MW.guideVelocity(gd.E, gd.u, r, vmax));
     };
-  }
-}
-// The wave's crests in the plane through the proton that holds the electron's way in and the
-// point itself (a slice of the 3-D wave). Brighter where the wave is denser (log scale).
-function guidedWave(e) {
-  const g = e.gd, off = v3.sub(e.pos, g.p.pos);
-  let w = v3.sub(off, v3.scale(g.u, v3.dot(off, g.u)));
-  if (v3.len(w) < 1e-3) w = v3.cross(g.u, Math.abs(g.u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
-  w = v3.norm(w);
-  if (!g.slice || v3.dot(w, g.sliceW) < 0.97) { g.slice = MW.waveSlice(g.E, g.u, w, g.R, phone.matches ? 36 : 52); g.sliceW = w; }
-  const W2 = g.sliceW, pc = g.p.pos, col = [0.45, 0.65, 1];
-  for (const [a1, b1, a2, b2, rho] of MW.crests(g.slice, g.ph)) {
-    const k = Math.min(1, Math.log10(1 + rho) / 2);
-    const P1 = v3.add(pc, v3.add(v3.scale(g.u, a1), v3.scale(W2, b1))), P2 = v3.add(pc, v3.add(v3.scale(g.u, a2), v3.scale(W2, b2)));
-    lines.seg(P1, P2, col, 0.12 + 0.5 * k);
   }
 }
 // The electron's wave in the pilot-wave view: crests square to its motion, one de Broglie wavelength

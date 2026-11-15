@@ -248,8 +248,8 @@ and what the waves cost per frame.
   test checks that this flow conserves probability. So the point is pulled round the proton,
   focused behind it, and wiggles where the incoming and scattered parts of the wave meet. While
   guided, the other charges' pulls on it are left out (the wave is the one-proton solution).
-  In the pilot-wave view the electric field lines are replaced by this wave: its crests in the
-  plane holding the electron's way in and the point, brighter where the wave is denser.
+  The wave itself is not drawn near a proton (its flat slice of crests was removed at Steve's
+  request); the point and its trail show the path.
 - **Drawing resolution adapts** when frames get slow (an electron cloud filling a phone screen
   is the heaviest thing to draw), down to 35% of the pixels and fewer steps through each cloud.
 - **Pilot-wave view (on by default; P, the "Pilot-wave view" button, or the left stick click in
