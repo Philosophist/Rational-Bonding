@@ -15,6 +15,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 
 | File | Role |
 |---|---|
+| `wells.js` | The gravity-well physics, no DOM: each atom's electron on its own grid from Schrödinger's equation, tilted and dented by every other charge, stepped exactly; light by quantum jumps; the point riding the wave |
 | `quantum.js` | Hydrogen from Schrödinger's equation, no DOM: free-electron waves (Numerov), capture cross sections into every orbital up to n = 6, decay rates and branching, and each shell in an electric field (Stark mixing, solved and stepped exactly) |
 | `physics.js` | Pure physics, no DOM: constants, capture odds per pass (from `quantum.js`), aim cone, hydrogen decay table, Coulomb motion in the sphere, Stark mixing, atoms sharing an excitation (pairs and groups) |
 | `orbitals.js` | Hydrogen wavefunctions, ported unchanged from the rebuild's `prototype/index.html` |
@@ -22,7 +23,78 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 | `mat4.js` | Small matrix helpers for the flat camera and the headset's eyes |
 | `game.js` | Beats, tutor lines, flight controls, the gun, the cascade, the HUD |
 | `light.js` | Pure maths for light: the exact field of an oscillating dipole, its stream function and contour lines, field-line tracing, the photon's path and targets (pilot-wave view), and the driven and emitting clouds' shares |
-| `physics.test.mjs`, `light.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/*.test.mjs` |
+| `physics.test.mjs`, `light.test.mjs`, `wells.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/*.test.mjs` |
+
+## Gravity-well physics (the new version, on by default)
+
+Steve's idea (2026-11-14): treat each proton as a well bubble with the electron inside, shaped by
+Schrödinger's equation, instead of one even grid over the whole 80 nm system (hundreds of billions
+of points). `wells.js` does the maths (tests in `wells.test.mjs`); the start card chooses between
+**Gravity wells (new)** and **Classic** (the shell model below), and `?physics=classic` or
+`?physics=wells` in the address does the same. The HUD's Game time window says which is running
+and what the waves cost per frame.
+
+- **One alphabet, shared by every atom.** A bubble 120 a₀ (6.3 nm) in radius, a radial grid of
+  1,400 points (0.001 a₀ apart at the proton, 0.3 a₀ at the wall) times the spherical harmonics up
+  to l = 5. For each l the radial Schrödinger equation (with the reduced mass) is solved on that
+  grid for every standing wave below +0.25 hartree: 957 of them. Nothing is pasted in. Checks: the
+  levels come out within 0.005% of −13.6/n² eV, Lyman-α at 121.568 nm, H-α at 656.47 nm; lifetimes
+  from the computed overlaps 2p 1.595 ns, 3p 5.27 ns, 3d 15.5 ns; 3p goes to 1s 88% of the time;
+  1s stretches in a field by 96% of hydrogen's polarizability (the rest is in waves above the
+  cut-off).
+- **Every other charge tilts and dents the well.** Its pull, expanded about the proton, is a tilt
+  (the field, E·r) and a dent (how the field changes across the atom, −½·r·T·r). These mix the
+  standing waves, every n, l and m, in any direction: no axis is chosen, and mixing between shells
+  is included (the classic model only mixed within one shell). The electron's wave is its set of
+  amplitudes, stepped exactly through the game's time (a Chebyshev series for e^{−iHt}).
+- **Cheap where nothing happens.** Only the standing waves the electron is in, and those the pull
+  can really mix in (energy gap under 10 × the pull × √share), are stepped; the far ones follow the
+  pull from moment to moment (first order for the wave, second order for the energies; for 1s
+  that is its polarizability). A settled 1s atom costs one multiply a frame; an n = 6 atom next to a
+  bare proton mixes 100 to 250 standing waves and costs about 2 ms. The atoms share a time budget
+  per frame (8 ms, 4 ms on phones; phones also use a lighter alphabet), and an atom that misses its
+  turn is stepped further on its next one, which is still exact.
+- **Light.** An amplitude in an upper standing wave leaks out at the rate its dipole overlaps give.
+  Each step, what the wave lost is the chance a photon left (the quantum-jump method); the jump
+  picks which step by the shares and rates right now. So a 2s atom in a tilted well sends Lyman-α
+  only through the 2p the tilt has mixed in, with nothing scripted. The photon's wavelength is the
+  difference of the two computed levels, and it swings along the computed dipole of that step.
+- **The point.** In the pilot-wave view each bound electron is a small bright dot carried by its
+  wave's flow, v = Im(∇ψ/ψ) (de Broglie–Bohm), placed by |ψ|² when it settles. In a settled real
+  orbital the flow is zero and the dot sits still (this is the theory's own result, not a freeze);
+  while the wave beats between two shapes, during a step down or in a changing field, the dot is
+  pushed around with it.
+- **Shown slowed, never flickering.** Parts of the wave that beat faster than 1.2 swings per
+  screen second are shown swinging at that speed (as everywhere in the game), and the dot then moves
+  in the same slowed time. The true amplitudes are what the physics uses.
+- **Caught without light (three-body capture).** A lone electron can only stay by sending a
+  photon, which a 10 fs pass almost never does (about 1 in 400,000 for a centred 0.1 eV shot). When
+  two electrons are near a proton together, one can shove the other away and be left without the
+  energy to escape; the motion code does that by itself. In a test of the motion code alone (300
+  volleys from 8.6 nm at 0.1 eV) one electron was never left bound, two a few fs apart left one
+  bound about 1 time in 20, and four about 15 fs apart about 1 time in 9, typically by 0.3 eV.
+  An electron that stays bound to a bare proton (pair energy below zero) for one full turn of its
+  orbit is now caught: it becomes a wave in that proton's well, in the orbital nearest its energy
+  and angular momentum, turning about its orbit's own axis, and counts as hydrogen. No photon is
+  sent. Simplified: until then it is a classical point; the wave is the one nearest orbital (a real
+  one would be a packet of several); the bubble holds true orbitals up to n = 7, so an orbit
+  bound by less than 0.245 eV keeps circling as a point (Classic physics: up to n = 6).
+- **A guided electron's push on its proton.** While an electron's point is carried by its wave
+  round a proton (matterwave.js), the proton recoils by exactly the momentum the point gains or
+  loses, about 50 m/s for a 0.1 eV pass. (Before, the proton felt the point's bare pull while the
+  point did not answer to it, which kicked the proton up to 3,000 times too hard on a near miss.)
+- **Atoms are named by their largest bound share**, even while a strong pull has part of the wave
+  in the bubble's unbound standing waves; a cloud is never drawn beyond its bubble.
+- **Simplified, flagged:** the bubble's wall is hard, so field ionization of high levels is still
+  left out (an n = 6 atom 7 nm from a bare proton really would be pulled apart); the pull is taken
+  to second order (tilt and dent), which is rough for a charge passing through the cloud itself
+  (the dent of a charge closer than 2 a₀ is taken at 2 a₀); spin and fine structure are left out; the Lamb shift
+  and the 2s two-photon rate are added from measurement (both quantum electrodynamics); when a
+  step down happens the wave collapses onto the one lower standing wave the photon left it in; a
+  near set is capped at 260 standing waves (120 on phones). Capture itself (the lock-on, the odds,
+  the free wave turning into the orbital) is as before; the orbital it lands in is then handed to
+  the well. Atoms sharing an excitation (groups) use the group model below, drawn from the well's
+  standing waves.
 
 ## The physics, and where it is simplified
 
@@ -38,9 +110,32 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   being caught into each orbital (photo-recombination, by detailed balance with photoionization).
   Checks: photoionization of 1s at threshold comes out 6.30e-18 cm² (the known value); the total
   matches Kramers' formula with its known Gaunt factors; averaged over a uniform beam the per-pass
-  odds give back the total. The HUD shows L, the real chance and the game's (the real one ×
-  600,000, `RATE_BOOST`). The best slow shot is not dead centre: a head-on pass is the l = 0 wave,
-  which can only land in p orbitals and is caught less often than the l = 1 wave.
+  odds give back the total. Nothing is boosted any more (Steve, 2026-11-13): every catch has its
+  real odds.
+- **The capture target (pilot-wave view).** The electron is a point riding inside its wave. The
+  proton catches it if the point comes in through a disc of area σ (the computed cross section,
+  all orbitals to n = 6), seen square-on to its path from far away: 2.7 pm across at 0.1 eV,
+  0.75 pm at 1 eV, against a 1s cloud 106 pm across and a proton 0.0017 pm across. A pass comes
+  in at b = L·ƛ from the centre. **This is a simplification, flagged in the game:** the disc is an
+  equal-area stand-in for the odds (a uniform beam crosses it at exactly the real rate), not
+  something pilot-wave theory says, because whether a real electron is caught also depends on the
+  light field's state. An unaided catch lands in an orbital drawn from all partial waves in
+  proportion to their cross sections (at 1 eV: 1s 49%, 2p 16%, 2s 7%, ...).
+- **The first 5 shots have real odds.** The point starts at a random spot in its wave (the Born
+  rule), spread over the gun's spot, so an unaided shot almost never comes in through the disc
+  (about 1 in 400,000 for a perfectly centred 0.1 eV shot, far less off-centre; the HUD shows it).
+  Then the tutor explains the odds (about 20 million passes per catch at 1 eV) and how long
+  nature takes: a neon sign's glow about 25 s per proton, the thin upper air months to years,
+  ordinary air billionths of a second (the proton takes an electron from a molecule), and this
+  80 nm system with ten free electrons about 25 µs, which is about 20 years of play.
+- **Atomic lock-on (made-up technology, labelled so in the HUD).** After the lesson: L, the
+  Lock-on button, or the right stick click in VR. Hold the crosshair on a proton (inside the
+  rings) for one second and the lock closes. A shot fired while locked starts from the same spot
+  in its wave every time and is steered through the disc on its pass by that proton, so it is
+  caught. What stays real: the orbital is rolled from the computed odds for that pass's angular
+  momentum (the HUD lists the top three for your aim), and everything after the catch. The
+  Target window shows the target at three zooms (1 nm, 10 pm, 0.01 pm wide) with the gun's
+  spread, where your aim brings the shot in, and where the last passes came in.
 - **Aim cone:** the gun focuses the electron's wave from a 30 nm aperture, so the spot is about
   ƛ·D / 30 nm (ƛ is the electron's reduced wavelength, D the distance).
 - **Where the electron lands:** one photon takes it straight from free to one orbital, any n up
@@ -74,8 +169,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
     for 5 s the first two times (2 s after), then easing back up (e-fold per second);
   - a photon in flight: until light covers 25 nm per screen second (1 s = 83 attoseconds). Light
     from an atom a fast electron bumped up slows things less, to 300 nm per second.
-  Chance encounters (captures, electron collisions) run RATE_BOOST = 600,000 times more often than
-  in nature, or the level couldn't be played (the HUD tag "catches ×600,000"). Steps down are NOT
+  Chance encounters (captures, electron collisions) have their real odds; the atomic lock-on is
+  what lets the player catch electrons. Steps down are NOT
   sped up (Steve, 2026-11-12): every level lasts its real lifetime on the game's clock, so even 2p
   (1.6 ns) lasts about 11 hours of play at normal speed, and an atom almost always keeps the orbital
   it was caught in. A neutral atom in any orbital counts toward the goal.
@@ -112,8 +207,25 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   radiate, and when its photon leaves) is not in Schrödinger's equation: it needs the quantum
   theory of light, so it keeps the measured lifetimes. Resting atoms answering Lyman light is the
   group model below.
-- **Pilot-wave view (on by default; P, the "Photon particle" button, or the left stick click in
-  VR):** each photon is also drawn as a particle riding its wave, as in de Broglie–Bohm theory.
+- **The matter wave near a proton (matterwave.js, tests in matterwave.test.mjs).** Within up to
+  4 nm of a bare proton, a free electron that can leave again (energy above zero) is described by
+  the exact Coulomb scattering solution of Schrödinger's equation for its energy and the
+  direction it came in from, ψ = e^{ikz}·₁F₁(i/k; 1; ik(r − z)) (₁F₁ integrated from Kummer's
+  equation and tabulated; checked against its power series), normalised so the incoming wave has
+  density 1. Its point moves with the wave's flow, v = (ħ/m)·∇(phase) (de Broglie–Bohm); the
+  test checks that this flow conserves probability. So the point is pulled round the proton,
+  focused behind it, and wiggles where the incoming and scattered parts of the wave meet. While
+  guided, the other charges' pulls on it are left out (the wave is the one-proton solution).
+  In the pilot-wave view the electric field lines are replaced by this wave: its crests in the
+  plane holding the electron's way in and the point, brighter where the wave is denser.
+- **Drawing resolution adapts** when frames get slow (an electron cloud filling a phone screen
+  is the heaviest thing to draw), down to 35% of the pixels and fewer steps through each cloud.
+- **Pilot-wave view (on by default; P, the "Pilot-wave view" button, or the left stick click in
+  VR):** away from protons, each free electron is drawn as a point inside its wave: crests square to its motion, one
+  de Broglie wavelength apart (3.9 nm at 0.1 eV), as wide as the gun's spot, drifting back through
+  the packet at the phase speed v/2 (capped at 1.2 crests per screen second). It is drawn as the
+  free wave; near a proton the real wave bends round it, while the point's path there comes from
+  the forces. Each photon is also drawn as a particle riding its wave, as in de Broglie–Bohm theory.
   It leaves when the atom's sampled lifetime is up, along a straight path drawn from the wave's
   brightness (averaged over a cycle a dipole's energy flows straight out), at c. An atom takes it
   only if the path runs through its target, a cone of solid angle σ/R² around the direction to it
@@ -168,8 +280,8 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
   - *Collisions:* an electron faster than 10.2 eV can bump a 1s atom to n = 2 (σ ≈ 0.02 ln x / x
     nm², x = E/10.2 eV), and one faster than 13.6 eV can ionize it (Lotz formula). Only atoms the
     electron actually passes can be hit: each pass has chance σ·e^(−b²/s²)/(πs²) over the reach
-    s = ħv/ΔE (at least 2 a₀), which sums to the real σ, times RATE_BOOST like captures, so hits
-    happen within about 1 nm. The collision is done in the pair's centre-of-mass frame: the electron
+    s = ħv/ΔE (at least 2 a₀), which sums to the real σ (real odds: even a dead-centre pass hits
+    only about one time in eight). The collision is done in the pair's centre-of-mass frame: the electron
     is turned by a mostly small angle (Born, dσ/dΩ ∝ 1/(θ² + θm²)) and the atom recoils, at
     hundreds of m/s (over 100 times a photon's kick).
   - *Momentum:* a capture keeps the pair's momentum (the atom then weighs proton + electron), every
