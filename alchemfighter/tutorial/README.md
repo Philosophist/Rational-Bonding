@@ -85,10 +85,42 @@ and what the waves cost per frame.
   point did not answer to it, which kicked the proton up to 3,000 times too hard on a near miss.)
 - **Atoms are named by their largest bound share**, even while a strong pull has part of the wave
   in the bubble's unbound standing waves; a cloud is never drawn beyond its bubble.
-- **Simplified, flagged:** the bubble's wall is hard, so field ionization of high levels is still
-  left out (an n = 6 atom 7 nm from a bare proton really would be pulled apart); the pull is taken
+- **A held electron can get out again, by the same wave (the rim).** Other charges lower the
+  well's rim on some sides. Along 32 directions out from the proton (plus straight downhill and
+  straight at any close positive charge) `edgeLip` takes the electron's energy in the proton's pull
+  and the other charges' exact pull; the first top on the way out is the rim that way. A standing
+  wave whose own energy is above the rim in some directions leaks: once per crossing of the bubble
+  (speed/2R) times the open share of the edge. The share that leaked in a step is the chance that
+  the electron left in it (the same quantum-jump method as light). When it leaves, it comes out
+  just past the rim as a free point with that standing wave's energy, and the proton is bare. A
+  lone atom holds everything up to n = 7; a bare proton pulls an n = 6 atom apart from about 8 nm,
+  n = 5 from 6 nm, n = 4 from 4.5 nm (the saddle between two protons is at −3/D); 1s and 2p are far
+  below any rim made in the level. If the rim is toward another proton the electron ends up
+  circling that one and is caught there (charge exchange). An orbiting point is not turned into a
+  wave while the rim is below its energy.
+- **The energy books at an escape.** The electron leaves with the energy the atom's wave had. If
+  the standing wave it left from sat higher, the nearest charge pays the difference out of its
+  motion (it is the one whose pull lifted it); if it cannot pay enough for the electron to get
+  past the rim, the escape does not happen. So a slow electron can never knock a 1s electron out.
+- **The atom's cloud pulls back (wells mode).** What other charges feel from an atom is its wave's
+  own dipole: the part it carries by itself (its standing waves beating, `waveDipole` p0) plus the
+  stretch the far waves allow (a 3×3 tensor times the field at that instant, inside every
+  sub-step). This is the force that goes with the wave's own equation, so the energy a passing
+  charge puts into the wave is energy it loses (checked: a 5 eV electron passing an n = 3 atom at
+  3 nm keeps the total to 0.002 eV; passing through the cloud of an n = 6 atom, to about 0.04 eV).
+  A charge inside the cloud also feels the part of the proton the electron no longer covers
+  (`enclosed`: the share of the electron inside each radius), and its field on the wave is
+  softened over the cloud's size (1.5·n² a₀) so the pair stay matched.
+- **Simplified, flagged:** the rim leak is an estimate, not a wave solved through an open edge:
+  it uses each standing wave's own energy (not its shift in the pull), has no tunnelling under the
+  rim, and puts the point just past the rim rather than following it out. A free electron is still
+  a point, not a wave, away from a bare proton: a narrow packet at the bubble's edge needs angular
+  waves far above l = 5, which the standing-wave set does not hold. The dent (quadrupole) has no
+  pull-back on the charges, and the leak's steady thinning of the wave between escapes is not
+  paid back, so energy drifts by a few hundredths of an eV in a close pass. The pull is taken
   to second order (tilt and dent), which is rough for a charge passing through the cloud itself
-  (the dent of a charge closer than 2 a₀ is taken at 2 a₀); spin and fine structure are left out; the Lamb shift
+  (the dent of a charge closer than the cloud's size is taken at that size); a 1s-sized core still keeps charges
+  0.1 nm from an atom's proton (no H⁻ or H₂⁺ yet); spin and fine structure are left out; the Lamb shift
   and the 2s two-photon rate are added from measurement (both quantum electrodynamics); when a
   step down happens the wave collapses onto the one lower standing wave the photon left it in; a
   near set is capped at 260 standing waves (120 on phones). Capture itself (the lock-on, the odds,
@@ -121,7 +153,7 @@ and what the waves cost per frame.
   something pilot-wave theory says, because whether a real electron is caught also depends on the
   light field's state. An unaided catch lands in an orbital drawn from all partial waves in
   proportion to their cross sections (at 1 eV: 1s 49%, 2p 16%, 2s 7%, ...).
-- **The first 5 shots have real odds.** The point starts at a random spot in its wave (the Born
+- **The first 10 shots have real odds.** The point starts at a random spot in its wave (the Born
   rule), spread over the gun's spot, so an unaided shot almost never comes in through the disc
   (about 1 in 400,000 for a perfectly centred 0.1 eV shot, far less off-centre; the HUD shows it).
   Then the tutor explains the odds (about 20 million passes per catch at 1 eV) and how long

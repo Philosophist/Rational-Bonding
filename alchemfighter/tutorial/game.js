@@ -133,7 +133,7 @@ const BEATS = {
   },
   2: {
     title: 'First capture',
-    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger\'s equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc (see the Target window). Fire 5 electrons at the proton, with real odds.',
+    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger\'s equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc (see the Target window). Fire 10 electrons at the proton, with real odds.',
   },
   3: {
     title: 'Acid Neutrality',
@@ -184,7 +184,7 @@ function goals() {
     ];
   }
   if (S.beat === 2) {
-    if (!S.b2.lesson) return [[`Fire 5 electrons at the proton (${Math.min(S.shots, UNAIDED)} of ${UNAIDED})`, S.shots >= UNAIDED]];
+    if (!S.b2.lesson) return [[`Fire ${UNAIDED} electrons at the proton (${Math.min(S.shots, UNAIDED)} of ${UNAIDED})`, S.shots >= UNAIDED]];
     return [
       ['Hold the crosshair on the proton until the lock closes', S.lock.locked || S.b2.captured],
       ['Fire while locked: make a neutral hydrogen atom', S.b2.captured],
@@ -314,7 +314,7 @@ const launchKE = (E, dist) => E + P.KE / Math.max(dist, 0.5);
 // same spot in its wave every time and steers it through the disc, so the proton catches it. What
 // stays real: which orbital it lands in is rolled from the computed odds for the pass's angular
 // momentum (where on the rings you aim), and everything after the catch.
-const UNAIDED = 5;             // shots with real odds before the lesson and the lock-on
+const UNAIDED = 10;             // shots with real odds before the lesson and the lock-on
 const LOCK_TIME = 1.0;         // s of steady aim to close the lock
 const LOCK_LMAX = Q.NMAX + 0.5;   // the lock holds only inside the rings (angular momentum the odds cover)
 const lockReady = () => S.beat >= 3 || (S.beat === 2 && S.b2.lesson);
@@ -492,10 +492,17 @@ function wellOf(a) {
   return a.wv;
 }
 // The tilt (field, atomic units) and the dent (how it changes across the atom) at an atom.
+// A charge inside the cloud does not tilt the whole well: its field is taken softened over the
+// cloud's size s (about 1.5·n² a₀), q·R/(R²+s²)^1.5, and the dent as if it were no closer than s.
+const cloudSize = a => 1.5 * Math.max(1, a.st.n || 1) ** 2;   // a₀
 function wellPull(a) {
-  const F = P.fieldAt(a.p.pos, S.ps).map(x => x / WL.F_AU), ch = [];
-  for (const p of S.ps) if (p.active && p.q && p !== a.p) ch.push({ rel: v3.scale(v3.sub(p.pos, a.p.pos), 1 / WL.A0_NM), q: p.q });
-  return { F, T: WL.tiltAndDent(ch).T };
+  const s = cloudSize(a), F = [0, 0, 0], ch = [];
+  for (const p of S.ps) if (p.active && p.q && p !== a.p) {
+    const rel = v3.scale(v3.sub(p.pos, a.p.pos), 1 / WL.A0_NM), k = p.q / (v3.dot(rel, rel) + s * s) ** 1.5;
+    for (let c = 0; c < 3; c++) F[c] -= k * rel[c];
+    ch.push({ rel, q: p.q });
+  }
+  return { F, T: WL.tiltAndDent(ch, Math.max(2, s)).T, lip: WL.edgeLip(WELL, ch) };
 }
 // Relabel the atom by its largest share (for the HUD, the counts and the sharing of light).
 function relabel(a) {
@@ -524,18 +531,65 @@ function stepWells(dtFs) {
     const wv = wellOf(a), pull = wellPull(a), t = a.wvPend * AU_PER_FS;
     a.pull = pull; a.wvPend = 0;
     if (t <= 0) continue;
-    WL.stepNear(WELL, wv, pull.F, pull.T, t);
+    WL.stepNear(WELL, wv, pull.F, pull.T, t, pull.lip);
     used++;
     // Light: what the step lost is the chance that a photon left in it (the quantum-jump method).
-    const lost = 1 - WL.normSq(wv.s);
+    // The electron itself: what leaked over the lip of the tilted well is the chance that it left.
+    if (!a.capt && a.fade >= 1 && wv.lostEsc > 0 && Math.random() < wv.lostEsc && spill(a, wv, pull)) continue;
     const free = a.pending && a.pending.hazard && a.hold <= 0 && a.fade >= 1 && !a.capt;
-    if (free && Math.random() < lost) a.wvJump = WL.pickJump(WELL, wv.s);
+    if (free && Math.random() < wv.lostLight) a.wvJump = WL.pickJump(WELL, wv.s);
     WL.normalize(wv.s);
     if (!a.wvJump) relabel(a);
+    // What the other charges feel from this atom: its wave's own dipole, and how much of the
+    // electron is inside each radius (so a charge inside the cloud feels the proton it uncovers).
+    const wd = WL.waveDipole(WELL, wv);
+    a.p.dip = wd.p0.map(x => x * WL.A0_NM); a.p.dipA = wd.A.map(x => x * WL.A0_NM ** 3 / P.KE);
+    a.p.soft = cloudSize(a) * WL.A0_NM;
+    a.p.scr = { q: WL.enclosed(WELL, wv.s), R: WELL.R * WL.A0_NM };
   }
+  for (const a of S.atoms) if (a.pair || a.mix || a.trans || a.emitL) { a.p.dip = null; a.p.scr = null; }
   wellTurn = (wellTurn + 1) % Math.max(1, n);
   S.wellMs = 0.9 * (S.wellMs || 0) + 0.1 * (performance.now() - t0);
   S.wellNear = list.reduce((m, a) => Math.max(m, a.wv && a.wv.near ? a.wv.near.length : 0), 0);
+}
+// The electron leaves over the lip. It comes out on the open side of the bubble's edge and is a free
+// point again. The energy books are kept: it leaves with the energy the atom's wave had, plus, if
+// the wave it left from sat higher than that, the difference paid by the nearest charge (the one
+// whose pull lifted it); if nobody can pay enough for it to get out, it does not leave.
+// Simplified, flagged: the point is put at the edge rather than followed out through it.
+function spill(a, wv, pull) {
+  const idx = WL.pickEscape(WELL, wv), ex = WL.escapeExit(WELL, idx, pull.lip), p = a.p, M = P.MP + P.ME;
+  if (!ex) return false;
+  const rel = v3.scale(ex.dir, ex.r * WL.A0_NM), pos = v3.add(p.pos, rel);
+  if (v3.len(pos) > P.SPHERE_R - 0.2) return false;
+  let U = -P.KE / v3.len(rel), payer = null, dBest = Infinity;
+  for (const c of S.ps) if (c.active && c.q && c !== p) {
+    const R = v3.len(v3.sub(c.pos, p.pos)), re = v3.len(v3.sub(c.pos, pos));
+    U += P.KE * c.q * (1 / Math.max(R, 0.01) - 1 / Math.max(re, 0.01)) - (p.scr ? P.penEnergy(p.scr, R, c.q) : 0);   // (a charge inside the cloud already felt the proton)
+    if (R < dBest && !c.guide) { dBest = R; payer = c; }
+  }
+  const Ea = WELL.energies[idx] * WL.HARTREE, Ew = WL.waveEnergy(WELL, wv, pull.F, pull.T) * WL.HARTREE;
+  let paid = 0, rv = null, KEp = 0;
+  if (Ea > Ew && payer) { rv = v3.sub(payer.vel, p.vel); KEp = 0.5 * payer.m * v3.dot(rv, rv); paid = Math.min(Ea - Ew, 0.98 * KEp); }
+  const KEx = Ew + paid - U;
+  if (!(KEx > 0)) return false;
+  if (paid > 0) {
+    const dv = v3.scale(rv, Math.sqrt(1 - paid / KEp) - 1);
+    payer.vel = v3.add(payer.vel, dv); p.vel = v3.sub(p.vel, v3.scale(dv, payer.m / M));
+  }
+  const v = Math.sqrt(2 * KEx * M / (P.ME * P.MP)), V = p.vel, st = labelOf(idx);
+  S.atoms = S.atoms.filter(x => x !== a);
+  S.oldSteps.push(...a.steps);
+  if (S.cascade && S.cascade.atom === a) { S.cascade = null; S.autoCam = null; }
+  p.q = 1; p.glow = 1; p.m = P.MP; p.pol = null; p.dip = null; p.scr = null;
+  p.vel = v3.sub(V, v3.scale(ex.dir, v * P.ME / M));
+  addElectron(pos, v3.add(V, v3.scale(ex.dir, v * P.MP / M)), { freed: true, spilled: S.time, born: S.time });
+  S.flashes.push({ pos, col: [0.45, 0.6, 0.9], t: 0, life: 1.2, size: 0.6 });
+  S.spilled = (S.spilled || 0) + 1;
+  const name = WELL.energies[idx] < -1 / WELL.R ? P.stateName(st) : 'a wave too wide for the well';
+  if (S.spilled <= 3 || S.spilled % 10 === 0) log(`An electron spilled out of its atom with no light involved. Nearby charges had tilted its well until ${name}, held by ${(-Ea).toFixed(2)} eV, sat above the low side of the rim${paid > 0.005 ? ` (the nearest charge paid ${paid.toFixed(2)} eV to lift it there)` : ''}. That proton is bare again.${S.spilled > 3 ? ` (${S.spilled} so far)` : ''}`);
+  if (S.spilled === 1) say('An atom just lost its electron, and no light was involved. A nearby charge tilts an atom\'s well, so the rim is lower on one side. A wide, loosely held orbital can end up above that low side, and then the electron\'s wave pours out over it. Tightly held orbitals like 1s sit far below any rim you can make here.');
+  return true;
 }
 // A jump found by stepWells, as the record the light code uses.
 function wellStep(a) {
@@ -827,7 +881,7 @@ function freeAtom(a, extra, col) {
   // The freed electron starts 0.5 nm out with the speed it needs to end up with `extra` far away.
   // The two are launched with opposite momenta, so the pair's total momentum is unchanged.
   const dir = randomDir(), r0 = 0.5, { vE, vP } = P.launchApart(p.vel, P.MP, P.ME, dir, extra, r0);
-  p.m = P.MP; p.pol = null;
+  p.m = P.MP; p.pol = null; p.dip = null; p.scr = null;
   addElectron(v3.add(p.pos, v3.scale(dir, r0)), vE, { freed: true, E: extra, born: S.time });
   p.vel = vP;
   S.ionized++;
@@ -916,6 +970,12 @@ function updateOrbits() {
       if (!S.wideSaid) { S.wideSaid = true; log(`An electron is circling a proton, bound by only ${(-E).toFixed(2)} eV: another electron carried off its spare energy. Its orbit is wider than the game follows as a wave, so it stays a point until something knocks it deeper or free.`); }
       continue;
     }
+    if (WELLS) {
+      // If the other charges have the rim below this orbit, the well would spill it straight back out.
+      const ch = [];
+      for (const c of S.ps) if (c.active && c.q && c !== p && c !== e) ch.push({ rel: v3.scale(v3.sub(c.pos, p.pos), 1 / WL.A0_NM), q: c.q });
+      if (ch.length && Math.min(...WL.edgeLip(wellAlphabet(), ch).rim) < E / WL.HARTREE + 0.0005) continue;
+    }
     catchOrbit(e, p, E, v3.scale(v3.cross(off, rel), P.ME / P.HBAR));
   }
 }
@@ -937,6 +997,7 @@ function catchOrbit(e, p, E, Lv) {
   S.cascade = { atom, start: S.time };
   S.b2.captured = true; S.orbitCaught = (S.orbitCaught || 0) + 1;
   if (S.beat === 3) S.b3.caught++;
+  if (e.spilled) { S.backIn = (S.backIn || 0) + 1; if (S.backIn <= 3 || S.backIn % 10 === 0) log(`An electron that had spilled out of an atom was drawn back in: it stayed in orbit for a full turn, bound by ${(-E).toFixed(2)} eV, so it is a wave again, in ${P.stateName(st)}.`, 'hit'); return; }
   log(`Caught without light: an electron stayed in orbit for a full turn, bound by ${(-E).toFixed(2)} eV with angular momentum ${Lh.toFixed(1)} ħ, so it is now a wave in ${P.stateName(st)}. Another electron carried off its spare energy (three-body capture); no photon was needed.`, 'hit');
   if (S.orbitCaught === 1) say(`You caught one without the lock-on, and without any light! Two electrons were near the proton together. One shoved the other away and was left without enough energy to escape. That is three-body capture, and it is how crowded places like a spark fill up with atoms. It settled into ${P.stateName(st)}, a wide, loosely held orbital.`);
 }

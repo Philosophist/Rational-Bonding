@@ -677,8 +677,9 @@ function nearValues(pat, F, T) {
   for (let n = 0; n < pat.nnz; n++) { let s = 0; const o = n * 18; for (const q of on) s += k[q] * c[o + q]; v[n] = s; }
   return v;
 }
-// Steps the wave through t (a.u.) in tilt F and dent T. Returns the size of the near set.
-export function stepNear(W, wv, F, T, t) {
+// Steps the wave through t (a.u.) in tilt F and dent T, with the rim as the other charges leave it
+// (lip, from edgeLip; none given: no other charge). Returns the size of the near set.
+export function stepNear(W, wv, F, T, t, lip = edgeLip(W, NO_CHARGES)) {
   const Fm = Math.hypot(...F), Tm = Math.hypot(...T), s = wv.s;
   // The near set only grows while it must, and is trimmed when it is far bigger than needed, so
   // its pattern is rebuilt rarely.
@@ -725,8 +726,127 @@ export function stepNear(W, wv, F, T, t) {
     const c = Math.cos(-mid * dt), sn = Math.sin(-mid * dt);
     for (let i = 0; i < d; i++) { xr[i] = ar[i] * c - ai[i] * sn; xi[i] = ar[i] * sn + ai[i] * c; }
   }
-  near.forEach((a, i) => { const k = Math.exp(-0.5 * W.gamma[a] * t); s.re[a] = xr[i] * k; s.im[a] = xi[i] * k; });
+  // What leaves in this step: light (each wave's own rate) and, over a lip, the electron itself.
+  // The share lost to each is the chance that it happened (the quantum-jump method).
+  let lostLight = 0, lostEsc = 0; const escW = wv.escW && wv.escW.length === d ? wv.escW.fill(0) : (wv.escW = new Float64Array(d));
+  near.forEach((a, i) => {
+    const g = W.gamma[a], kap = leakRate(W, a, lip), k = Math.exp(-0.5 * (g + kap) * t);
+    if (g + kap > 0) { const loss = (xr[i] * xr[i] + xi[i] * xi[i]) * (1 - k * k); lostLight += loss * g / (g + kap); escW[i] = loss * kap / (g + kap); lostEsc += escW[i]; }
+    s.re[a] = xr[i] * k; s.im[a] = xi[i] * k;
+  });
+  wv.lostLight = lostLight; wv.lostEsc = lostEsc;
   return d;
+}
+
+// ---------------------------------------------------------------------------
+// The lip: how a held electron gets out
+// ---------------------------------------------------------------------------
+// Other charges lower the well's rim in some directions. Along each of a set of directions out
+// from the proton we take the electron's energy in the proton's pull plus the other charges' exact
+// pull, −1/r − Σ q·(1/|r − R_q| − 1/R_q), and the highest it gets on the way to the bubble's edge is
+// the rim that way. A standing wave whose energy is above the rim in some directions is no longer
+// held: it reaches the edge about once per crossing (speed/2R) and the open share of the edge lets
+// it through. With no other charge the rim is −1/R everywhere, which holds everything up to n = 7.
+// Simplified, flagged: the leak is this estimate, not a wave solved through an open edge; it uses
+// each standing wave's own energy (not its shift in the pull); and there is no tunnelling under
+// the rim.
+const LIP_DIRS = (() => { const out = [], K = 32, g = Math.PI * (3 - Math.sqrt(5)); for (let k = 0; k < K; k++) { const y = 1 - 2 * (k + 0.5) / K, r = Math.sqrt(1 - y * y); out.push([r * Math.cos(g * k), y, r * Math.sin(g * k)]); } return out; })();
+const LIP_N = 16;
+// charges = [{ rel: [x, y, z] (a₀ from the proton), q }]. Returns { dirs, rim, edge, exitR } (a.u.):
+// per direction the rim (the first top on the way out; past it the electron is out of this well,
+// free or in another proton's), and the radius and energy just past it, where it comes out.
+export function edgeLip(W, charges) {
+  const dirs = LIP_DIRS.slice(), F = tiltAndDent(charges, 1).F, Fm = Math.hypot(F[0], F[1], F[2]);
+  if (Fm > 1e-14) dirs.push([-F[0] / Fm, -F[1] / Fm, -F[2] / Fm]);   // straight downhill is always looked at
+  for (const c of charges) { const D = Math.hypot(c.rel[0], c.rel[1], c.rel[2]); if (c.q > 0 && D < 2 * W.R && D > 1) dirs.push(c.rel.map(v => v / D)); }   // and straight at a close positive charge
+  const rim = new Float64Array(dirs.length), edge = new Float64Array(dirs.length), exitR = new Float64Array(dirs.length);
+  const D0 = charges.map(c => Math.max(Math.hypot(c.rel[0], c.rel[1], c.rel[2]), 1));
+  dirs.forEach((u, k) => {
+    let top = -Infinity, V = 0, r = 0;
+    for (let i = 1; i <= LIP_N; i++) {
+      r = W.R * (0.1 + 0.9 * i / LIP_N); V = -1 / r;
+      for (let n = 0; n < charges.length; n++) { const c = charges[n], d = Math.hypot(u[0] * r - c.rel[0], u[1] * r - c.rel[1], u[2] * r - c.rel[2]); V -= c.q * (1 / Math.max(d, 1) - 1 / D0[n]); }
+      if (V < top) break;   // past the top
+      top = V;
+    }
+    rim[k] = top; edge[k] = Math.min(V, top); exitR[k] = r;
+  });
+  return { dirs, rim, edge, exitR };
+}
+const NO_CHARGES = [];
+export function leakRate(W, a, lip) {
+  const E = W.energies[a]; let open = 0, v = 0;
+  for (let k = 0; k < lip.rim.length; k++) if (E > lip.rim[k]) { open++; v += Math.sqrt(2 * (E - lip.edge[k])); }
+  return open ? v / lip.rim.length / (2 * W.R) : 0;
+}
+// Which standing wave the electron left from (after a step in which it left).
+export function pickEscape(W, wv, rand = Math.random) {
+  let u = rand() * wv.lostEsc, last = wv.near[0];
+  for (let i = 0; i < wv.near.length; i++) { if (!wv.escW[i]) continue; last = wv.near[i]; u -= wv.escW[i]; if (u <= 0) break; }
+  return last;
+}
+// Where and how fast it comes out: through one of the open directions (the faster ones more
+// often, as they carry more of the flow), just past the rim, moving straight out with what its energy
+// leaves over there. dir is a unit vector from the proton, r in a₀, v in a.u.
+export function escapeExit(W, a, lip, rand = Math.random) {
+  const E = W.energies[a], vs = Array.from(lip.rim, (rim, k) => (E > rim ? Math.sqrt(2 * (E - lip.edge[k])) : 0)), tot = vs.reduce((x, y) => x + y, 0);
+  if (!(tot > 0)) return null;
+  let u = rand() * tot, k = 0; for (; k < vs.length - 1; k++) { u -= vs[k]; if (u <= 0) break; }
+  while (!vs[k]) k--;
+  return { dir: lip.dirs[k], r: lip.exitR[k], v: vs[k], E };
+}
+
+// The atom's own dipole right now (a.u., = −⟨r⟩ of its wave), from the near waves and, where the
+// near set carries them, the far waves following the tilt. This is what pulls back on the charges
+// that tilt the well: the force −⟨∂H/∂F⟩ that goes with the wave's own equation, so the energy the
+// wave gains is energy those charges lose.
+export function waveDipole(W, wv) {
+  // p = p0 + A·F: p0 is the part the wave carries by itself (its near waves beating), A (3×3, row
+  // by row) is how far the far waves let the tilt F stretch it further.
+  const pat = wv.pat, near = wv.near, s = wv.s, p0 = [0, 0, 0], A = new Array(9).fill(0);
+  if (!pat || !near) return { p0, A };
+  const d = pat.d, rs = pat.rowStart, col = pat.col, c = pat.comp; let n2 = 0;
+  for (let i = 0; i < d; i++) {
+    const a = near[i], ur = s.re[a], ui = s.im[a]; n2 += ur * ur + ui * ui;
+    for (let n = rs[i]; n < rs[i + 1]; n++) {
+      const b = near[col[n]], w = ur * s.re[b] + ui * s.im[b], o = n * 18;
+      if (!w) continue;
+      for (let q = 0; q < 3; q++) { p0[q] -= w * c[o + q]; for (let e = 0; e < 3; e++) A[3 * q + e] -= w * (c[o + 9 + 3 * q + e] + c[o + 9 + 3 * e + q]); }
+    }
+  }
+  n2 = Math.max(n2, 1e-300);
+  return { p0: p0.map(v => v / n2), A: A.map(v => v / n2) };
+}
+// The wave's energy right now (a.u.): in the proton's well plus in the tilt and dent.
+export function waveEnergy(W, wv, F, T) {
+  const pat = wv.pat, near = wv.near, s = wv.s;
+  if (!pat || !near) return meanEnergy(W, s);
+  const val = nearValues(pat, F, T), rs = pat.rowStart, col = pat.col; let E = 0, n2 = 0;
+  for (let i = 0; i < pat.d; i++) {
+    const a = near[i], ur = s.re[a], ui = s.im[a], pa = ur * ur + ui * ui; n2 += pa; E += pat.diag[i] * pa;
+    for (let n = rs[i]; n < rs[i + 1]; n++) { const b = near[col[n]]; E += val[n] * (ur * s.re[b] + ui * s.im[b]); }
+  }
+  return E / Math.max(n2, 1e-300);
+}
+// How much of the electron is inside radius r: a table at r_j = R·(j/(n−1))² (fine near the proton). A charge that far from
+// the proton feels the proton less that much of the electron (the cloud taken as round; the
+// lop-sided part is the dipole above). Shares of the standing waves only, their beats left out.
+export function enclosed(W, s, n = 64) {
+  const out = new Float32Array(n), n2 = normSq(s);
+  if (!W._cum) W._cum = new Map();
+  for (let a = 0; a < s.re.length; a++) {
+    const p = (s.re[a] * s.re[a] + s.im[a] * s.im[a]) / n2;
+    if (p < 0.004) continue;
+    const st = W.states[a], key = st.l * 4096 + st.k; let t = W._cum.get(key);
+    if (!t || t.length !== n) {
+      t = new Float32Array(n); const w = W.rad[st.l].w[st.k]; let acc = 0, i = 0;
+      for (let j = 0; j < n; j++) { const r = W.R * (j / (n - 1)) ** 2; while (i < w.length && W.ri[i] <= r) { acc += w[i] * w[i]; i++; } t[j] = Math.min(1, acc); }
+      W._cum.set(key, t);
+    }
+    for (let j = 0; j < n; j++) out[j] += p * t[j];
+  }
+  const top = out[n - 1] || 1; for (let j = 0; j < n; j++) out[j] = Math.min(1, out[j] / top);
+  return out;
 }
 // The whole wave as it is right now: the near part plus the far waves following the pull (first
 // order). This is what is drawn and what the point rides.
