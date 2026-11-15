@@ -4,7 +4,7 @@
 
 export const MAX_CHARGES = 32, MAX_CLOUDS = 12, MAX_GLOWS = 48;
 // Orbitals one cloud can be a blend of, and the points in a free electron's radial table.
-export const MAX_TERMS = 8, FREE_N = 128;
+export const MAX_TERMS = 10, FREE_N = 128;
 const ROW = 6 + 2 * MAX_TERMS;
 
 const VERT = `#version 300 es
@@ -19,6 +19,8 @@ uniform vec4 uQ[${MAX_CHARGES}]; uniform float uQs[${MAX_CHARGES}]; uniform int 
 // Clouds: one row of uCloud per cloud (see packCloud), plus a radial table row in uFree for a free
 // electron's wave. Each cloud is a sum of up to MAX_TERMS orbitals in the cloud's own frame.
 uniform int uNA; uniform float uAS; uniform highp sampler2D uCloud; uniform highp sampler2D uFree;
+// Computed waves (the well bubbles): each term's own radial table, one row per (cloud, term).
+uniform highp sampler2D uTerm;
 uniform vec4 uG[${MAX_GLOWS}]; uniform vec3 uGC[${MAX_GLOWS}]; uniform int uGN;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -62,6 +64,18 @@ vec2 psiFree(int i, ivec3 q, int mode, float norm, float rmax, vec3 p){
   if (mode == 1) return vec2(A * cos(float(am)*phi), 0.0);
   return vec2(A * sin(float(am)*phi), 0.0);
 }
+// A term whose radial part was computed on the well's grid (√r spacing out to rmax).
+vec2 psiTab(int i, int t, ivec3 q, int mode, float norm, float rmax, vec3 p){
+  float r = length(p) + 1e-5;
+  if (r >= rmax) return vec2(0.0);
+  float x = sqrt(r / rmax) * ${FREE_N - 1}.0; int j = int(x); float f = x - float(j); int row = i * ${MAX_TERMS} + t;
+  float R = mix(texelFetch(uTerm, ivec2(j, row), 0).r, texelFetch(uTerm, ivec2(min(j + 1, ${FREE_N - 1}), row), 0).r, f);
+  int am = abs(q.z);
+  float A = norm * R * legendre(q.y, am, p.y / r), phi = atan(p.z, p.x);
+  if (mode == 0) return vec2(A, 0.0);
+  if (mode == 1) return vec2(A * cos(float(am)*phi), 0.0);
+  return vec2(A * sin(float(am)*phi), 0.0);
+}
 vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 // Wave phase: +real cyan, −real magenta, ±imaginary violet / amber (prototype convention).
 vec3 phaseColor(vec2 w){
@@ -71,14 +85,14 @@ vec3 phaseColor(vec2 w){
   return c / (abs(ca) + abs(sa));
 }
 // One cloud's terms, read once per pixel.
-struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax;
+struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax; float trmax;
   ivec3 q[${MAX_TERMS}]; int mode[${MAX_TERMS}]; float norm[${MAX_TERMS}]; vec2 c[${MAX_TERMS}]; int g[${MAX_TERMS}]; };
 vec4 tx(int i, int k){ return texelFetch(uCloud, ivec2(k, i), 0); }
 Cloud loadCloud(int i){
   Cloud C;
   vec4 a = tx(i, 0), x = tx(i, 1), y = tx(i, 2), z = tx(i, 3), m = tx(i, 5);
   C.pos = a.xyz; C.radius = a.w; C.frame = mat3(x.xyz, y.xyz, z.xyz); C.invMax = x.w; C.iso = y.w; C.fade = z.w;
-  C.lean = tx(i, 4); C.nt = int(m.x); C.rmax = m.y;
+  C.lean = tx(i, 4); C.nt = int(m.x); C.rmax = m.y; C.trmax = m.z;
   for (int t = 0; t < ${MAX_TERMS}; t++) {
     if (t >= C.nt) break;
     vec4 qq = tx(i, 6 + t), cc = tx(i, 6 + ${MAX_TERMS} + t);
@@ -98,7 +112,7 @@ vec4 sampleCloud(int i, Cloud C, vec3 pw){
   vec2 w0 = vec2(0.0), w1 = vec2(0.0);
   for (int t = 0; t < ${MAX_TERMS}; t++) {
     if (t >= C.nt) break;
-    vec2 s = C.q[t].x == 0 ? psiFree(i, C.q[t], C.mode[t], C.norm[t], C.rmax, p) : psi(C.q[t], C.mode[t], C.norm[t], p);
+    vec2 s = C.q[t].x == 0 ? psiFree(i, C.q[t], C.mode[t], C.norm[t], C.rmax, p) : C.q[t].x < 0 ? psiTab(i, t, C.q[t], C.mode[t], C.norm[t], C.trmax, p) : psi(C.q[t], C.mode[t], C.norm[t], p);
     s = cmul(C.c[t], s) * f;
     if (C.g[t] == 0) w0 += s; else w1 += s;
   }
@@ -224,7 +238,7 @@ export function createRenderer(canvas) {
   const prog = link(VERT, FRAG, ['aPos']);
   const U = {};
   for (const n of ['uViewport', 'uCamPos', 'uInvVP', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
-    'uNA', 'uAS', 'uCloud', 'uFree',
+    'uNA', 'uAS', 'uCloud', 'uFree', 'uTerm',
     'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(prog, n);
   const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
   const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb);
@@ -262,22 +276,25 @@ export function createRenderer(canvas) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
   };
-  const cloudTex = tex(), freeTex = tex();
-  const cloudArr = new Float32Array(MAX_CLOUDS * ROW * 4), freeArr = new Float32Array(MAX_CLOUDS * FREE_N);
+  const cloudTex = tex(), freeTex = tex(), termTex = tex();
+  const cloudArr = new Float32Array(MAX_CLOUDS * ROW * 4), freeArr = new Float32Array(MAX_CLOUDS * FREE_N), termArr = new Float32Array(MAX_CLOUDS * MAX_TERMS * FREE_N);
   gl.bindTexture(gl.TEXTURE_2D, cloudTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, ROW, MAX_CLOUDS, 0, gl.RGBA, gl.FLOAT, cloudArr);
   gl.bindTexture(gl.TEXTURE_2D, freeTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, FREE_N, MAX_CLOUDS, 0, gl.RED, gl.FLOAT, freeArr);
+  gl.bindTexture(gl.TEXTURE_2D, termTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, FREE_N, MAX_CLOUDS * MAX_TERMS, 0, gl.RED, gl.FLOAT, termArr);
   // One cloud: { pos, radius (nm), frame: [x, y, z] unit vectors (y = the axis m is counted about),
-  //   terms: [{ n (0 = free wave), l, m, mode, norm, c: [re, im], g }], free?: { table, rmax (a₀) },
+  //   terms: [{ n (0 = free wave, −1 = own table), l, m, mode, norm, c: [re, im], g, table? }],
+//   free?: { table, rmax (a₀) }, trmax? (a₀, the reach of the terms' own tables),
   //   invMax, iso, fade, lean?: [x, y, z, on] }
   function packCloud(i, c) {
     const o = i * ROW * 4, put = (k, v) => cloudArr.set(v, o + k * 4);
     const [X, Y, Z] = c.frame || [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
     const nt = Math.min(MAX_TERMS, c.terms.length);
     put(0, [...c.pos, c.radius]); put(1, [...X, c.invMax]); put(2, [...Y, c.iso]); put(3, [...Z, c.fade]);
-    put(4, c.lean || [0, 0, 0, 0]); put(5, [nt, c.free ? c.free.rmax : 0, 0, 0]);
+    put(4, c.lean || [0, 0, 0, 0]); put(5, [nt, c.free ? c.free.rmax : 0, c.trmax || 0, 0]);
     for (let t = 0; t < nt; t++) {
       const T = c.terms[t];
       put(6 + t, [T.n, T.l, T.m, T.norm]); put(6 + MAX_TERMS + t, [T.c[0], T.c[1], T.g || 0, T.mode]);
+      if (T.table) termArr.set(T.table.subarray(0, FREE_N), (i * MAX_TERMS + t) * FREE_N);
     }
     if (c.free) freeArr.set(c.free.table.subarray(0, FREE_N), i * FREE_N);
   }
@@ -301,7 +318,9 @@ export function createRenderer(canvas) {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ROW, MAX_CLOUDS, gl.RGBA, gl.FLOAT, cloudArr);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, freeTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FREE_N, MAX_CLOUDS, gl.RED, gl.FLOAT, freeArr);
-    gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uFree, 2);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, termTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FREE_N, MAX_CLOUDS * MAX_TERMS, gl.RED, gl.FLOAT, termArr);
+    gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uFree, 2); gl.uniform1i(U.uTerm, 3);
     gl.activeTexture(gl.TEXTURE0);
 
     const ng = Math.min(MAX_GLOWS, scene.glows.length);

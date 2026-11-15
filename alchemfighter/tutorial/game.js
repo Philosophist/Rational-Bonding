@@ -8,6 +8,7 @@ import * as Q from './quantum.js';
 import { createRenderer, Lines } from './render.js';
 import * as W from './light.js';
 import * as MW from './matterwave.js';
+import * as WL from './wells.js';
 import * as M from './mat4.js';
 
 const $ = id => document.getElementById(id);
@@ -401,6 +402,7 @@ const FIELD_MIN = 1e-5;   // V/nm: in a weaker field the axis stays where it is
 const shellLs = (n, m) => { const o = []; for (let l = Math.abs(m); l < n; l++) o.push(l); return o; };
 function setPure(a, st) {
   a.st = st;
+  if (WELLS) { a.wv = null; a.wvAxis = st.idx == null ? a.axis : null; a.dph = null; }
   const ls = shellLs(st.n, st.m);
   a.c = { re: ls.map(l => (l === st.l ? 1 : 0)), im: ls.map(() => 0) };
   a.shellKey = `${st.n},${st.m}`;
@@ -446,6 +448,216 @@ function frameOf(a) {
   const y = a.pair || a.mix || !a.axis ? [0, 1, 0] : a.axis;
   const x = v3.norm(v3.cross(Math.abs(y[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1], y)), z = v3.cross(x, y);
   return [x, y, z];
+}
+// ---------------------------------------------------------------------------
+// Gravity-well physics (the new version; wells.js does the maths)
+// ---------------------------------------------------------------------------
+// Each proton holding an electron is a well bubble: its own grid (fine at the proton, coarse at
+// the edge) on which Schrödinger's equation gives every standing wave. The electron's wave is a set
+// of amplitudes over them; every other charge tilts and dents the well, which mixes them, and the
+// mix is stepped exactly through the game's time. A settled atom costs next to nothing. The point
+// of the electron rides that wave (de Broglie–Bohm). Classic physics (the shell model above) is
+// still there: "?physics=classic", or the choice on the start card.
+const PHYS_KEY = 'af-physics';
+let WELLS = (() => {
+  const q = new URLSearchParams(location.search).get('physics');
+  if (q) return q !== 'classic';
+  try { return localStorage.getItem(PHYS_KEY) !== 'classic'; } catch { return true; }
+})();
+let WELL = null, wellBuildMs = 0;
+function wellAlphabet() {
+  if (!WELL) {
+    const t = performance.now();
+    // Phones get a lighter alphabet: fewer grid points and standing waves (1s still within 0.01%).
+    WELL = WL.buildWell(phone.matches ? { N: 1000, ECUT: 0.15, nearCap: 120 } : {});
+    wellBuildMs = performance.now() - t;
+    // Then, a few at a time while nothing much is happening, each bound wave's brightness numbers
+    // and drawing table, so a catch never has to stop and work them out.
+    const todo = WELL.states.map((x, i) => (x.n && x.n <= Q.NMAX ? i : -1)).filter(i => i >= 0);
+    const warm = () => { const t1 = performance.now(); while (todo.length && performance.now() - t1 < 4) { const i = todo.shift(); WL.stateStats(WELL, i); WL.stateTable(WELL, i); } if (todo.length) setTimeout(warm, 30); };
+    setTimeout(warm, 30);
+  }
+  return WELL;
+}
+const stKey = st => `${st.n},${st.l},${st.m}`;
+// The label of standing wave a (n is 0 for the bubble's share of a free electron's waves).
+const labelOf = a => { const x = WELL.states[a]; return { n: x.n || 0, l: x.l, m: x.m, idx: a }; };
+const AU_PER_FS = 1 / WL.T_AU_FS;
+function wellOf(a) {
+  if (!a.wv || a.wvKey !== stKey(a.st)) {
+    const Wd = wellAlphabet();
+    a.wv = a.st.idx != null ? WL.waveFromIndex(Wd, a.st.idx) : WL.makeWave(Wd, a.st.n, a.st.l, a.st.m, a.wvAxis || null);
+    a.wvAxis = null; a.wvKey = stKey(a.st); a.disp = null; a.wvPend = 0;
+  }
+  return a.wv;
+}
+// The tilt (field, atomic units) and the dent (how it changes across the atom) at an atom.
+function wellPull(a) {
+  const F = P.fieldAt(a.p.pos, S.ps).map(x => x / WL.F_AU), ch = [];
+  for (const p of S.ps) if (p.active && p.q && p !== a.p) ch.push({ rel: v3.scale(v3.sub(p.pos, a.p.pos), 1 / WL.A0_NM), q: p.q });
+  return { F, T: WL.tiltAndDent(ch).T };
+}
+// Relabel the atom by its largest share (for the HUD, the counts and the sharing of light).
+function relabel(a) {
+  const { best } = WL.shares(a.wv.s), st = labelOf(best);
+  if (stKey(st) !== stKey(a.st)) { a.st = st; a.wvKey = stKey(st); }
+}
+// The rate (per ns) that a photon leaves this atom right now.
+const wellRateNs = a => WL.emissionRate(WELL, wellOf(a).s) / (WL.T_AU_FS * 1e-6);
+// Steps every atom's wave, sharing a time budget per frame (ms): an atom that misses its turn
+// keeps its time and is stepped further on its next turn (the stepping is exact for any step).
+const WELL_BUDGET = () => (phone.matches ? 4 : 8);
+let wellTurn = 0;
+function stepWells(dtFs) {
+  if (!WELLS || !S.atoms.length) return;
+  const list = S.atoms.filter(a => !a.pair && !a.mix && !a.trans && !a.emitL);
+  for (const a of S.atoms) if (a.trans || a.emitL) a.wvPend = 0; else if (!a.pair && !a.mix) a.wvPend = (a.wvPend || 0) + dtFs;
+  const t0 = performance.now(), n = list.length;
+  let used = 0;
+  for (let k = 0; k < n; k++) {
+    const a = list[(wellTurn + k) % n];
+    if (k > 0 && performance.now() - t0 > WELL_BUDGET() && a.wvPend < 200 * FS_PER_S) continue;
+    const wv = wellOf(a), pull = wellPull(a), t = a.wvPend * AU_PER_FS;
+    a.pull = pull; a.wvPend = 0;
+    if (t <= 0) continue;
+    WL.stepNear(WELL, wv, pull.F, pull.T, t);
+    used++;
+    // Light: what the step lost is the chance that a photon left in it (the quantum-jump method).
+    const lost = 1 - WL.normSq(wv.s);
+    const free = a.pending && a.pending.hazard && a.hold <= 0 && a.fade >= 1 && !a.capt;
+    if (free && Math.random() < lost) a.wvJump = WL.pickJump(WELL, wv.s);
+    WL.normalize(wv.s);
+    if (!a.wvJump) relabel(a);
+  }
+  wellTurn = (wellTurn + 1) % Math.max(1, n);
+  S.wellMs = 0.9 * (S.wellMs || 0) + 0.1 * (performance.now() - t0);
+  S.wellNear = list.reduce((m, a) => Math.max(m, a.wv && a.wv.near ? a.wv.near.length : 0), 0);
+}
+// A jump found by stepWells, as the record the light code uses.
+function wellStep(a) {
+  const j = a.wvJump; a.wvJump = null;
+  if (!j) return null;
+  const from = labelOf(j.from), to = labelOf(j.to), A = WELL.states[j.from], B = WELL.states[j.to];
+  const delayNs = (S.simFs - a.since) * 1e-6, tauNs = 1 / WELL.gamma[j.from] * WL.T_AU_FS * 1e-6;
+  if (stKey(from) !== stKey(a.st) && (S.mixSaid = (S.mixSaid || 0) + 1) <= 2) log(`Nearby charges had tilted this atom's well and blended ${P.stateName(from)} into its ${P.stateName(a.st)} wave, and the light came out of that part.`);
+  a.st = from; a.wvKey = stKey(from); a.wv = WL.waveFromIndex(WELL, j.from); a.disp = null;
+  if (j.twoPhoton) { const d = P.pickDecay({ n: 2, l: 0, m: 0 }); d.delayNs = delayNs; d.to = to; return d; }
+  const eV = (A.E - B.E) * WL.HARTREE, dv = WL.dipoleVector(WELL, j.from, j.to), dm = v3.len(dv);
+  return { photons: [P.HC / eV], to, twoPhoton: false, dm: 0, axis: dm > 0 ? v3.scale(dv, 1 / dm) : [0, 1, 0], delayNs, tauNs };
+}
+// What is drawn and ridden: the near waves with their true phases where they change slowly, and
+// with their swings shown at most SWING_HZ per screen second where they change faster than that
+// (no flicker, as everywhere in the game); plus the far waves following the pull.
+function wellDisplay(a, dtReal) {
+  const wv = wellOf(a), s = wv.s, near = wv.near || WL.activeList(s, 1e-9);
+  const { best } = WL.shares(s), cr = s.re[best], ci = s.im[best], cm = Math.hypot(cr, ci) || 1;
+  if (!a.dph) a.dph = new Map();
+  const cap = 2 * Math.PI * showHz() * Math.max(dtReal, 1 / 240);
+  const x = { re: new Float64Array(s.re.length), im: new Float64Array(s.re.length) };
+  let fast = 0, seen = 0;
+  for (const i of near) {
+    const re = s.re[i], im = s.im[i], amp = Math.hypot(re, im);
+    if (amp < 1e-6) continue;
+    // phase relative to the largest share
+    const ph = Math.atan2(im * cr - re * ci, re * cr + im * ci) / 1, prev = a.dph.get(i);
+    let shown = ph;
+    if (prev !== undefined && i !== best) {
+      let d = ph - prev; d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+      if (Math.abs(d) > cap) { shown = prev + Math.sign(d) * cap; if (amp > 0.03) fast = 1; } else seen = Math.max(seen, Math.abs(d));
+    }
+    a.dph.set(i, shown);
+    x.re[i] = amp * Math.cos(shown); x.im[i] = amp * Math.sin(shown);
+  }
+  void cm;
+  // the far waves, following the pull (first order)
+  const pull = a.pull || wellPull(a), lTop = Math.min(WELL.LMAX, WL.topL(WELL, x) + 1);
+  const y = WL.applyPull(WELL, x, pull.F, pull.T, lTop);
+  let Eb = 0, n2 = 0;
+  for (const i of near) { const p = x.re[i] ** 2 + x.im[i] ** 2; Eb += p * WELL.energies[i]; n2 += p; }
+  Eb /= n2 || 1;
+  const isNear = new Set(near);
+  for (let i = 0; i < y.re.length; i++) if (!isNear.has(i) && (y.re[i] || y.im[i])) { const g = -1 / (WELL.energies[i] - Eb); x.re[i] = y.re[i] * g; x.im[i] = y.im[i] * g; }
+  // The point moves in the same slowed time as the swings that are shown slowed.
+  a.ptRate = fast ? Math.min(1, cap / Math.PI) : 1;
+  void seen;
+  return x;
+}
+// Terms the shader draws from a compiled wave (one or two per channel: real and imaginary parts).
+function wellTerms(cw, amp = [1, 0], g = 0) {
+  const out = [], maxW = cw.chans.length ? cw.chans[0].w : 1;
+  for (const c of cw.chans) {
+    if (c.w < 1e-5 * maxW) break;
+    const mode = c.m === 0 ? 0 : c.m > 0 ? 1 : 2, norm = WL.angNorm(c.l, c.m);
+    let ri = 0, ii = 0; for (let j = 0; j < c.tr.length; j++) { ri = Math.max(ri, Math.abs(c.tr[j])); ii = Math.max(ii, Math.abs(c.ti[j])); }
+    if (ri > 1e-4 * (ri + ii)) out.push({ n: -1, l: c.l, m: c.m, mode, norm, c: [amp[0], amp[1]], g, table: c.tr });
+    if (ii > 1e-4 * (ri + ii)) out.push({ n: -1, l: c.l, m: c.m, mode, norm, c: [-amp[1], amp[0]], g, table: c.ti });
+  }
+  return out;
+}
+// Mixes another standing wave (index b, amplitude w with phase ph) into the display amplitudes x.
+function wellBlend(x, wFrom, b, wTo, ph) {
+  const k = Math.sqrt(Math.max(0, wFrom)), out = { re: x.re.map(v => v * k), im: x.im.map(v => v * k) };
+  const t = Math.sqrt(Math.max(0, wTo));
+  out.re[b] += t * Math.cos(-ph); out.im[b] += t * Math.sin(-ph);
+  return out;
+}
+// The cloud for one atom under gravity-well physics, and its point riding the wave.
+function wellCloud(a, dtReal) {
+  // A settled cloud changes slowly: rebuild it every few frames (the point still moves every frame).
+  const morphing = a.capt || a.trans || (a.emitL && a.pending);
+  S.frameN = (S.frameN || 0);
+  if (a.cloud && !morphing && S.frameN - a.cloudAt < (phone.matches ? 3 : 2) && a.cloudKey === a.wvKey) {
+    if (a.pt && a.cw) WL.rideCompiled(a.cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 40 : 80);
+    a.ptFs = 0;
+    a.cloud.pos = a.p.pos; a.cloud.fade = Math.min(1, a.fade * 3);
+    return a.cloud;
+  }
+  let x = wellDisplay(a, dtReal * (a.cloud ? S.frameN - a.cloudAt : 1)), extra = null;
+  const twoTo = (to, w, ph) => { const b = to.idx != null ? to.idx : WELL.index(to.n, to.l, to.m); extra = b; return wellBlend(x, w, b, 1 - w, ph); };
+  let free = null, freeT = null;
+  if (a.capt) {
+    const u = Math.min(1, a.capt.t / FALL_DUR), sm = u * u * (3 - 2 * u), ph = a.capt.phase || 0;
+    free = a.capt.free; freeT = freeTerm(a.capt, [Math.sqrt(1 - sm), 0]);
+    x = { re: x.re.map(v => v * Math.sqrt(sm)), im: x.im.map(v => v * Math.sqrt(sm)) };
+    const c = Math.cos(-ph), sn = Math.sin(-ph);
+    for (let i = 0; i < x.re.length; i++) { const r = x.re[i], m = x.im[i]; x.re[i] = r * c - m * sn; x.im[i] = r * sn + m * c; }
+  } else if (a.trans) {
+    const u = Math.min(1, a.trans.t / a.trans.dur), s0 = a.trans.s0 || 0, sm = s0 + (1 - s0) * u * u * (3 - 2 * u);
+    x = twoTo(a.trans.to, Math.cos(sm * Math.PI / 2) ** 2, a.phase);
+  } else if (a.emitL && a.pending) {
+    x = twoTo(a.pending.to, W.emitterShare(S.simFs - a.emitL.em.t0, a.emitL.em.tau), a.phase);
+  }
+  if (a.capt || a.trans || (a.emitL && a.pending)) { const w = cloudOmega(a); a.ptRate = w > 0 ? Math.min(1, capOmega(showHz()) / w) : 1; }
+  const cw = WL.compileWave(WELL, x, 1e-8);
+  // Brightness from the standing waves it is mostly made of.
+  const sh = WL.shares(x).p;
+  let pk = 0, iso = 0, wsum = 0, reach = 3;
+  for (let i = 0; i < sh.length; i++) if (sh[i] > 0.02) { const st = WL.stateStats(WELL, i); pk += sh[i] * st.peak; iso += sh[i] * st.iso; wsum += sh[i]; reach = Math.max(reach, st.reach); }
+  pk /= wsum || 1; iso /= wsum || 1;
+  if (extra != null) reach = Math.max(reach, WL.stateStats(WELL, extra).reach);
+  const terms = wellTerms(cw).slice(0, freeT ? MAX_WELL_TERMS - 1 : MAX_WELL_TERMS);
+  if (freeT) terms.unshift(freeT);
+  // The point: placed by the Born rule once the electron has settled in, then carried by the wave.
+  if (!a.capt) {
+    if (!a.pt) a.pt = WL.sampleCompiled(cw, Math.max(1.5, 0.6 * reach));
+    else WL.rideCompiled(cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 60 : 120);
+  }
+  a.ptFs = 0;
+  const radius = Math.max(reach * 1.1, free ? free.rmax : 0) * P.A0;
+  a.cw = cw; a.cloudAt = S.frameN; a.cloudKey = a.wvKey;
+  return (a.cloud = { pos: a.p.pos, radius, frame: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], terms, free, trmax: WELL.R, invMax: 1 / (pk || 1), iso: iso / (pk || 1), fade: Math.min(1, a.fade * 3) });
+}
+const MAX_WELL_TERMS = 10;
+// An atom sharing an excitation with others: its two parts belong to different joint states of
+// the group, so their densities add (group 1), as in classic physics.
+function wellMixCloud(a) {
+  const w = Math.max(0, Math.min(1, a.mix.w)), Wd = wellAlphabet();
+  const ia = a.st.idx ?? Wd.index(a.st.n, a.st.l, a.st.m), ib = a.mix.st.idx ?? Wd.index(a.mix.st.n, a.mix.st.l, a.mix.st.m);
+  const A = WL.compileWave(Wd, WL.waveFromIndex(Wd, ia).s), B = WL.compileWave(Wd, WL.waveFromIndex(Wd, ib).s);
+  const terms = [...wellTerms(A, [Math.sqrt(1 - w), 0], 0), ...wellTerms(B, [Math.sqrt(w), 0], 1)].slice(0, MAX_WELL_TERMS);
+  const sa = WL.stateStats(Wd, ia), sb = WL.stateStats(Wd, ib), pk = (1 - w) * sa.peak + w * sb.peak, iso = (1 - w) * sa.iso + w * sb.iso;
+  const reach = w > 0.05 ? Math.max(sa.reach, sb.reach) : sa.reach;
+  return { pos: a.p.pos, radius: reach * 1.1 * P.A0, frame: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], terms, free: null, trmax: Wd.R, invMax: 1 / pk, iso: iso / pk, fade: Math.min(1, a.fade * 3) };
 }
 // Light leaves as Maxwell's equations say it does (light.js): an atom changing level swings its
 // charge like a tiny antenna, and the exact field of that swing spreads out at the speed of light,
@@ -655,6 +867,7 @@ function capture(e, p, E, viaDisc = false) {
   S.lastPhoton = { lam, nLow: st.n, capture: true };
   log(`Captured into ${P.stateName(st)}: one ${lam.toFixed(1)} nm photon carries off ${(P.HC / lam).toFixed(2)} eV. ${describe(lam, st.n, true, true)}.`, 'hit');
   if (!viaDisc && (S.capSaid = (S.capSaid || 0) + 1) <= 3) log(`It swung past with angular momentum ${Lh.toFixed(1)} ħ, so its wave there was mostly l = ${pick.lIn} (${P.L_NAMES[pick.lIn]}). Light changes l by exactly one, so it could only land in ${[pick.lIn - 1, pick.lIn + 1].filter(x => x >= 0).map(x => P.L_NAMES[x]).join(' or ')} orbitals.`);
+  if (WELLS && !S.wellSaid) { S.wellSaid = true; log('Gravity-well physics: from now on this electron is a wave worked out from Schrödinger\'s equation on the atom\'s own grid (its well), and every other charge in the system tilts and dents that well. In the pilot-wave view the small bright dot is the electron itself, carried along by its wave: in a settled orbital it sits still (de Broglie and Bohm\'s result), and while the wave sloshes it moves.'); }
   if (st.n === 1) log('Straight to 1s! That happens: a single ultraviolet photon, shorter than 91.2 nm, takes all the energy at once.', 'hit');
   scheduleDecay(atom);
   atom.hold += FALL_DUR;                    // let the electron settle in before the next step down
@@ -664,7 +877,7 @@ function capture(e, p, E, viaDisc = false) {
   if (S.beat === 3) S.b3.caught++;
   say(st.n === 1
     ? 'Caught! This one went straight to the bottom step in one go, so a single ultraviolet flash carried off all the energy.'
-    : `Caught! It landed in ${P.stateName(st)}. As things stand it would wait about ${fmtSpan(lifetimeFs(1 / hazardRates(atom).tot) / (FS_PER_S * SPEEDS[S.speed]))} of play at this game speed before stepping down (nearby charges change that by blending its orbitals).`);
+    : `Caught! It landed in ${P.stateName(st)}. As things stand it would wait about ${fmtSpan(lifetimeFs(1 / (WELLS ? wellRateNs(atom) : hazardRates(atom).tot)) / (FS_PER_S * SPEEDS[S.speed]))} of play at this game speed before stepping down (nearby charges change that by blending its orbitals).`);
 }
 // Steps down are driven by what causes them, moment by moment, never by a timer drawn in advance.
 // What a nearby charge does is fully caused: its field, where it is right now, mixes the shell's
@@ -687,6 +900,18 @@ function hazardRates(a) {
 }
 // One moment's chance of a step down. Returns the step if it happens now.
 function hazardStep(a, dt, dtFs) {
+  if (WELLS) {
+    if (a.st.n === 2 && a.st.l === 0 && WL.shares(wellOf(a).s).p[a.st.idx ?? WELL.index(2, 0, 0)] > 0.999) {
+      a.alone += dt;
+      if (a.alone > 4 && !a.aloneSaid) {
+        a.aloneSaid = true;
+        say('This atom is resting in 2s, a round wave that can\'t give off a single photon by itself. Left alone it would wait about a tenth of a second, which for an atom is an age. A passing charge tilts its well, which blends in some 2p, and only then can one photon get out. Fire an electron past it.');
+      }
+    }
+    const d = wellStep(a);
+    if (d) a.waitFs = 0;
+    return d;
+  }
   const { ls, p, rates, tot } = hazardRates(a);
   if (a.st.n === 2 && p[0] > 0.999) {
     a.alone += dt;
@@ -891,7 +1116,7 @@ function describe(lam, nLow, capture, cap = false) {
 // upper level fades as exp(−t/τ). The photon leaves after the atom's sampled real lifetime (on the
 // game's clock, not sped up), and when the photon is found the atom settles into the lower level.
 function startEmission(a, d) {
-  const lam = d.photons[0], tauNs = P.DECAY[`${a.st.n},${a.st.l}`].tau;
+  const lam = d.photons[0], tauNs = d.tauNs ?? P.DECAY[`${a.st.n},${a.st.l}`].tau;
   const quick = a.reex && !watched(a);
   a.emitL = startLight({ pos: a.p.pos, lam, pattern: d.dm === 0 ? 'lin' : 'circ', axis: d.axis || [0, 1, 0], from: a,
     show: quick ? LIGHT_QUICK : LIGHT_SHOW, tau: lifetimeFs(tauNs), launchIn: a.waitFs,
@@ -927,7 +1152,9 @@ function cloudOmega(a) {
   return 0;
 }
 function updateAtoms(dt, dtFs) {
+  stepWells(dtFs);
   for (const a of S.atoms) {
+    a.ptFs = (a.ptFs || 0) + dtFs;
     a.fade = Math.min(1, a.fade + dt / FALL_DUR);
     a.p.glow = Math.max(0, a.p.glow - dt / FALL_DUR);   // the electron's field cancels the proton's outside the atom
     // The cloud's swing between two levels: at its real frequency, or at the fastest that shows
@@ -935,7 +1162,7 @@ function updateAtoms(dt, dtFs) {
     const cap = capOmega(showHz());
     a.phase = (a.phase || 0) + dtFs * Math.min(cloudOmega(a), cap);
     if (a.capt) { a.capt.t += dt; a.capt.phase = (a.capt.phase || 0) + dtFs * Math.min(a.capt.w, cap); if (a.capt.t >= FALL_DUR) a.capt = null; }
-    stepShell(a, dt, dtFs);
+    if (!WELLS) stepShell(a, dt, dtFs);
     if (a.trans) {
       a.trans.t += dt;
       if (a.trans.t >= a.trans.dur) { setPure(a, a.trans.to); a.trans = null; if (a.st.n === 1) a.reex = false; scheduleDecay(a); }
@@ -943,7 +1170,7 @@ function updateAtoms(dt, dtFs) {
     }
     if (a.mix && a.mix.fade) { a.mix.w *= Math.exp(-dt * 4); if (a.mix.w < 0.01) a.mix = null; }
     if (a.pair || !a.pending) continue;
-    if (a.st.l === 1 && a.st.n > 1 && a.fade >= 1 && !a.pending.noShare && !(a.emitL && a.emitL.launched) && tryGroup(a)) {
+    if (a.st.l === 1 && a.st.n > 1 && a.st.n <= Q.NMAX && a.fade >= 1 && !a.pending.noShare && !(a.emitL && a.emitL.launched) && tryGroup(a)) {
       if (a.emitL) { cancelLight(a.emitL); a.emitL = null; }
       continue;
     }
@@ -1087,6 +1314,7 @@ function lightSlowNow(L) {
   return Math.min(1, want * Math.exp(Math.max(0, L.age - hold) / EMIT_EASE));
 }
 function step(dtReal) {
+  S.dtReal = dtReal;
   const dt = dtReal * SPEEDS[S.speed];
   S.time += dt;
   S.cooldown = Math.max(0, S.cooldown - dtReal);
@@ -1095,7 +1323,7 @@ function step(dtReal) {
   S.slow += (want - S.slow) * (1 - Math.exp(-dtReal * rate));
   const dtFs = dt * FS_PER_S * S.slow;
   S.simFs += dtFs;
-  for (const a of S.atoms) a.p.pol = P.atomPol(a.st.n);   // how strongly fields pull on each atom
+  for (const a of S.atoms) a.p.pol = P.atomPol(Math.max(1, a.st.n || 1));   // how strongly fields pull on each atom
   updateGuides();
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
@@ -1324,6 +1552,18 @@ $('restartBtn').addEventListener('click', restart);
 $('againBtn').addEventListener('click', () => { $('doneBox').hidden = true; restart(); });
 $('keepBtn').addEventListener('click', () => { $('doneBox').hidden = true; });
 $('startBtn').addEventListener('click', () => { $('startBox').hidden = true; });
+function setPhysics(wells) {
+  WELLS = wells;
+  try { localStorage.setItem(PHYS_KEY, wells ? 'wells' : 'classic'); } catch { /* private window */ }
+  $('physWells').setAttribute('aria-pressed', String(wells)); $('physClassic').setAttribute('aria-pressed', String(!wells));
+  if (S.atoms.length) restart();   // the two models keep different states: start the level again
+  if (wells) setTimeout(wellAlphabet, 30);
+}
+$('physWells').addEventListener('click', () => setPhysics(true));
+$('physClassic').addEventListener('click', () => setPhysics(false));
+$('physWells').setAttribute('aria-pressed', String(WELLS)); $('physClassic').setAttribute('aria-pressed', String(!WELLS));
+// Work out the wells' alphabet while the start card is up, so the first catch doesn't stall.
+if (WELLS) setTimeout(wellAlphabet, 200);
 $('startCalmBtn').addEventListener('click', () => { $('startBox').hidden = true; if (S.fieldView) toggleField(); });
 
 function restart() {
@@ -1413,6 +1653,9 @@ function updateHud() {
   const sp = SPEEDS[S.speed], fs = FS_PER_S * sp * S.slow;
   const tf = fs >= 10 ? `${Math.round(fs)} fs` : fs >= 1 ? `${fs.toFixed(1)} fs` : `${Math.round(fs * 1000)} as`;   // as = attoseconds
   $('timeOut').textContent = `1 s = ${tf}${S.slow >= 0.9 ? '' : S.light.some(L => L.launched && !L.caught) ? ' · photon in flight, slowed' : S.pairs.some(q => q.slow < 0.9) ? ' · atoms sharing, slowed' : S.light.length ? ' · light being sent, slowed' : ' · slow motion'}`;
+  $('physOut').textContent = WELLS
+    ? `Physics: gravity wells${S.atoms.length ? ` · waves ${(S.wellMs || 0).toFixed(1)} ms/frame, up to ${S.wellNear || 0} standing waves mixed` : ''}`
+    : 'Physics: classic shells';
   const v = v3.len(cam.v);
   $('shipOut').textContent = v < 0.05 ? 'still' : `${v.toFixed(1)} nm/s`;
   if (S.lastPhoton) {
@@ -1717,6 +1960,7 @@ function flatViews() {
 }
 function draw(views, panel) {
   if (!renderer) return;
+  S.frameN = (S.frameN || 0) + 1;
   const charges = [];
   for (const p of S.ps) {
     if (!p.active) continue;
@@ -1731,6 +1975,7 @@ function draw(views, panel) {
     fallGlows.push({ pos, size: 0.008 + 0.012 * g, col: [0.45 * g, 0.65 * g, g] });
   }
   const clouds = S.atoms.map(a => {
+    if (WELLS) return a.mix ? wellMixCloud(a) : wellCloud(a, S.dtReal || 1 / 60);
     // Every cloud is one electron's wave: a blend of orbitals (all of its shell, as the field mixes
     // them), centred on its proton. Between two levels it is the two shapes in one wave, sloshing at
     // the light's frequency (Schrödinger's equation: the slosh is what swings the charge).
@@ -1771,6 +2016,8 @@ function draw(views, panel) {
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
   for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
+  // Gravity-well physics, pilot-wave view: each bound electron's point, riding its wave.
+  if (WELLS && S.pilot) for (const a of S.atoms) if (a.pt && !a.capt) glows.push({ pos: v3.add(a.p.pos, v3.scale(a.pt, P.A0)), size: 0.006, col: [0.6, 0.8, 1.2] });
   glows.push(...fallGlows);
   for (const f of S.flashes) {
     const x = f.t / f.life;
@@ -2157,5 +2404,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('lockBtn').addEventListener('click', toggleLock);
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);

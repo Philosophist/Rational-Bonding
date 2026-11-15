@@ -15,6 +15,7 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 
 | File | Role |
 |---|---|
+| `wells.js` | The gravity-well physics, no DOM: each atom's electron on its own grid from Schrödinger's equation, tilted and dented by every other charge, stepped exactly; light by quantum jumps; the point riding the wave |
 | `quantum.js` | Hydrogen from Schrödinger's equation, no DOM: free-electron waves (Numerov), capture cross sections into every orbital up to n = 6, decay rates and branching, and each shell in an electric field (Stark mixing, solved and stepped exactly) |
 | `physics.js` | Pure physics, no DOM: constants, capture odds per pass (from `quantum.js`), aim cone, hydrogen decay table, Coulomb motion in the sphere, Stark mixing, atoms sharing an excitation (pairs and groups) |
 | `orbitals.js` | Hydrogen wavefunctions, ported unchanged from the rebuild's `prototype/index.html` |
@@ -22,7 +23,60 @@ in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `
 | `mat4.js` | Small matrix helpers for the flat camera and the headset's eyes |
 | `game.js` | Beats, tutor lines, flight controls, the gun, the cascade, the HUD |
 | `light.js` | Pure maths for light: the exact field of an oscillating dipole, its stream function and contour lines, field-line tracing, the photon's path and targets (pilot-wave view), and the driven and emitting clouds' shares |
-| `physics.test.mjs`, `light.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/*.test.mjs` |
+| `physics.test.mjs`, `light.test.mjs`, `wells.test.mjs` | Unit tests: `node --test alchemfighter/tutorial/*.test.mjs` |
+
+## Gravity-well physics (the new version, on by default)
+
+Steve's idea (2026-11-14): treat each proton as a well bubble with the electron inside, shaped by
+Schrödinger's equation, instead of one even grid over the whole 80 nm system (hundreds of billions
+of points). `wells.js` does the maths (tests in `wells.test.mjs`); the start card chooses between
+**Gravity wells (new)** and **Classic** (the shell model below), and `?physics=classic` or
+`?physics=wells` in the address does the same. The HUD's Game time window says which is running
+and what the waves cost per frame.
+
+- **One alphabet, shared by every atom.** A bubble 120 a₀ (6.3 nm) in radius, a radial grid of
+  1,400 points (0.001 a₀ apart at the proton, 0.3 a₀ at the wall) times the spherical harmonics up
+  to l = 5. For each l the radial Schrödinger equation (with the reduced mass) is solved on that
+  grid for every standing wave below +0.25 hartree: 957 of them. Nothing is pasted in. Checks: the
+  levels come out within 0.005% of −13.6/n² eV, Lyman-α at 121.568 nm, H-α at 656.47 nm; lifetimes
+  from the computed overlaps 2p 1.595 ns, 3p 5.27 ns, 3d 15.5 ns; 3p goes to 1s 88% of the time;
+  1s stretches in a field by 96% of hydrogen's polarizability (the rest is in waves above the
+  cut-off).
+- **Every other charge tilts and dents the well.** Its pull, expanded about the proton, is a tilt
+  (the field, E·r) and a dent (how the field changes across the atom, −½·r·T·r). These mix the
+  standing waves, every n, l and m, in any direction: no axis is chosen, and mixing between shells
+  is included (the classic model only mixed within one shell). The electron's wave is its set of
+  amplitudes, stepped exactly through the game's time (a Chebyshev series for e^{−iHt}).
+- **Cheap where nothing happens.** Only the standing waves the electron is in, and those the pull
+  can really mix in (energy gap under 10 × the pull × √share), are stepped; the far ones follow the
+  pull from moment to moment (first order for the wave, second order for the energies; for 1s
+  that is its polarizability). A settled 1s atom costs one multiply a frame; an n = 6 atom next to a
+  bare proton mixes 100 to 250 standing waves and costs about 2 ms. The atoms share a time budget
+  per frame (8 ms, 4 ms on phones; phones also use a lighter alphabet), and an atom that misses its
+  turn is stepped further on its next one, which is still exact.
+- **Light.** An amplitude in an upper standing wave leaks out at the rate its dipole overlaps give.
+  Each step, what the wave lost is the chance a photon left (the quantum-jump method); the jump
+  picks which step by the shares and rates right now. So a 2s atom in a tilted well sends Lyman-α
+  only through the 2p the tilt has mixed in, with nothing scripted. The photon's wavelength is the
+  difference of the two computed levels, and it swings along the computed dipole of that step.
+- **The point.** In the pilot-wave view each bound electron is a small bright dot carried by its
+  wave's flow, v = Im(∇ψ/ψ) (de Broglie–Bohm), placed by |ψ|² when it settles. In a settled real
+  orbital the flow is zero and the dot sits still (this is the theory's own result, not a freeze);
+  while the wave beats between two shapes, during a step down or in a changing field, the dot is
+  pushed around with it.
+- **Shown slowed, never flickering.** Parts of the wave that beat faster than 1.2 swings per
+  screen second are shown swinging at that speed (as everywhere in the game), and the dot then moves
+  in the same slowed time. The true amplitudes are what the physics uses.
+- **Simplified, flagged:** the bubble's wall is hard, so field ionization of high levels is still
+  left out (an n = 6 atom 7 nm from a bare proton really would be pulled apart); the pull is taken
+  to second order (tilt and dent), which is rough for a charge passing through the cloud itself
+  (the dent of a charge closer than 2 a₀ is taken at 2 a₀); spin and fine structure are left out; the Lamb shift
+  and the 2s two-photon rate are added from measurement (both quantum electrodynamics); when a
+  step down happens the wave collapses onto the one lower standing wave the photon left it in; a
+  near set is capped at 260 standing waves (120 on phones). Capture itself (the lock-on, the odds,
+  the free wave turning into the orbital) is as before; the orbital it lands in is then handed to
+  the well. Atoms sharing an excitation (groups) use the group model below, drawn from the well's
+  standing waves.
 
 ## The physics, and where it is simplified
 

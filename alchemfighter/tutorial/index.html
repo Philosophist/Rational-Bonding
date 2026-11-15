@@ -167,6 +167,7 @@ a { color: var(--cyan); }
       <div class="row" style="justify-content:space-between;margin-top:4px"><button type="button" id="speedBtn" title="Game speed (, and . keys)">game speed ×1</button><span class="data fine">ship <span id="shipOut">still</span></span></div>
       <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" hidden title="All odds are real. The one made-up thing is the ship's atomic lock-on: it steers a locked shot through the proton's capture disc. Which orbital the electron lands in is still rolled from the real odds.">lock-on: made-up tech</span><span class="fine" id="lightNote">light at its real speed</span></div>
       <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
+      <div class="fine" id="physOut" title="Gravity wells: every atom's electron is worked out on its own grid from Schrödinger's equation, tilted and dented by every other charge. Classic: the shell model."></div>
       <div class="fine" id="linesNote">Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).</div>
     </section>
     <section class="panel" id="zoomBox" data-name="target" hidden>
@@ -229,6 +230,7 @@ a { color: var(--cyan); }
     <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. In this level, the edge of the system holds matter in, but not light (photons).</p>
     <p class="warn" role="note"><b>Photosensitivity warning.</b> This game has flashes of light and moving patterns. If you have photosensitive epilepsy, or flashing lights have ever affected you, please talk to a doctor before playing, and stop at once if you feel unwell. Glow view (V, or ⓘ on phones) is the calmer view.</p>
     <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="startCalmBtn" title="Start in Glow view: no field lines or light waves">Start in Glow view</button><button type="button" id="vrBtn2">Enter VR</button></div>
+    <p class="fine" style="margin-top:10px">Physics: <button type="button" id="physWells" aria-pressed="true" title="New: every atom's electron is a wave worked out on its own grid from Schrödinger's equation (a well bubble), tilted and dented by every other charge, with the electron's point riding it">Gravity wells (new)</button> <button type="button" id="physClassic" aria-pressed="false" title="The earlier model: each shell's orbitals, mixed by the field along one axis">Classic</button></p>
     <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>
   </div>
 </div>
