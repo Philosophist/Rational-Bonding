@@ -279,6 +279,9 @@ function accelerations(ps, out) {
     for (let j = i + 1; j < ps.length; j++) {
       const b = ps[j];
       if (!b.active || !b.q) continue;
+      // An electron guided by its wave round a proton: that pair's push is handled by the wave
+      // (the proton takes up exactly the momentum the electron's point gains or loses, below).
+      if (a.guideP === b || b.guideP === a) continue;
       const dx = b.pos[0] - a.pos[0], dy = b.pos[1] - a.pos[1], dz = b.pos[2] - a.pos[2];
       const r2 = dx * dx + dy * dy + dz * dz + SOFT2, r = Math.sqrt(r2), f = KE * a.q * b.q / (r2 * r);
       // f > 0 repels
@@ -355,7 +358,10 @@ export function stepCharges(ps, dt, enc = new Map(), R = SPHERE_R, maxSub = 4000
       if (p.guide) {
         // Moved by its wave (pilot-wave view, matterwave.js): midpoint step along the wave's flow.
         const v1 = p.guide(p.pos), mid = [0, 1, 2].map(k => p.pos[k] + 0.5 * h * v1[k]), v2 = p.guide(mid);
-        for (let k = 0; k < 3; k++) { p.vel[k] = v2[k]; p.pos[k] += h * v2[k]; }
+        // Momentum is kept: whatever the wave does to the electron's point, its proton recoils by
+        // the opposite (1,836 times less in speed).
+        const g = p.guideP, w = g ? p.m / g.m : 0;
+        for (let k = 0; k < 3; k++) { if (g) g.vel[k] -= w * (v2[k] - p.vel[k]); p.vel[k] = v2[k]; p.pos[k] += h * v2[k]; }
         continue;
       }
       for (let k = 0; k < 3; k++) { p.vel[k] += 0.5 * h * acc[i][k]; p.pos[k] += h * p.vel[k]; }

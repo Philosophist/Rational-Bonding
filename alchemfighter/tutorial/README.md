@@ -67,6 +67,24 @@ and what the waves cost per frame.
 - **Shown slowed, never flickering.** Parts of the wave that beat faster than 1.2 swings per
   screen second are shown swinging at that speed (as everywhere in the game), and the dot then moves
   in the same slowed time. The true amplitudes are what the physics uses.
+- **Caught without light (three-body capture).** A lone electron can only stay by sending a
+  photon, which a 10 fs pass almost never does (about 1 in 400,000 for a centred 0.1 eV shot). When
+  two electrons are near a proton together, one can shove the other away and be left without the
+  energy to escape; the motion code does that by itself. In a test of the motion code alone (300
+  volleys from 8.6 nm at 0.1 eV) one electron was never left bound, two a few fs apart left one
+  bound about 1 time in 20, and four about 15 fs apart about 1 time in 9, typically by 0.3 eV.
+  An electron that stays bound to a bare proton (pair energy below zero) for one full turn of its
+  orbit is now caught: it becomes a wave in that proton's well, in the orbital nearest its energy
+  and angular momentum, turning about its orbit's own axis, and counts as hydrogen. No photon is
+  sent. Simplified: until then it is a classical point; the wave is the one nearest orbital (a real
+  one would be a packet of several); the bubble holds true orbitals up to n = 7, so an orbit
+  bound by less than 0.245 eV keeps circling as a point (Classic physics: up to n = 6).
+- **A guided electron's push on its proton.** While an electron's point is carried by its wave
+  round a proton (matterwave.js), the proton recoils by exactly the momentum the point gains or
+  loses, about 50 m/s for a 0.1 eV pass. (Before, the proton felt the point's bare pull while the
+  point did not answer to it, which kicked the proton up to 3,000 times too hard on a near miss.)
+- **Atoms are named by their largest bound share**, even while a strong pull has part of the wave
+  in the bubble's unbound standing waves; a cloud is never drawn beyond its bubble.
 - **Simplified, flagged:** the bubble's wall is hard, so field ionization of high levels is still
   left out (an n = 6 atom 7 nm from a bare proton really would be pulled apart); the pull is taken
   to second order (tilt and dent), which is rough for a charge passing through the cloud itself

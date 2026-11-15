@@ -429,3 +429,13 @@ test('quantum: a field splits shell n into the Stark states (3/2)·n·k, and the
   const weak = Q.shellAverage(2, 0, 1e-12, { re: [1, 0], im: [0, 0] });
   assert.ok(weak.p[0] > 0.999);
 });
+
+test('an electron guided by its wave hands its proton the opposite momentum, and no more', () => {
+  const pr = { id: 'p', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true };
+  const e = { id: 'e', kind: 'electron', q: -1, m: P.ME, pos: [0.01, 0, 0], vel: [0, 0, 0.2], active: true, guideP: pr };
+  e.guide = () => [0.1, 0, 0.1];   // the wave turns it
+  P.stepCharges([pr, e], 1);
+  // total momentum is what it was, however close the point is to the proton
+  const tot = [0, 1, 2].map(k => P.MP * pr.vel[k] + P.ME * e.vel[k]);
+  assert.ok(Math.abs(tot[0]) < 1e-9 * P.ME && Math.abs(tot[2] - 0.2 * P.ME) < 1e-9 * P.ME, `${tot}`);
+});

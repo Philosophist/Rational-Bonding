@@ -499,7 +499,11 @@ function wellPull(a) {
 }
 // Relabel the atom by its largest share (for the HUD, the counts and the sharing of light).
 function relabel(a) {
-  const { best } = WL.shares(a.wv.s), st = labelOf(best);
+  // (by the largest share among the bound waves: the atom's name is an orbital, even while a
+  // strong pull has part of the wave in the bubble's unbound standing waves)
+  const p = WL.shares(a.wv.s).p; let best = -1;
+  for (let i = 0; i < p.length; i++) if (WELL.energies[i] < 0 && (best < 0 || p[i] > p[best])) best = i;
+  const st = labelOf(best);
   if (stKey(st) !== stKey(a.st)) { a.st = st; a.wvKey = stKey(st); }
 }
 // The rate (per ns) that a photon leaves this atom right now.
@@ -643,11 +647,11 @@ function wellCloud(a, dtReal) {
     else WL.rideCompiled(cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 60 : 120);
   }
   a.ptFs = 0;
-  const radius = Math.max(reach * 1.1, free ? free.rmax : 0) * P.A0;
+  const radius = Math.max(Math.min(reach * 1.1, WELL.R), free ? free.rmax : 0) * P.A0;
   a.cw = cw; a.cloudAt = S.frameN; a.cloudKey = a.wvKey;
   return (a.cloud = { pos: a.p.pos, radius, frame: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], terms, free, trmax: WELL.R, invMax: 1 / (pk || 1), iso: iso / (pk || 1), fade: Math.min(1, a.fade * 3) });
 }
-const MAX_WELL_TERMS = 10;
+const MAX_WELL_TERMS = phone.matches ? 6 : 10;   // fewer shapes per cloud on phones: the strongest ones
 // An atom sharing an excitation with others: its two parts belong to different joint states of
 // the group, so their densities add (group 1), as in classic physics.
 function wellMixCloud(a) {
@@ -657,7 +661,7 @@ function wellMixCloud(a) {
   const terms = [...wellTerms(A, [Math.sqrt(1 - w), 0], 0), ...wellTerms(B, [Math.sqrt(w), 0], 1)].slice(0, MAX_WELL_TERMS);
   const sa = WL.stateStats(Wd, ia), sb = WL.stateStats(Wd, ib), pk = (1 - w) * sa.peak + w * sb.peak, iso = (1 - w) * sa.iso + w * sb.iso;
   const reach = w > 0.05 ? Math.max(sa.reach, sb.reach) : sa.reach;
-  return { pos: a.p.pos, radius: reach * 1.1 * P.A0, frame: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], terms, free: null, trmax: Wd.R, invMax: 1 / pk, iso: iso / pk, fade: Math.min(1, a.fade * 3) };
+  return { pos: a.p.pos, radius: Math.min(reach * 1.1, Wd.R) * P.A0, frame: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], terms, free: null, trmax: Wd.R, invMax: 1 / pk, iso: iso / pk, fade: Math.min(1, a.fade * 3) };
 }
 // Light leaves as Maxwell's equations say it does (light.js): an atom changing level swings its
 // charge like a tiny antenna, and the exact field of that swing spreads out at the speed of light,
@@ -878,6 +882,63 @@ function capture(e, p, E, viaDisc = false) {
   say(st.n === 1
     ? 'Caught! This one went straight to the bottom step in one go, so a single ultraviolet flash carried off all the energy.'
     : `Caught! It landed in ${P.stateName(st)}. As things stand it would wait about ${fmtSpan(lifetimeFs(1 / (WELLS ? wellRateNs(atom) : hazardRates(atom).tot)) / (FS_PER_S * SPEEDS[S.speed]))} of play at this game speed before stepping down (nearby charges change that by blending its orbitals).`);
+}
+// ---------------------------------------------------------------------------
+// Caught without light: an electron left in orbit (three-body capture)
+// ---------------------------------------------------------------------------
+// A lone electron arrives with energy to spare and can only stay by sending a photon, which a
+// 10 fs pass almost never does. But when two electrons are near a proton together, one can shove
+// the other: the shoved one leaves faster and the first is left without the energy to escape.
+// No photon is needed. The motion code does this on its own (every charge pushes every other);
+// what is added here is noticing it. An electron that has stayed bound to a bare proton (pair
+// energy below zero) for one full turn of its orbit is caught: it becomes a wave in that proton's
+// well, in the orbital nearest its energy and angular momentum, and counts as hydrogen.
+// Simplified, flagged: until then it moves as a classical point; the wave it becomes is the one
+// nearest orbital, where a real one would be a packet of several; the bubble holds true orbitals
+// up to n = 7, so an orbit bound by less than 0.245 eV (wider than the bubble) keeps circling as
+// a point until something knocks it deeper or free.
+const ORBIT_MIN_BIND = 0.245;   // eV: halfway between n = 7 and n = 8
+function updateOrbits() {
+  for (const e of freeElectrons()) {
+    if (e.gd) { e.orb = null; continue; }
+    let p = null, d = Infinity;
+    for (const q of bareProtons()) { const r = v3.len(v3.sub(e.pos, q.pos)); if (r < d) { d = r; p = q; } }
+    if (!p) { e.orb = null; continue; }
+    const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
+    const E = 0.5 * P.ME * v3.dot(rel, rel) - P.KE / Math.max(d, 0.01);
+    if (E >= 0) { e.orb = null; continue; }
+    if (!e.orb || e.orb.p !== p) e.orb = { p, since: S.simFs };
+    const a = P.KE / (2 * -E), T = 2 * Math.PI * Math.sqrt(a * a * a * P.ME / P.KE);   // the orbit's size (nm) and one turn (fs)
+    e.orb.E = E; e.orb.T = T;
+    if (S.simFs - e.orb.since < T) continue;
+    const nMax = WELLS ? 7 : Q.NMAX;
+    if (-E < (WELLS ? ORBIT_MIN_BIND : P.RY / ((nMax + 0.5) ** 2))) {
+      if (!S.wideSaid) { S.wideSaid = true; log(`An electron is circling a proton, bound by only ${(-E).toFixed(2)} eV: another electron carried off its spare energy. Its orbit is wider than the game follows as a wave, so it stays a point until something knocks it deeper or free.`); }
+      continue;
+    }
+    catchOrbit(e, p, E, v3.scale(v3.cross(off, rel), P.ME / P.HBAR));
+  }
+}
+function catchOrbit(e, p, E, Lv) {
+  const Lh = v3.len(Lv), nMax = WELLS ? 7 : Q.NMAX;
+  const n = Math.max(1, Math.min(nMax, Math.round(Math.sqrt(P.RY / -E))));
+  const lTop = Math.min(n - 1, WELLS ? wellAlphabet().LMAX : n - 1), l = Math.max(0, Math.min(lTop, Math.round(Lh - 0.5)));
+  const axis = Lh > 1e-6 ? v3.norm(Lv) : [0, 1, 0], st = { n, l, m: l };   // turning about its orbit's own axis
+  e.active = false;
+  S.ps = S.ps.filter(x => x !== e);
+  p.q = 0;
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [], capt: null };
+  setPure(atom, st);
+  S.atoms.push(atom);
+  p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
+  p.m = P.MP + P.ME;
+  S.flashes.push({ pos: [...e.pos], col: [0.45, 0.6, 0.9], t: 0, life: 1.2, size: 0.6 });
+  scheduleDecay(atom);
+  S.cascade = { atom, start: S.time };
+  S.b2.captured = true; S.orbitCaught = (S.orbitCaught || 0) + 1;
+  if (S.beat === 3) S.b3.caught++;
+  log(`Caught without light: an electron stayed in orbit for a full turn, bound by ${(-E).toFixed(2)} eV with angular momentum ${Lh.toFixed(1)} ħ, so it is now a wave in ${P.stateName(st)}. Another electron carried off its spare energy (three-body capture); no photon was needed.`, 'hit');
+  if (S.orbitCaught === 1) say(`You caught one without the lock-on, and without any light! Two electrons were near the proton together. One shoved the other away and was left without enough energy to escape. That is three-body capture, and it is how crowded places like a spark fill up with atoms. It settled into ${P.stateName(st)}, a wide, loosely held orbital.`);
 }
 // Steps down are driven by what causes them, moment by moment, never by a timer drawn in advance.
 // What a nearby charge does is fully caused: its field, where it is right now, mixes the shell's
@@ -1327,6 +1388,7 @@ function step(dtReal) {
   updateGuides();
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
+  updateOrbits();
   for (const e of freeElectrons()) {
     // Its wave's crests drift back through the packet at half the electron's speed (phase speed v/2),
     // capped at SWING_HZ crests per screen second so nothing flickers.
@@ -2078,8 +2140,10 @@ function updateGuides() {
       if (g.p.q !== 1 || !g.p.active || r > g.R * 1.02) {
         // Leaving: keep the direction the wave gave it, at the speed its energy gives it here.
         const rel = v3.sub(e.vel, g.p.vel), sp = Math.sqrt(2 * Math.max(1e-6, g.E + P.KE / Math.max(r, 0.01)) / P.ME);
-        e.vel = v3.add(g.p.vel, v3.scale(v3.norm(rel), sp));
-        e.gd = null; e.guide = null;
+        const out = v3.add(g.p.vel, v3.scale(v3.norm(rel), sp));
+        g.p.vel = v3.sub(g.p.vel, v3.scale(v3.sub(out, e.vel), P.ME / g.p.m));   // the proton takes the difference
+        e.vel = out;
+        e.gd = null; e.guide = null; e.guideP = null;
       }
       continue;
     }
@@ -2089,7 +2153,7 @@ function updateGuides() {
     const R = MW.guideRadius(E);
     if (d > R || v3.dot(v3.sub(e.pos, p.pos), rel) > 0) continue;   // only on the way in
     const gd = { p, E, R, u: v3.norm(rel), ph: 0, slice: null, sliceW: null };
-    e.gd = gd;
+    e.gd = gd; e.guideP = p;
     e.guide = pos => {
       const r = v3.sub(pos, gd.p.pos), rl = Math.max(v3.len(r), 0.005);
       const vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME);   // the flow is fast only right at the wave's zeros

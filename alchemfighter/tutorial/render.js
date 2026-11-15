@@ -82,7 +82,7 @@ vec3 phaseColor(vec2 w){
   vec2 u = w / max(length(w), 1e-30); float ca = u.x, sa = u.y;
   vec3 c = vec3(0.01,0.91,0.96)*max(ca,0.0) + vec3(0.94,0.18,0.37)*max(-ca,0.0)
          + vec3(0.58,0.42,1.0)*max(sa,0.0) + vec3(1.0,0.72,0.25)*max(-sa,0.0);
-  return c / (abs(ca) + abs(sa));
+  return c / max(abs(ca) + abs(sa), 1e-6);   // (a wave that is exactly zero has no colour, not a broken one)
 }
 // One cloud's terms, read once per pixel.
 struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax; float trmax;
