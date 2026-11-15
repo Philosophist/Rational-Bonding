@@ -50,3 +50,11 @@ test('crests: a slice gives finite segments, and the reach stays inside the tabl
   assert.ok(segs.length > 50);
   for (const g of segs) assert.ok(g.every(Number.isFinite));
 });
+
+test('the spin term is (ħ/2m)·∇ln ρ × ŝ of the same wave', async () => {
+  const MWm = await import('./matterwave.js');
+  const E = 0.1, u = [1, 0, 0], r = [-0.7, 0.4, 0.2], s = [0, 0, 1], h = 1e-5, k = 0.5 * MWm.A0_NM * MWm.V_AU;
+  const g = [0, 1, 2].map(i => { const a = [...r], b = [...r]; a[i] += h; b[i] -= h; return (Math.log(MWm.wave(E, u, a).rho) - Math.log(MWm.wave(E, u, b).rho)) / (2 * h); });
+  const fd = [g[1] * s[2] - g[2] * s[1], g[2] * s[0] - g[0] * s[2], g[0] * s[1] - g[1] * s[0]].map(x => x * k), v = MWm.spinVelocity(E, u, r, s);
+  for (let i = 0; i < 3; i++) if (Math.abs(fd[i] - v[i]) > 1e-5) throw new Error(`${fd} vs ${v}`);
+});

@@ -107,6 +107,18 @@ export function guideVelocity(E, u, r, vmax = Infinity) {
   const m = Math.hypot(v[0], v[1], v[2]);
   return m > vmax ? v.map(c => c * vmax / m) : v;
 }
+// The spin term of the point's velocity (nm/fs) at r: (ħ/2m)·∇ln ρ × ŝ for spin axis s (unit
+// vector). For this wave ∇ln ρ = −2k·Im(F′/F)·(r̂ − u), so it comes from the same numbers as the flow.
+export function spinVelocity(E, u, r, s, vmax = Infinity) {
+  const k = k_au(E), x = r.map(c => c / A0_NM);
+  const R = Math.hypot(x[0], x[1], x[2]) || 1e-9, z = x[0] * u[0] + x[1] * u[1] + x[2] * u[2];
+  const [Fr, Fi, Dr, Di] = hyp(k, k * (R - z));
+  const q = -k * (Di * Fr - Dr * Fi) / Math.max(Fr * Fr + Fi * Fi, 1e-300) * V_AU;
+  const g = [0, 1, 2].map(i => q * (x[i] / R - u[i]));
+  const v = [g[1] * s[2] - g[2] * s[1], g[2] * s[0] - g[0] * s[2], g[0] * s[1] - g[1] * s[0]];
+  const m = Math.hypot(v[0], v[1], v[2]);
+  return m > vmax ? v.map(c => c * vmax / m) : v;
+}
 // A slice of the wave in the plane through the proton spanned by u (along the beam) and w (square
 // to it): an N×N grid out to radius Rg (nm). Phase and density at each grid point.
 export function waveSlice(E, u, w, Rg, N = 56) {

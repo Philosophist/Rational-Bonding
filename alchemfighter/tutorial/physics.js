@@ -283,6 +283,9 @@ export function atomDipole(F, pol) {
   return [F[0] * s, F[1] * s, F[2] * s];
 }
 
+// C₆ (eV·nm⁶) for two atoms tagged a.vdw, b.vdw, worked out from their waves; set by the game.
+let waveC6 = null;
+export function useWaveC6(fn) { waveC6 = fn; }
 function accelerations(ps, out) {
   for (let i = 0; i < ps.length; i++) out[i].fill(0);
   for (let i = 0; i < ps.length; i++) {
@@ -336,7 +339,11 @@ function accelerations(ps, out) {
       if (!b.active || b.q || !b.pol) continue;
       const d = [b.pos[0] - a.pos[0], b.pos[1] - a.pos[1], b.pos[2] - a.pos[2]];
       const r = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2] + SOFT2), s6 = (HH_RM / r) ** 6;
-      const f = 12 * HH_EPS * (s6 * s6 - s6) / r;   // −dU/dr, > 0 repels
+      let f = 12 * HH_EPS * (s6 * s6 - s6) / r;   // −dU/dr, > 0 repels
+      // Gravity-well physics: the pull comes from the two atoms' own waves, −C₆/(r⁶ + S⁶) with C₆
+      // from waveC6 (the game's hook into wells.js) and S the two clouds' sizes together (the
+      // formula is for clouds that do not overlap). The close-in core stays as it was.
+      if (waveC6 && a.vdw != null && b.vdw != null) { const S6 = ((a.soft || 0) + (b.soft || 0)) ** 6, r6 = r ** 6; f = 12 * HH_EPS * s6 * s6 / r - 6 * waveC6(a.vdw, b.vdw) * r6 / (r * (r6 + S6) ** 2); }
       for (let c = 0; c < 3; c++) { out[i][c] -= f * d[c] / r / a.m; out[j][c] += f * d[c] / r / b.m; }
     }
   }
@@ -461,7 +468,7 @@ export function totalEnergy(ps) {
     if (!a.active || !b.active) continue;
     const r = Math.sqrt((a.pos[0] - b.pos[0]) ** 2 + (a.pos[1] - b.pos[1]) ** 2 + (a.pos[2] - b.pos[2]) ** 2 + SOFT2);
     if (a.q && b.q) E += KE * a.q * b.q / r;
-    else if (!a.q && !b.q && a.pol && b.pol) { const s6 = (HH_RM / r) ** 6; E += HH_EPS * (s6 * s6 - 2 * s6); }
+    else if (!a.q && !b.q && a.pol && b.pol) { const s6 = (HH_RM / r) ** 6; E += waveC6 && a.vdw != null && b.vdw != null ? HH_EPS * s6 * s6 - waveC6(a.vdw, b.vdw) / (r ** 6 + ((a.soft || 0) + (b.soft || 0)) ** 6) : HH_EPS * (s6 * s6 - 2 * s6); }
     else if (a.q && b.pol && !b.q) E += b.pol.c8 / r ** 8;
     else if (b.q && a.pol && !a.q) E += a.pol.c8 / r ** 8;
   }

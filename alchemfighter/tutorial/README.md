@@ -111,6 +111,30 @@ and what the waves cost per frame.
   A charge inside the cloud also feels the part of the proton the electron no longer covers
   (`enclosed`: the share of the electron inside each radius), and its field on the wave is
   softened over the cloud's size (1.5·n² a₀) so the pair stay matched.
+- **Spin.** Every electron has a spin axis, a unit vector that belongs to its wave (random from
+  the gun, which is unpolarised; an atom keeps the axis of the electron it caught). The point's
+  guidance rule has its spin term: v = (ħ/m)·Im(∇ψ/ψ) + (ħ/2m)·∇ln ρ × ŝ. The axis is not read off
+  the path and the point is not forced round it; the circling is what that term does wherever the
+  wave's density changes. In a held wave (`flowCompiled`) the point circles the axis even in 1s,
+  at speed αc·sin θ. Near a bare proton (`spinVelocity`) it is carried out of the flat path. In
+  free flight (`spinCircle`) the point turns about the axis through the middle of its packet at
+  ħ/(m·σ²), a corkscrew about 0.4 nm wide at 0.1 eV; the forces move the packet's middle and the
+  point is the middle plus its offset. A locked shot rides the middle and flies straight.
+  Departures, flagged: the circling inside an atom is shown at most 1.2 turns per screen second
+  (really about 270 a second at this clock; shown true it would be a flicker, which the game
+  never allows); the free packet is taken as round and of fixed width (a spreading packet for
+  every electron is too much to carry); the axis is not turned by magnetic fields (those in the
+  level are far too weak to turn it during a flight); spin's own magnetic field and spin–orbit
+  coupling are not computed (too weak to move anything here); spins do not yet pair (no H₂).
+- **Van der Waals from the waves (wells mode).** The pull between two neutral atoms is London's
+  sum over each atom's own standing waves (`c6`): −C₆/(r⁶ + S⁶), S the two clouds' sizes added.
+  For 1s with 1s it gives C₆ = 5.8 (exact 6.499; the missing tenth is in waves above the energy
+  cut). Departures, flagged: the true cause is the two electrons' waves moving in step, which
+  needs one joint wave for the pair (957 × 957 amplitudes per pair of atoms, far beyond a phone),
+  so the second-order sum stands in for it; it is averaged over orientations and uses each atom's
+  one main standing wave; resonant pairs are left out. The close-in repulsive core between atoms
+  is still the fitted curve (its cause, exchange between overlapping clouds, also needs the
+  joint wave).
 - **Simplified, flagged:** the rim leak is an estimate, not a wave solved through an open edge:
   it uses each standing wave's own energy (not its shift in the pull), has no tunnelling under the
   rim, and puts the point just past the rim rather than following it out. A free electron is still
@@ -120,7 +144,7 @@ and what the waves cost per frame.
   paid back, so energy drifts by a few hundredths of an eV in a close pass. The pull is taken
   to second order (tilt and dent), which is rough for a charge passing through the cloud itself
   (the dent of a charge closer than the cloud's size is taken at that size); a 1s-sized core still keeps charges
-  0.1 nm from an atom's proton (no H⁻ or H₂⁺ yet); spin and fine structure are left out; the Lamb shift
+  0.1 nm from an atom's proton (no H⁻ or H₂⁺ yet); fine structure is left out; the Lamb shift
   and the 2s two-photon rate are added from measurement (both quantum electrodynamics); when a
   step down happens the wave collapses onto the one lower standing wave the photon left it in; a
   near set is capped at 260 standing waves (120 on phones). Capture itself (the lock-on, the odds,

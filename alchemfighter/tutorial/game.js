@@ -364,7 +364,10 @@ function fire() {
   const near = a.target && a.target.p.q === 1 ? a.target.p : bareProtons()[0];
   const KEl = launchKE(a.E, near ? v3.len(v3.sub(a.muzzle, near.pos)) : 99);
   S.shots++;
-  addElectron([...a.muzzle], v3.scale(dir, P.electronSpeed(KEl)), { shot: S.shots, E: a.E, born: S.time, cone: a.cone, lock: lockOn ? S.lock.target.id : null });
+  // Its spin axis belongs to its wave; the gun does not choose it (unpolarised), so it is random.
+  // `so` is where the point sits in its wave, measured from the wave's middle (a locked shot: the middle).
+  addElectron([...a.muzzle], v3.scale(dir, P.electronSpeed(KEl)), { shot: S.shots, E: a.E, born: S.time, cone: a.cone, lock: lockOn ? S.lock.target.id : null, spin: randomDir(), so: off });
+  if (!S.spinSaid && !lockOn) { S.spinSaid = true; log('Each electron has a spin axis that belongs to its wave. The point is carried round that axis inside its wave, so with its forward motion its path is a corkscrew, about 0.4 nm wide. A locked shot rides the middle of its wave and flies straight.'); }
   if (S.beat === 2 && S.shots === UNAIDED && !S.b2.lesson) S.b2.lessonAt = S.time + 6;   // time for the last shots to pass
   const free = freeElectrons().filter(e => !e.freed);   // electrons knocked off atoms are never removed
   if (free.length > MAX_FREE) {
@@ -492,6 +495,7 @@ function wellOf(a) {
   return a.wv;
 }
 // The tilt (field, atomic units) and the dent (how it changes across the atom) at an atom.
+P.useWaveC6((a, b) => (WELLS && WELL ? WL.c6(WELL, a, b) * WL.HARTREE * WL.A0_NM ** 6 : P.C6_HH));
 // A charge inside the cloud does not tilt the whole well: its field is taken softened over the
 // cloud's size s (about 1.5·n² a₀), q·R/(R²+s²)^1.5, and the dent as if it were no closer than s.
 const cloudSize = a => 1.5 * Math.max(1, a.st.n || 1) ** 2;   // a₀
@@ -545,9 +549,10 @@ function stepWells(dtFs) {
     const wd = WL.waveDipole(WELL, wv);
     a.p.dip = wd.p0.map(x => x * WL.A0_NM); a.p.dipA = wd.A.map(x => x * WL.A0_NM ** 3 / P.KE);
     a.p.soft = cloudSize(a) * WL.A0_NM;
+    a.p.vdw = a.st.idx != null ? a.st.idx : WELL.index(a.st.n, a.st.l, a.st.m);
     a.p.scr = { q: WL.enclosed(WELL, wv.s), R: WELL.R * WL.A0_NM };
   }
-  for (const a of S.atoms) if (a.pair || a.mix || a.trans || a.emitL) { a.p.dip = null; a.p.scr = null; }
+  for (const a of S.atoms) if (a.pair || a.mix || a.trans || a.emitL) { a.p.dip = null; a.p.scr = null; a.p.vdw = null; }
   wellTurn = (wellTurn + 1) % Math.max(1, n);
   S.wellMs = 0.9 * (S.wellMs || 0) + 0.1 * (performance.now() - t0);
   S.wellNear = list.reduce((m, a) => Math.max(m, a.wv && a.wv.near ? a.wv.near.length : 0), 0);
@@ -581,9 +586,9 @@ function spill(a, wv, pull) {
   S.atoms = S.atoms.filter(x => x !== a);
   S.oldSteps.push(...a.steps);
   if (S.cascade && S.cascade.atom === a) { S.cascade = null; S.autoCam = null; }
-  p.q = 1; p.glow = 1; p.m = P.MP; p.pol = null; p.dip = null; p.scr = null;
+  p.q = 1; p.glow = 1; p.m = P.MP; p.pol = null; p.dip = null; p.scr = null; p.vdw = null;
   p.vel = v3.sub(V, v3.scale(ex.dir, v * P.ME / M));
-  addElectron(pos, v3.add(V, v3.scale(ex.dir, v * P.MP / M)), { freed: true, spilled: S.time, born: S.time });
+  addElectron(pos, v3.add(V, v3.scale(ex.dir, v * P.MP / M)), { freed: true, spilled: S.time, born: S.time, spin: a.spin });
   S.flashes.push({ pos, col: [0.45, 0.6, 0.9], t: 0, life: 1.2, size: 0.6 });
   S.spilled = (S.spilled || 0) + 1;
   const name = WELL.energies[idx] < -1 / WELL.R ? P.stateName(st) : 'a wave too wide for the well';
@@ -660,12 +665,18 @@ function wellBlend(x, wFrom, b, wTo, ph) {
   return out;
 }
 // The cloud for one atom under gravity-well physics, and its point riding the wave.
+// A held electron's spin axis (its wave's; random if the atom was made without one), and how far
+// the spin term may carry the point round it per frame. Really the point in 1s goes round about
+// once every 150 attoseconds (270 times a second at this clock); it is shown at most SWING_HZ
+// turns per screen second, like every other fast swing in the game, so it does not flicker.
+const spinOf = a => a.spin || (a.spin = randomDir());
+const spinTurn = dtReal => 2 * Math.PI * showHz() * Math.max(dtReal, 1 / 240);
 function wellCloud(a, dtReal) {
   // A settled cloud changes slowly: rebuild it every few frames (the point still moves every frame).
   const morphing = a.capt || a.trans || (a.emitL && a.pending);
   S.frameN = (S.frameN || 0);
   if (a.cloud && !morphing && S.frameN - a.cloudAt < (phone.matches ? 3 : 2) && a.cloudKey === a.wvKey) {
-    if (a.pt && a.cw) WL.rideCompiled(a.cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 40 : 80);
+    if (a.pt && a.cw) WL.rideCompiled(a.cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 40 : 80, spinOf(a), spinTurn(dtReal));
     a.ptFs = 0;
     a.cloud.pos = a.p.pos; a.cloud.fade = Math.min(1, a.fade * 3);
     return a.cloud;
@@ -698,7 +709,7 @@ function wellCloud(a, dtReal) {
   // The point: placed by the Born rule once the electron has settled in, then carried by the wave.
   if (!a.capt) {
     if (!a.pt) a.pt = WL.sampleCompiled(cw, Math.max(1.5, 0.6 * reach));
-    else WL.rideCompiled(cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 60 : 120);
+    else WL.rideCompiled(cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 60 : 120, spinOf(a), spinTurn(dtReal * (a.cloud ? S.frameN - a.cloudAt : 1)));
   }
   a.ptFs = 0;
   const radius = Math.max(Math.min(reach * 1.1, WELL.R), free ? free.rmax : 0) * P.A0;
@@ -881,8 +892,8 @@ function freeAtom(a, extra, col) {
   // The freed electron starts 0.5 nm out with the speed it needs to end up with `extra` far away.
   // The two are launched with opposite momenta, so the pair's total momentum is unchanged.
   const dir = randomDir(), r0 = 0.5, { vE, vP } = P.launchApart(p.vel, P.MP, P.ME, dir, extra, r0);
-  p.m = P.MP; p.pol = null; p.dip = null; p.scr = null;
-  addElectron(v3.add(p.pos, v3.scale(dir, r0)), vE, { freed: true, E: extra, born: S.time });
+  p.m = P.MP; p.pol = null; p.dip = null; p.scr = null; p.vdw = null;
+  addElectron(v3.add(p.pos, v3.scale(dir, r0)), vE, { freed: true, E: extra, born: S.time, spin: a.spin });
   p.vel = vP;
   S.ionized++;
   S.flashes.push({ pos: [...p.pos], col, t: 0, life: 1.2, size: 1.0 });
@@ -908,7 +919,7 @@ function capture(e, p, E, viaDisc = false) {
   const axis = v3.len(F0) > FIELD_MIN ? v3.norm(F0) : Lh > 1e-6 ? v3.norm(Lv) : [0, 1, 0];
   const mAbs = Math.min(pick.l, Math.round(Math.abs(v3.dot(Lv, axis)))), m = mAbs && Math.random() < 0.5 ? -mAbs : mAbs;
   const st = { n: pick.n, l: pick.l, m };
-  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', from: null, to: st }] };
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', from: null, to: st }], spin: e.spin || randomDir() };
   setPure(atom, st);
   // The capture itself: the free electron's wave (its l = pick.lIn part, solved at its energy) turns
   // into the orbital over FALL_DUR, one wave the whole way, sloshing at the light's frequency.
@@ -987,7 +998,7 @@ function catchOrbit(e, p, E, Lv) {
   e.active = false;
   S.ps = S.ps.filter(x => x !== e);
   p.q = 0;
-  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [], capt: null };
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [], capt: null, spin: e.spin || randomDir() };
   setPure(atom, st);
   S.atoms.push(atom);
   p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
@@ -1449,6 +1460,7 @@ function step(dtReal) {
   updateGuides();
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
+  spinCircle(dtFs);
   updateOrbits();
   for (const e of freeElectrons()) {
     // Its wave's crests drift back through the packet at half the electron's speed (phase speed v/2),
@@ -2219,8 +2231,26 @@ function updateGuides() {
     e.guide = pos => {
       const r = v3.sub(pos, gd.p.pos), rl = Math.max(v3.len(r), 0.005);
       const vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME);   // the flow is fast only right at the wave's zeros
-      return v3.add(gd.p.vel, MW.guideVelocity(gd.E, gd.u, r, vmax));
+      const v = v3.add(gd.p.vel, MW.guideVelocity(gd.E, gd.u, r, vmax));
+      // (the spin term of the guidance rule: the point is also carried round its spin axis wherever the wave's density changes)
+      return e.spin ? v3.add(v, MW.spinVelocity(gd.E, gd.u, r, e.spin, vmax)) : v;
     };
+  }
+}
+// Spin, in free flight. The guidance rule's spin term, (ħ/2m)·∇ln ρ × ŝ, carries the point round
+// the spin axis through the middle of its wave. For a packet whose density falls off as
+// exp(−x²/σ²) that is a steady turning at ħ/(m·σ²), with σ the gun's spot (0.41 nm at 0.1 eV: one
+// turn every 9 fs). With its forward motion the point's path is a corkscrew. The packet's middle
+// is what the forces move (e.vel is its velocity); the point is e.pos = middle + e.so.
+// Simplified, flagged: the packet is taken as round and of fixed width, and the axis is not turned
+// by the level's magnetic fields (far too weak here to turn it in the time of a flight).
+function spinCircle(dtFs) {
+  for (const e of freeElectrons()) {
+    if (!e.spin || !e.so || e.gd) continue;
+    const sig = e.cone || 0.4, th = P.HBAR / (P.ME * sig * sig) * dtFs, s = e.spin, o = e.so;
+    const c = Math.cos(th), sn = Math.sin(th), al = v3.dot(o, s), cr = v3.cross(s, o);
+    const o2 = [0, 1, 2].map(i => o[i] * c + cr[i] * sn + s[i] * al * (1 - c));
+    e.pos = v3.add(e.pos, v3.sub(o2, o)); e.so = o2;
   }
 }
 // The electron's wave in the pilot-wave view: crests square to its motion, one de Broglie wavelength
@@ -2228,6 +2258,7 @@ function updateGuides() {
 // long. The point (the electron itself) rides inside it. Drawn as the free wave; close to a proton
 // the real wave bends round it, while the point's path there is computed from the forces.
 function electronWave(e) {
+  const mid = e.so ? v3.sub(e.pos, e.so) : e.pos;   // the wave's middle; the point sits e.so from it
   const v = v3.len(e.vel);
   if (v < 1e-6) return;
   const u = v3.scale(e.vel, 1 / v), KEk = 0.5 * P.ME * v * v, lam = 2 * Math.PI * P.reducedWavelength(Math.max(1e-3, KEk));
@@ -2237,7 +2268,7 @@ function electronWave(e) {
   for (let k = -2; k <= 2; k++) {
     const s0 = k * lam - (e.waveS || 0), env = Math.exp(-0.5 * (s0 / lam) ** 2);
     if (env < 0.05) continue;
-    const c = v3.add(e.pos, v3.scale(u, s0)), r = R * (0.6 + 0.4 * env);
+    const c = v3.add(mid, v3.scale(u, s0)), r = R * (0.6 + 0.4 * env);
     let q = null;
     for (let i = 0; i <= 32; i++) {
       const t = 2 * Math.PI * i / 32, pt = v3.add(c, v3.add(v3.scale(e1, Math.cos(t) * r), v3.scale(e2, Math.sin(t) * r)));
