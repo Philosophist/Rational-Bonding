@@ -112,7 +112,6 @@
         <label class="check" data-for="relative"><input type="checkbox" id="rule-bishopFacing" /> Bishops move on every line except their own axes</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-knightFacing" /> Knights leap along their own axes</label>
         <label class="check"><input type="checkbox" id="rule-bareKing" /> Bare king loses: take every enemy piece but the king to win</label>
-        <label class="check"><input type="checkbox" id="rule-queenLeaps" /> Queens also leap like knights</label>
         <label class="check"><input type="checkbox" id="view-paths" checked /> Show move paths (touching cubes; knights get L lines)</label>
         <label class="check" data-for="relative"><input type="checkbox" id="view-hex" checked /> Show the hexagon around corner-facing pieces</label>
         <label class="check"><input type="checkbox" id="view-follow" checked /> Turn the camera to a piece when you select it</label>
@@ -170,7 +169,7 @@
         <ul>
           <li><b>Rook</b> – straight along any of the 3 axes, any distance. In Classic mode (toggle) also any distance along a flat diagonal, one that changes two coordinates but never all three.</li>
           <li><b>Bishop</b> – any diagonal: within a plane, including between levels, or corner to corner through the cube (20 directions).</li>
-          <li><b>Queen</b> – rook + bishop: any straight line (26 directions). With the <i>queens leap</i> toggle (off by default) she can also jump like a knight.</li>
+          <li><b>Queen</b> – rook + bishop: any straight line (26 directions).</li>
           <li><b>King</b> – one step to any of the 26 neighbouring cells.</li>
           <li><b>Castling</b> – the rook moves two squares toward the king along the back rank, and the king jumps to just past it: in line, or one diagonal step off the line (up a rank or a level), if that square is empty. Neither may have moved, the squares between must be empty, and the king can't be in, pass through, or land in check.</li>
           <li><b>Knight</b> – 2 along one axis then 1 along another (24 jumps).</li>

@@ -144,7 +144,6 @@ en passant, by design.
   Endgame solving showed a lone queen forces mate from only ~1% of positions
   on 8×8×8 and a lone rook, bishop or knight never can, so without this rule
   being ahead rarely wins. Old account games are stored with `bareKing: false`.
-- Queens leap like knights (toggle, off): then a lone queen always forces mate.
 - With bare king off, king + one rook, bishop or knight is insufficient material.
 
 **Time controls**
