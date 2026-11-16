@@ -14,7 +14,7 @@ const el = (tag, props = {}, ...kids) => {
 const REASONS = {
   checkmate: 'checkmate', resignation: 'resignation', timeout: 'time', stalemate: 'stalemate',
   'insufficient material': 'insufficient material', '50-move rule': '50-move rule',
-  'timeout vs insufficient material': 'time vs insufficient material',
+  'timeout vs insufficient material': 'time vs insufficient material', 'bare king': 'bare king',
 };
 const CATS = ['bullet', 'blitz', 'rapid', 'daily', 'untimed'];
 const pct = (t) => (t.played ? Math.round((100 * t.wins) / t.played) : 0);

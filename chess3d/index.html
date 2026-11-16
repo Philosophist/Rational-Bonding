@@ -111,6 +111,8 @@
         <label class="check" data-for="relative"><input type="checkbox" id="rule-pawnsAnyFacing" /> Pawns may face any direction</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-bishopFacing" /> Bishops move on every line except their own axes</label>
         <label class="check" data-for="relative"><input type="checkbox" id="rule-knightFacing" /> Knights leap along their own axes</label>
+        <label class="check"><input type="checkbox" id="rule-bareKing" /> Bare king loses: take every enemy piece but the king to win</label>
+        <label class="check"><input type="checkbox" id="rule-queenLeaps" /> Queens also leap like knights</label>
         <label class="check"><input type="checkbox" id="view-paths" checked /> Show move paths (touching cubes; knights get L lines)</label>
         <label class="check" data-for="relative"><input type="checkbox" id="view-hex" checked /> Show the hexagon around corner-facing pieces</label>
         <label class="check"><input type="checkbox" id="view-follow" checked /> Turn the camera to a piece when you select it</label>
@@ -168,11 +170,12 @@
         <ul>
           <li><b>Rook</b> – straight along any of the 3 axes, any distance. In Classic mode (toggle) also any distance along a flat diagonal, one that changes two coordinates but never all three.</li>
           <li><b>Bishop</b> – any diagonal: within a plane, including between levels, or corner to corner through the cube (20 directions).</li>
-          <li><b>Queen</b> – rook + bishop: any straight line (26 directions).</li>
+          <li><b>Queen</b> – rook + bishop: any straight line (26 directions). With the <i>queens leap</i> toggle (off by default) she can also jump like a knight.</li>
           <li><b>King</b> – one step to any of the 26 neighbouring cells.</li>
           <li><b>Castling</b> – the rook moves two squares toward the king along the back rank, and the king jumps to just past it: in line, or one diagonal step off the line (up a rank or a level), if that square is empty. Neither may have moved, the squares between must be empty, and the king can't be in, pass through, or land in check.</li>
           <li><b>Knight</b> – 2 along one axis then 1 along another (24 jumps).</li>
           <li><b>Pawn</b> – forward is both “up the ranks” and “up the levels” toward the enemy edge. Moves straight 1 (or 2 on its first move) along either, but can't capture straight ahead. Captures one diagonal step that goes forward on at least one of those, e.g. forward a rank while dropping a level, so pawns meeting head-on can take each other. <b>Up-forward</b> (forward a rank and up a level at once) is both forward and diagonal: the pawn can move <i>or</i> capture 1 square that way, or 2 on its first move if the square in between is empty (Black: down-forward). Promotes on the enemy back-rank edge. No en passant.</li>
+          <li><b>Winning</b> – checkmate, or (toggle, on) <b>bare king</b>: capture every enemy piece except the king. If the bare king can capture your last piece on its very next move, it gets that one move, and taking it makes the game a draw. In a 3D cube a king can run from a single piece forever (a lone queen forces mate from only about 1% of positions), so this rule makes being ahead in pieces count. Without it, a king with one rook, bishop or knight against a bare king is a draw, because those can never checkmate.</li>
           <li>White's back rank sits on the near bottom edge (rank 1, level A) with its pawns one step diagonally in front (rank 2, level B). Black mirrors this on the far top edge (rank 8, level H; pawns on rank 7, level G).</li>
         </ul>
         <p><b>Relative mode.</b> Each piece faces a direction, and space is relative to it: its own three straight axes are its facing and the two directions square to it. Facing a flat diagonal, those are the file plus the two diagonals of its rank/level plane, so the diagonals become straight lines for it. A piece may face any of the 26 directions a king can step in. Facing a corner (all three coordinates change), there is no square left, right or up; its sideways are instead the six touching directions around that line, which form a hexagon. Both armies start facing each other across the cube's diagonal.</p>
