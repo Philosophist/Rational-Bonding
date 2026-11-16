@@ -680,7 +680,8 @@ function spinRing(a) {
     const L = WL.spinLoop(a.cw, a.pt, spinOf(a), phone.matches ? 24 : 36);
     a.ring = { ...L, cw: a.cw, at: S.frameN, hz: L.rate * AU_PER_FS * (S.fsRate || FS_PER_S) / (2 * Math.PI) };
   }
-  return a.ring.hz > BLUR_HZ && a.ring.pts.length > 4 ? a.ring : null;
+  // (a lop-sided or mixed cloud's loop is not a clean ring at this resolution; there the dot is kept, moving at up to BLUR_HZ turns a second)
+  return a.ring.hz > BLUR_HZ && a.ring.clean ? a.ring : null;
 }
 function drawBoundPoints(glows) {
   for (const a of S.atoms) {
@@ -2171,6 +2172,7 @@ function draw(views, panel) {
     }
     return c;
   });
+  if (WELLS) bondClouds(clouds);
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
   for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
@@ -2268,9 +2270,26 @@ function updateGuides() {
 // waves. Two atoms that pair still fly apart again unless something else carries off the energy
 // they gain falling together; if their energy does end up below zero they are an H₂ molecule.
 // Departures, flagged: the roll stands in for the joint spin wave of the two electrons, which
-// would settle it; an atom pairs with one partner only; the two clouds are still drawn as two 1s
-// clouds rather than one bond cloud (both need the joint two-electron wave, which is beyond a phone).
+// would settle it; an atom pairs with one partner only (both need the joint two-electron wave,
+// which is beyond a phone). The shared cloud is drawn from the two 1s waves (bondClouds).
 const PAIR_R = 0.6;   // nm
+// A paired couple's shared cloud, worked out live from their two 1s waves at their distance right
+// now (wells.js bondCloud): each atom's own cloud thinned by 1/(1 + S²), plus the part piled up
+// between the protons, drawn as a third cloud about the midpoint. It reshapes as they move.
+function bondClouds(clouds) {
+  S.atoms.forEach((a, i) => {
+    const q = a.p.paired, j = q ? S.atoms.findIndex(b => b.p === q) : -1;
+    if (j <= i || a.st.n !== 1 || S.atoms[j].st.n !== 1 || !clouds[i] || !clouds[j]) return;
+    const b = S.atoms[j], d = v3.sub(b.p.pos, a.p.pos), R = v3.len(d) / P.A0;
+    if (R < 0.2) return;
+    const rec = a.bond && Math.abs(a.bond.R - R) < 0.02 * R ? a.bond : (a.bond = { R, ...WL.bondCloud(R) });
+    const y = v3.norm(d), x = v3.norm(v3.cross(y, Math.abs(y[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), z = v3.cross(x, y);
+    const st = WL.stateStats(WELL, WELL.index(1, 0, 0)), fade = Math.min(clouds[i].fade, clouds[j].fade);
+    clouds[i] = { ...clouds[i], fade: clouds[i].fade * rec.thin }; clouds[j] = { ...clouds[j], fade: clouds[j].fade * rec.thin };
+    clouds.push({ pos: v3.scale(v3.add(a.p.pos, b.p.pos), 0.5), radius: rec.rmax * P.A0, frame: [x, y, z], free: null, trmax: rec.rmax, invMax: 1 / (st.peak || 1), iso: st.iso / (st.peak || 1), fade,
+      terms: rec.ls.map((l, k) => ({ n: -1, l, m: 0, mode: 0, norm: WL.angNorm(l, 0), c: [1, 0], g: 0, table: rec.tables[k] })) });
+  });
+}
 function updateSpinPairs() {
   if (!WELLS) return;
   for (const p of S.ps) if (p.paired && (p.q || p.paired.q || !p.active || !p.paired.active)) { p.paired.paired = null; p.paired = null; }

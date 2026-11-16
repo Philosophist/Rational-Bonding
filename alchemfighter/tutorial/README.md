@@ -123,8 +123,9 @@ and what the waves cost per frame.
   Inside an atom the circling is far too fast to follow (about 270 turns a second at this clock),
   so above 3 turns per screen second the point is drawn as a blurred ring along the loop it runs
   round (`spinLoop`, three faint loops side by side), in place of the dot.
-  Departures, flagged: the ring is retraced every 6 frames (12 on phones), not every frame; the
-  free packet is taken as round and of fixed width (a spreading packet for
+  Departures, flagged: the ring is retraced every 6 frames (12 on phones), not every frame; in a
+  lop-sided or mixed cloud the loop is not a clean ring at this resolution, so there the dot is
+  kept, shown at up to 3 turns a second; the free packet is taken as round and of fixed width (a spreading packet for
   every electron is too much to carry); the axis is not turned by magnetic fields (those in the
   level are far too weak to turn it during a flight); spin's own magnetic field and spin–orbit
   coupling are not computed (too weak to move anything here).
@@ -135,8 +136,12 @@ and what the waves cost per frame.
   the push from the same waves (this replaces the fitted core for 1s pairs). They stay together
   as H₂ only if something else carries off the energy they gain. Departures, flagged: the roll
   stands in for the joint spin wave of the two electrons; the two 1s waves are taken undistorted
-  (the real well is 4.75 eV at 0.074 nm); the pair is still drawn as two 1s clouds; an atom pairs
-  with one partner only. All four need the joint two-electron wave, which is beyond a phone.
+  (the real well is 4.75 eV at 0.074 nm); an atom pairs with one partner only. All three need the
+  joint two-electron wave, which is beyond a phone. **The bond cloud** of a paired couple is
+  worked out live from the same two 1s waves at their distance right now (`bondCloud`): each
+  atom's cloud thinned by 1/(1 + S²) plus the part piled up between the protons, 2S·φ_a·φ_b,
+  drawn about the midpoint from its l = 0, 2, 4 parts. Unpaired atoms close together really have
+  a thinned-out middle; that is not drawn.
 - **Van der Waals from the waves (wells mode).** The pull between two neutral atoms is London's
   sum over each atom's own standing waves (`c6`): −C₆/(r⁶ + S⁶), S the two clouds' sizes added.
   For 1s with 1s it gives C₆ = 5.8 (exact 6.499; the missing tenth is in waves above the energy

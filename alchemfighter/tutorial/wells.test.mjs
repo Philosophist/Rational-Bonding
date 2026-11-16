@@ -145,3 +145,13 @@ test('van der Waals from the waves: C₆ for two 1s atoms (6.499 exact; the rest
   assert.ok(c > 5.5 && c < 6.5, `${c}`);
   assert.ok(WL.c6(W, W.index(1, 0, 0), W.index(2, 1, 0)) > 10 * c, 'a wider cloud flickers further');
 });
+
+test('the bond cloud: the part piled up between two paired 1s atoms holds 2S²/(1+S²) of an electron', () => {
+  const R = 1.64, b = WL.bondCloud(R), n = b.tables[0].length;
+  // ∫ g² d³r = Σ_l ∫ table_l² r² dr (the harmonics are orthonormal); l = 0, 2, 4 carry nearly all of it
+  let tot = 0;
+  for (const t of b.tables) for (let j = 1; j < n; j++) { const r0 = b.rmax * ((j - 1) / (n - 1)) ** 2, r1 = b.rmax * (j / (n - 1)) ** 2, rm = 0.5 * (r0 + r1), tm = 0.5 * (t[j - 1] + t[j]); tot += tm * tm * rm * rm * (r1 - r0); }
+  const want = 2 * b.S * b.S / (1 + b.S * b.S);
+  assert.ok(Math.abs(tot - want) < 0.03 * want, `${tot} vs ${want}`);
+  assert.ok(Math.abs(2 * b.thin + want - 2) < 1e-12, 'two electrons in all');
+});

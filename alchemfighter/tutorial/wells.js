@@ -828,6 +828,27 @@ export function waveEnergy(W, wv, F, T) {
   }
   return E / Math.max(n2, 1e-300);
 }
+// The bond cloud of two 1s atoms with paired spins, R a₀ apart. With both electrons shared, the
+// density is (φ_a² + φ_b² + 2S·φ_a·φ_b)/(1 + S²) (Heitler and London; S the two clouds' overlap):
+// each atom's own cloud a little thinner, plus the piled-up part between the protons, 2S·φ_a·φ_b.
+// That middle part is returned as a wave g with g² equal to it, about the midpoint with the polar
+// axis along the bond: radial tables for l = 0, 2, 4 at r_j = rmax·(j/(n−1))². Also `thin`, the
+// factor 1/(1 + S²) on each atom's own cloud.
+const BOND_GL = gaussLegendre(16);
+export function bondCloud(R, rmax = Math.max(8, R / 2 + 7), n = TAB_N) {
+  const S = Math.exp(-R) * (1 + R + R * R / 3), amp = Math.sqrt(2 * S / ((1 + S * S) * Math.PI)), h = R / 2;
+  const tables = [0, 2, 4].map(() => new Float32Array(n));
+  for (let j = 0; j < n; j++) {
+    const r = rmax * (j / (n - 1)) ** 2, acc = [0, 0, 0];
+    for (let g = 0; g < BOND_GL.x.length; g++) {
+      const x = BOND_GL.x[g], ra = Math.sqrt(r * r + h * h - 2 * r * h * x), rb = Math.sqrt(r * r + h * h + 2 * r * h * x), f = amp * Math.exp(-0.5 * (ra + rb)) * BOND_GL.w[g];
+      acc[0] += f; acc[1] += f * legendre(2, 0, x); acc[2] += f * legendre(4, 0, x);
+    }
+    [0, 2, 4].forEach((l, i) => { tables[i][j] = 2 * Math.PI * angNorm(l, 0) * acc[i]; });
+  }
+  return { ls: [0, 2, 4], tables, rmax, thin: 1 / (1 + S * S), peak: amp * amp * Math.exp(-R), S };
+}
+
 // Van der Waals pull between two neutral atoms, from their waves. Each atom's electron keeps
 // flickering toward every standing wave its own wave has a dipole overlap with; two atoms'
 // flickers fall into step and that lowers their energy by C₆/R⁶ (London's second-order sum):
@@ -1030,7 +1051,7 @@ export function spinLoop(cw, p, spin, n = 32) {
   const sv = q => { const a = flowCompiled(cw, q), b = flowCompiled(cw, q, spin); return [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; };
   const al = p[0] * spin[0] + p[1] * spin[1] + p[2] * spin[2], perp = Math.hypot(p[0] - al * spin[0], p[1] - al * spin[1], p[2] - al * spin[2]);
   const v0 = sv(p), sp0 = Math.hypot(v0[0], v0[1], v0[2]), pts = [[p[0], p[1], p[2]]];
-  if (sp0 < 1e-9 || perp < 1e-6) return { pts, rate: 0 };
+  if (sp0 < 1e-9 || perp < 1e-6) return { pts, rate: 0, clean: false };
   const ds = 2 * Math.PI * perp / n; let q = [p[0], p[1], p[2]];
   for (let i = 0; i < n; i++) {
     const v = sv(q), sp = Math.hypot(v[0], v[1], v[2]); if (sp < 1e-12) break;
@@ -1039,7 +1060,10 @@ export function spinLoop(cw, p, spin, n = 32) {
     if (Math.hypot(q[0], q[1], q[2]) > 0.97 * cw.R) break;
     pts.push(q);
   }
-  return { pts, rate: sp0 / perp };
+  // A clean loop is one that keeps its distance from the axis and comes back to where it began.
+  let clean = pts.length === n + 1 && Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 3 * ds;
+  if (clean) for (const x of pts) { const a = x[0] * spin[0] + x[1] * spin[1] + x[2] * spin[2], d = Math.hypot(x[0] - a * spin[0], x[1] - a * spin[1], x[2] - a * spin[2]); if (Math.abs(d - perp) > 0.2 * perp || Math.abs(a - al) > 0.2 * perp) { clean = false; break; } }
+  return { pts, rate: sp0 / perp, clean };
 }
 // A starting point drawn from |ψ|² (the Born rule): a Metropolis walk on the compiled wave.
 export function sampleCompiled(cw, scale, rand = Math.random, steps = 800) {
