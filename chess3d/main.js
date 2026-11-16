@@ -21,7 +21,7 @@ const COLOR_NAME = { w: 'White', b: 'Black' };
 const HOST_KEY = 'chess3d-host';
 const RULES_KEY = 'chess3d-rules';
 const DOCK_KEY = 'chess3d-level-map';
-const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing', 'bareKing', 'queenLeaps'];
+const RULE_TOGGLES = ['rookDiagonals', 'gridLines', 'pawnsAnyFacing', 'bishopFacing', 'knightFacing', 'bareKing'];
 const TC_KEY = 'chess3d-tc';
 // View options (this device only): move paths, corner-facing hexagons, and
 // turning the camera to a piece when it's selected.
@@ -425,14 +425,14 @@ function addLines(positions, mat, sq) {
 // one of the knight's own axes, then a turn at right angles for the last one.
 const KNIGHT_LINE_MAT = new THREE.LineBasicMaterial({ color: THEME.bright, transparent: true, opacity: 0.4, depthWrite: false });
 const KNIGHT_DASH_MAT = new THREE.LineDashedMaterial({ color: 0xffe94d, dashSize: 0.12, gapSize: 0.09, transparent: true, opacity: 0.55, depthWrite: false });
-function addKnightPaths(from, piece, targets = app.targets) {
-  const relative = piece.t === 'N' && app.game.rules.mode === 'relative' && piece.o && app.game.rules.knightFacing;
+function addKnightPaths(from, piece) {
+  const relative = app.game.rules.mode === 'relative' && piece.o && app.game.rules.knightFacing;
   const axes = relative ? frameDirs(piece.o) : ROOK_DIRS;
   const o = coords(from);
   const solid = [], dashed = [];
   const cells = new Set();
   const a = worldPos(from);
-  for (const m of targets) {
+  for (const m of app.targets) {
     const d = coords(m.to).map((v, k) => v - o[k]);
     let leg = null;
     for (const u of axes) {
@@ -466,16 +466,6 @@ function addPaths(from, piece) {
   if (!piece) return;
   if (piece.t === 'N') return addKnightPaths(from, piece);
   const o = coords(from);
-  // A leaping queen (rule toggle): her knight jumps get the knight's L lines.
-  if (piece.t === 'Q' && app.game.rules.queenLeaps) {
-    const isLine = (m) => {
-      const d = coords(m.to).map((v, k) => v - o[k]);
-      const g = Math.max(...d.map(Math.abs));
-      return g && d.every((v) => v % g === 0);
-    };
-    const jumps = app.targets.filter((m) => !isLine(m));
-    if (jumps.length) addKnightPaths(from, piece, jumps);
-  }
   const cells = new Set();
   const line = [];
   for (const m of app.targets) {

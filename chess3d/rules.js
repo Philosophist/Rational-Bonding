@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 11;
+export const RULES_VERSION = 12;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -89,11 +89,9 @@ export const isPromotionSquare = (c, i) => {
 //                king strips yours on its very next move (a draw). Endgame
 //                solving showed a lone queen forces mate from only 1% of
 //                positions on this cube, so without it a piece up rarely wins.
-//   queenLeaps - queens also leap like knights (24 jumps, board axes). A lone
-//                queen then forces mate from every position.
 export const DEFAULT_RULES = {
-  classic: { mode: 'classic', rookDiagonals: true, bareKing: true, queenLeaps: false },
-  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: true, bishopFacing: true, knightFacing: true, bareKing: true, queenLeaps: false },
+  classic: { mode: 'classic', rookDiagonals: true, bareKing: true },
+  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: true, bishopFacing: true, knightFacing: true, bareKing: true },
 };
 
 export function normalizeRules(r) {
@@ -322,10 +320,7 @@ function pieceMoves(board, from, rules, attack = false) {
       }
       break;
     case 'B': slide(relative && rules.bishopFacing ? frameBishopDirs(p.o) : BISHOP_DIRS); break;
-    case 'Q':
-      slide(QUEEN_DIRS);
-      if (rules.queenLeaps) jump(KNIGHT_JUMPS);
-      break;
+    case 'Q': slide(QUEEN_DIRS); break;
     case 'N': jump(relative && rules.knightFacing ? frameKnightJumps(p.o) : KNIGHT_JUMPS); break;
     case 'K': jump(KING_DIRS); break;
     case 'P': {

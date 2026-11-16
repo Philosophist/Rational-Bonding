@@ -503,17 +503,3 @@ test('lone rook against a bare king is a draw when the bare-king rule is off', (
   const n = applyMove(s, { from: idx(3, 3, 0), to: idx(3, 3, 3) });
   assert.deepEqual(n.result, { winner: 'draw', reason: 'insufficient material' });
 });
-
-test('queen leaps (toggle, off by default): the queen also jumps like a knight', () => {
-  assert.equal(normalizeRules({ mode: 'classic' }).queenLeaps, false);
-  const pieces = [[idx(0, 0, 0), 'K', 'w'], [idx(3, 3, 3), 'Q', 'w'], [idx(7, 7, 7), 'K', 'b'], [idx(7, 0, 7), 'P', 'b']];
-  const jump = idx(4, 5, 3); // (1, 2, 0) away: not on any queen line
-  const plain = legalMovesFrom(withRules(pieces, 'w', { mode: 'classic' }), idx(3, 3, 3)).map((m) => m.to);
-  assert.ok(!plain.includes(jump));
-  const leaps = legalMovesFrom(withRules(pieces, 'w', { mode: 'relative', queenLeaps: true }), idx(3, 3, 3)).map((m) => m.to);
-  assert.ok(leaps.includes(jump));
-  assert.equal(leaps.length, plain.length + 24);
-  // A leaping queen gives check by jump.
-  const chk = withRules([[idx(0, 0, 0), 'K', 'w'], [idx(5, 6, 7), 'Q', 'w'], [idx(7, 7, 7), 'K', 'b']], 'b', { mode: 'classic', queenLeaps: true });
-  assert.ok(inCheck(chk.board, 'b', chk.rules));
-});
