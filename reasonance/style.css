@@ -45,7 +45,10 @@ input:focus, textarea:focus, button:focus-visible, select:focus-visible { outlin
 .bar .name { letter-spacing: 0.03em; background: linear-gradient(90deg, var(--cyan), var(--magenta)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .bar .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #map-title { width: 14em; max-width: 40vw; }
-.bar .account { margin-left: auto; }
+.bar .coffee { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; }
+.bar .coffee:hover { color: var(--cyan); }
+body.present .bar .coffee { display: none; }
+.bar .coffee + .account { margin-left: 0; }
 body.present .edit-only { display: none !important; }
 
 .stage { position: relative; flex: 1; min-height: 0; }
@@ -129,6 +132,7 @@ body:not(.present) .toast { left: calc(50% - 180px); }
   .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 42%; }
   .panel.compact { bottom: 8px; }
   #map-title, .bar .name { display: none; }
+  .bar .coffee span { display: none; }
   .bar { gap: 6px; padding: 6px 8px; }
   .bar button, .bar select { padding: 5px 10px; font-size: 14px; }
   #map-select, #add-other, #file-menu { max-width: 9em; }

@@ -61,7 +61,7 @@ developer:
 | Path | What |
 |---|---|
 | `index.html`, `site.css`, `site.js` | Homepage: the hub that points to every project (add a card for each new one), plus "Buy me a coffee" |
-| `site-config.js` | Public donation details (Monero address, Cash App `$youngidealist`) and the privacy contact email. Empty values are hidden. |
+| `site-config.js` | Public donation details (Monero address, Cash App `$youngidealist`, Liberapay and Ko-fi usernames) and the privacy contact email. Empty values are hidden. Cube Chess and Ourgument link to the homepage's `#support` section. |
 | `accounts/config.js` | The shared Rational Bonding account settings (Supabase URL, publishable key, wallet chains) used by every game |
 | `accounts/auth.js`, `accounts/signin.js` | Shared sign-in for any page: Supabase auth and `profiles`, plus the sign-in and username dialogs (used by Ourgument; Cube Chess still has its own copy) |
 | `privacy/` | Privacy policy, linked from every footer and the sign-in dialog |
