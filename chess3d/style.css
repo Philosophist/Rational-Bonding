@@ -104,6 +104,9 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 #rules-box label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
 #rules-box select:disabled, #rules-box input:disabled { opacity: .55; }
 #rules-note { color: var(--muted); font-size: 12px; }
+#support-nudge { margin: 6px 0 0; padding: 7px 9px; border: 1px solid var(--accent); border-radius: 8px; font-size: 13px; }
+#support-nudge a, #panel-foot a { color: var(--accent); }
+#panel-foot { margin: 4px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 #facing-picker { position: absolute; top: 56px; left: 12px; width: min(250px, calc(100% - 24px)); background: rgba(28,33,44,.92); border: 1px solid var(--accent); border-radius: 8px; padding: 7px 9px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 #facing-picker button { padding: 4px 9px; font-size: 13px; }
 .fp-title { font-weight: 700; }
