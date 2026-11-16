@@ -63,7 +63,7 @@ Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to t
 - **Setup:** White's back rank is on the bottom near edge (rank 1, level A), with its pawns one step diagonally toward the enemy (rank 2, level B). Black mirrors this on the opposite edge (rank 8, level H; pawns on rank 7, level G). The pieces keep their usual order, so the kings face each other along the e-file.
 - **Rook:** any distance along one axis (6 directions), and, in Classic mode by default, any distance along a flat diagonal, where two coordinates change but never all three (12 more). The diagonal move can be switched off in the rules panel.
 - **Bishop:** any distance along any diagonal: within a flat plane (including planes that cross levels) or corner to corner through the cube (20 directions). Unlike flat chess, a bishop can change square colour.
-- **Queen:** rook + bishop, so any straight line (26 directions).
+- **Queen:** rook + bishop, so any straight line (26 directions). With the toggle **Queens also leap like knights** (off by default, both modes) she can also make the knight's 24 jumps.
 - **King:** one step in any of 26 directions.
 - **Castling** works the same on both sides. The rook moves two squares along the back rank toward the king, and the king jumps to just past it. The king can land in line with the rook, or one diagonal step off that line: one square up a rank or up a level as well, onto an empty square.
   - King side, White: rook h1A→f1A, king lands on g1A, g2A or g1B.
@@ -74,6 +74,7 @@ Squares are named file + rank + level, e.g. `e1A` (levels go A to H, bottom to t
   - **Up-forward** (forward a rank and up a level at once, toward the enemy edge; down-forward for Black) is both forward and diagonal. Along it a pawn can move *or* capture 1 square, or 2 squares on its first move if the square in between is empty.
   - It promotes on reaching the enemy's back-rank edge.
 - Check, checkmate, stalemate, insufficient material and the 50-move rule all apply.
+- **Bare king loses** (toggle, on by default, both modes): capture every enemy piece except the king and you win. If the bare king can capture your last piece on its very next move it gets that one move, and taking it makes the game a draw. Why: endgame solving (rules version 10) showed that in the cube a king can run from a single piece. A king with one rook, bishop or knight can never checkmate, and a lone queen forces mate from only about 1% of positions (two rooks or two queens always can). With the rule off, king and one rook, bishop or knight against a bare king is a draw by insufficient material.
 - There is deliberately **no en passant**.
 
 ## Rule modes

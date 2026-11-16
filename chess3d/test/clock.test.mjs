@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newClock, punch, timeLeft, flagged, category, tcLabel, normalizeTimeControl, parseTcKey, tcKey, formatTime, PRESETS } from '../clock.js';
-import { initialState, timeout, canMate, idx, SIZE } from '../rules.js';
+import { initialState, timeout, canMate, idx, SIZE, normalizeRules } from '../rules.js';
 
 const live = (base, inc) => ({ type: 'live', base, inc });
 
@@ -77,9 +77,19 @@ test('timeout: a loss, or a draw if the opponent cannot mate', () => {
   board[idx(1, 0, 0)] = { t: 'Q', c: 'w', m: true };
   board[idx(7, 7, 7)] = { t: 'K', c: 'b', m: true };
   board[idx(6, 7, 7)] = { t: 'N', c: 'b', m: true };
-  const lone = { ...s, board };
-  assert.equal(canMate(board, 'b'), false);
-  assert.equal(canMate(board, 'w'), true);
+  const noBare = normalizeRules({ mode: 'classic', bareKing: false });
+  const lone = { ...s, board, rules: noBare };
+  assert.equal(canMate(board, 'b', noBare), false);
+  assert.equal(canMate(board, 'w', noBare), true);
   assert.deepEqual(timeout(lone, 'w').result, { winner: 'draw', reason: 'timeout vs insufficient material' });
   assert.deepEqual(timeout(lone, 'b').result, { winner: 'w', reason: 'timeout' });
+  // A lone rook can never mate either.
+  board[idx(6, 7, 7)] = { t: 'R', c: 'b', m: true };
+  assert.equal(canMate(board, 'b', noBare), false);
+  // With the bare-king rule (the default) any piece can still win, so a timeout loses.
+  const bare = normalizeRules({ mode: 'classic' });
+  assert.equal(canMate(board, 'b', bare), true);
+  assert.deepEqual(timeout({ ...lone, rules: bare }, 'w').result, { winner: 'b', reason: 'timeout' });
+  board[idx(6, 7, 7)] = null;
+  assert.equal(canMate(board, 'b', bare), false);
 });

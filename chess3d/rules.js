@@ -7,7 +7,7 @@
 // (y=1,z=1 / y=6,z=6) so it shields every line out of the back rank.
 
 // Bump whenever move rules change, so online players on different versions are warned.
-export const RULES_VERSION = 10;
+export const RULES_VERSION = 11;
 
 export const N = 8;
 export const SIZE = N * N * N;
@@ -84,9 +84,16 @@ export const isPromotionSquare = (c, i) => {
 //   pawnsAnyFacing - pawns may face any way, not only toward the enemy.
 //   bishopFacing   - bishops move along every adjacent line except their own axes.
 //   knightFacing   - knights leap 2-and-1 along their own frame's axes.
+// both modes:
+//   bareKing   - capturing every enemy piece but the king wins, unless the bare
+//                king strips yours on its very next move (a draw). Endgame
+//                solving showed a lone queen forces mate from only 1% of
+//                positions on this cube, so without it a piece up rarely wins.
+//   queenLeaps - queens also leap like knights (24 jumps, board axes). A lone
+//                queen then forces mate from every position.
 export const DEFAULT_RULES = {
-  classic: { mode: 'classic', rookDiagonals: true },
-  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: true, bishopFacing: true, knightFacing: true },
+  classic: { mode: 'classic', rookDiagonals: true, bareKing: true, queenLeaps: false },
+  relative: { mode: 'relative', gridLines: false, pawnsAnyFacing: true, bishopFacing: true, knightFacing: true, bareKing: true, queenLeaps: false },
 };
 
 export function normalizeRules(r) {
@@ -315,7 +322,10 @@ function pieceMoves(board, from, rules, attack = false) {
       }
       break;
     case 'B': slide(relative && rules.bishopFacing ? frameBishopDirs(p.o) : BISHOP_DIRS); break;
-    case 'Q': slide(QUEEN_DIRS); break;
+    case 'Q':
+      slide(QUEEN_DIRS);
+      if (rules.queenLeaps) jump(KNIGHT_JUMPS);
+      break;
     case 'N': jump(relative && rules.knightFacing ? frameKnightJumps(p.o) : KNIGHT_JUMPS); break;
     case 'K': jump(KING_DIRS); break;
     case 'P': {
@@ -466,9 +476,20 @@ export function allLegalMoves(state) {
   return out;
 }
 
+// A king with one rook, bishop or knight can never checkmate on this cube
+// (endgame solving found no mate position at all), in either mode.
 function insufficientMaterial(board) {
   const rest = board.filter((p) => p && p.t !== 'K');
-  return rest.length === 0 || (rest.length === 1 && 'BN'.includes(rest[0].t));
+  return rest.length === 0 || (rest.length === 1 && 'RBN'.includes(rest[0].t));
+}
+
+// The side left with only its king while the other still has pieces, or null.
+export function bareSide(board) {
+  const has = { w: 0, b: 0 };
+  for (const p of board) if (p && p.t !== 'K') has[p.c]++;
+  if (!has.w && has.b) return 'w';
+  if (!has.b && has.w) return 'b';
+  return null;
 }
 
 function computeStatus(state) {
@@ -479,7 +500,19 @@ function computeStatus(state) {
       ? { check, over: true, result: other(state.turn), reason: 'checkmate' }
       : { check, over: true, result: 'draw', reason: 'stalemate' };
   }
-  if (insufficientMaterial(state.board))
+  const rules = state.rules || CLASSIC;
+  const bare = rules.bareKing ? bareSide(state.board) : null;
+  if (bare === other(state.turn)) {
+    // The bare side had its one move to strip the last piece and didn't.
+    return { check, over: true, result: state.turn, reason: 'bare king' };
+  }
+  if (bare === state.turn) {
+    const enemy = [];
+    for (let i = 0; i < SIZE; i++) if (state.board[i] && state.board[i].c !== state.turn && state.board[i].t !== 'K') enemy.push(i);
+    const canStrip = enemy.length === 1 && allLegalMoves(state).some((m) => m.to === enemy[0]);
+    if (!canStrip) return { check, over: true, result: other(state.turn), reason: 'bare king' };
+  }
+  if (!bare && insufficientMaterial(state.board))
     return { check, over: true, result: 'draw', reason: 'insufficient material' };
   if (state.halfmove >= 100) return { check, over: true, result: 'draw', reason: '50-move rule' };
   return { check, over: false };
@@ -560,18 +593,21 @@ export function applyMove(state, input) {
   return next;
 }
 
-// Could `color` still possibly checkmate with what it has left? (A lone king,
-// or king and one bishop or knight, cannot.)
-export function canMate(board, color) {
+// Could `color` still possibly win with what it has left? A lone king cannot;
+// nor can a king with one rook, bishop or knight, unless the bare-king rule is
+// on, when any piece can win by capturing the rest.
+export function canMate(board, color, rules = CLASSIC) {
   const rest = board.filter((p) => p && p.c === color && p.t !== 'K');
-  return !(rest.length === 0 || (rest.length === 1 && 'BN'.includes(rest[0].t)));
+  if (rest.length === 0) return false;
+  if (rules.bareKing) return true;
+  return !(rest.length === 1 && 'RBN'.includes(rest[0].t));
 }
 
 // `color` ran out of time. As on chess.com it is a draw if the opponent cannot
 // possibly checkmate, otherwise a loss.
 export function timeout(state, color) {
   const winner = other(color);
-  return canMate(state.board, winner)
+  return canMate(state.board, winner, state.rules || CLASSIC)
     ? { ...state, result: { winner, reason: 'timeout' } }
     : { ...state, result: { winner: 'draw', reason: 'timeout vs insufficient material' } };
 }

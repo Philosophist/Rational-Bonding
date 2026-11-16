@@ -470,3 +470,50 @@ test('pawnAttacks: capture squares even when empty, nothing for other pieces', (
     assert.deepEqual(pawnAttacks(s.board, idx(4, 0, 0), r), [], 'a king is not a pawn');
   }
 });
+
+// ---------------------------------------------------------------- endgame rules (version 11)
+const withRules = (pieces, turn, rules) => ({ ...empty(pieces, turn), rules: normalizeRules(rules) });
+
+test('bare king: taking the last piece wins, on by default in both modes', () => {
+  assert.equal(normalizeRules({ mode: 'classic' }).bareKing, true);
+  assert.equal(normalizeRules({ mode: 'relative' }).bareKing, true);
+  // White queen takes Black's last piece, a knight far from Black's king.
+  const s = withRules([[idx(0, 0, 0), 'K', 'w'], [idx(3, 3, 0), 'Q', 'w'], [idx(7, 7, 7), 'K', 'b'], [idx(3, 3, 3), 'N', 'b']], 'w', { mode: 'classic' });
+  const n = applyMove(s, { from: idx(3, 3, 0), to: idx(3, 3, 3) });
+  assert.deepEqual(n.result, { winner: 'w', reason: 'bare king' });
+  // Without the rule, play goes on.
+  const off = withRules([[idx(0, 0, 0), 'K', 'w'], [idx(3, 3, 0), 'Q', 'w'], [idx(7, 7, 7), 'K', 'b'], [idx(3, 3, 3), 'N', 'b']], 'w', { mode: 'classic', bareKing: false });
+  assert.equal(applyMove(off, { from: idx(3, 3, 0), to: idx(3, 3, 3) }).result, null);
+});
+
+test('bare king: a bare king that can take the last piece back gets one move, then it is a draw', () => {
+  // White rook takes the knight next to Black's king; Black can recapture.
+  const s = withRules([[idx(0, 0, 0), 'K', 'w'], [idx(6, 0, 7), 'R', 'w'], [idx(7, 7, 7), 'K', 'b'], [idx(6, 6, 7), 'N', 'b']], 'w', { mode: 'classic' });
+  const n = applyMove(s, { from: idx(6, 0, 7), to: idx(6, 6, 7) });
+  assert.equal(n.result, null);
+  const back = applyMove(n, { from: idx(7, 7, 7), to: idx(6, 6, 7) });
+  assert.deepEqual(back.result, { winner: 'draw', reason: 'insufficient material' });
+  // If Black passes up the recapture, White wins.
+  const away = applyMove(n, { from: idx(7, 7, 7), to: idx(7, 7, 6) });
+  assert.deepEqual(away.result, { winner: 'w', reason: 'bare king' });
+});
+
+test('lone rook against a bare king is a draw when the bare-king rule is off', () => {
+  const s = withRules([[idx(0, 0, 0), 'K', 'w'], [idx(3, 3, 0), 'R', 'w'], [idx(7, 7, 7), 'K', 'b'], [idx(3, 3, 3), 'N', 'b']], 'w', { mode: 'classic', bareKing: false });
+  const n = applyMove(s, { from: idx(3, 3, 0), to: idx(3, 3, 3) });
+  assert.deepEqual(n.result, { winner: 'draw', reason: 'insufficient material' });
+});
+
+test('queen leaps (toggle, off by default): the queen also jumps like a knight', () => {
+  assert.equal(normalizeRules({ mode: 'classic' }).queenLeaps, false);
+  const pieces = [[idx(0, 0, 0), 'K', 'w'], [idx(3, 3, 3), 'Q', 'w'], [idx(7, 7, 7), 'K', 'b'], [idx(7, 0, 7), 'P', 'b']];
+  const jump = idx(4, 5, 3); // (1, 2, 0) away: not on any queen line
+  const plain = legalMovesFrom(withRules(pieces, 'w', { mode: 'classic' }), idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(!plain.includes(jump));
+  const leaps = legalMovesFrom(withRules(pieces, 'w', { mode: 'relative', queenLeaps: true }), idx(3, 3, 3)).map((m) => m.to);
+  assert.ok(leaps.includes(jump));
+  assert.equal(leaps.length, plain.length + 24);
+  // A leaping queen gives check by jump.
+  const chk = withRules([[idx(0, 0, 0), 'K', 'w'], [idx(5, 6, 7), 'Q', 'w'], [idx(7, 7, 7), 'K', 'b']], 'b', { mode: 'classic', queenLeaps: true });
+  assert.ok(inCheck(chk.board, 'b', chk.rules));
+});
