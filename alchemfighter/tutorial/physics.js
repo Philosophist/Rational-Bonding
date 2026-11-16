@@ -283,6 +283,40 @@ export function atomDipole(F, pol) {
   return [F[0] * s, F[1] * s, F[2] * s];
 }
 
+// Two 1s atoms close enough for their clouds to overlap, from the two atoms' own 1s waves
+// (Heitler and London's integrals, R in a₀, energies in hartree relative to two far-apart atoms).
+// With S the clouds' overlap, Q the plain electric energy of the two neutral atoms and A the
+// exchange part (the electrons trading places):
+//   spins paired (singlet):    E = (Q + A)/(1 + S²)   a well, 3.14 eV deep at 0.087 nm
+//   spins not paired (triplet): E = (Q − A)/(1 − S²)   a push at every distance
+// Simplified, flagged: the two 1s waves are taken undistorted (the real H₂ well is 4.75 eV at
+// 0.074 nm, because the clouds shrink and lean in; that needs the joint two-electron wave).
+function expInt1(x) {   // E₁(x), x > 0
+  if (x < 1) { let s = -0.5772156649015329 - Math.log(x), t = 1; for (let k = 1; k < 40; k++) { t *= -x / k; s -= t / k; } return s; }
+  let f = 0; for (let k = 60; k >= 1; k--) f = k / (1 + k / (x + f));
+  return Math.exp(-x) / (x + f);
+}
+export function heitlerLondon(R) {
+  const S = Math.exp(-R) * (1 + R + R * R / 3), Sp = Math.exp(R) * (1 - R + R * R / 3);
+  const Q = Math.exp(-2 * R) * (1 / R + 5 / 8 - 3 * R / 4 - R * R / 6);
+  const kx = (-Math.exp(-2 * R) * (-25 / 8 + 23 * R / 4 + 3 * R * R + R ** 3 / 3)
+    + 6 / R * (S * S * (0.5772156649015329 + Math.log(R)) - Sp * Sp * expInt1(4 * R) + 2 * S * Sp * expInt1(2 * R))) / 5;
+  const A = S * S / R + kx - 2 * S * Math.exp(-R) * (1 + R);
+  return { singlet: (Q + A) / (1 + S * S), triplet: (Q - A) / (1 - S * S), S };
+}
+// The paired curve as a table (eV against nm, 0.03 to 1 nm), for the forces.
+const HL_N = 400, HL_R0 = 0.03, HL_R1 = 1.0, HL_TAB = Float64Array.from({ length: HL_N + 1 }, (_, i) => heitlerLondon((HL_R0 + (HL_R1 - HL_R0) * i / HL_N) / A0).singlet * 2 * RY);
+const HL_TRI = Float64Array.from({ length: HL_N + 1 }, (_, i) => heitlerLondon((HL_R0 + (HL_R1 - HL_R0) * i / HL_N) / A0).triplet * 2 * RY);
+const hlSlope = (tab, r) => { if (r >= HL_R1) return 0; const h = (HL_R1 - HL_R0) / HL_N, i = Math.min(HL_N - 1, Math.floor((Math.max(r, HL_R0) - HL_R0) / h)); return -(tab[i + 1] - tab[i]) / h; };
+export function singletEnergy(r) {
+  if (r >= HL_R1) return 0;
+  const x = (Math.max(r, HL_R0) - HL_R0) / (HL_R1 - HL_R0) * HL_N, i = Math.min(HL_N - 1, Math.floor(x));
+  return HL_TAB[i] + (HL_TAB[i + 1] - HL_TAB[i]) * (x - i);
+}
+const singletForce = r => hlSlope(HL_TAB, r), tripletForce = r => hlSlope(HL_TRI, r);   // −dU/dr (eV/nm), > 0 repels
+// How likely two electrons with spin axes s1, s2 are to be found paired (singlet): (1 − s1·s2)/4.
+export function singletChance(s1, s2) { return (1 - (s1[0] * s2[0] + s1[1] * s2[1] + s1[2] * s2[2])) / 4; }
+
 // C₆ (eV·nm⁶) for two atoms tagged a.vdw, b.vdw, worked out from their waves; set by the game.
 let waveC6 = null;
 export function useWaveC6(fn) { waveC6 = fn; }
@@ -343,7 +377,15 @@ function accelerations(ps, out) {
       // Gravity-well physics: the pull comes from the two atoms' own waves, −C₆/(r⁶ + S⁶) with C₆
       // from waveC6 (the game's hook into wells.js) and S the two clouds' sizes together (the
       // formula is for clouds that do not overlap). The close-in core stays as it was.
-      if (waveC6 && a.vdw != null && b.vdw != null) { const S6 = ((a.soft || 0) + (b.soft || 0)) ** 6, r6 = r ** 6; f = 12 * HH_EPS * s6 * s6 / r - 6 * waveC6(a.vdw, b.vdw) * r6 / (r * (r6 + S6) ** 2); }
+      if (a.paired === b && b.paired === a) {
+        // Spins paired (set by the game when the two met): the well from their two 1s waves, plus the far pull.
+        const S6 = ((a.soft || 0) + (b.soft || 0)) ** 6, r6 = r ** 6, c = waveC6 && a.vdw != null && b.vdw != null ? waveC6(a.vdw, b.vdw) : C6_HH;
+        f = singletForce(r) - 6 * c * r6 / (r * (r6 + S6) ** 2);
+      } else if (a.hl && b.hl && waveC6 && a.vdw != null && b.vdw != null) {
+        // Two 1s atoms whose spins did not pair: the push from their two 1s waves, plus the far pull.
+        const S6 = ((a.soft || 0) + (b.soft || 0)) ** 6, r6 = r ** 6;
+        f = tripletForce(r) - 6 * waveC6(a.vdw, b.vdw) * r6 / (r * (r6 + S6) ** 2);
+      } else if (waveC6 && a.vdw != null && b.vdw != null) { const S6 = ((a.soft || 0) + (b.soft || 0)) ** 6, r6 = r ** 6; f = 12 * HH_EPS * s6 * s6 / r - 6 * waveC6(a.vdw, b.vdw) * r6 / (r * (r6 + S6) ** 2); }
       for (let c = 0; c < 3; c++) { out[i][c] -= f * d[c] / r / a.m; out[j][c] += f * d[c] / r / b.m; }
     }
   }
@@ -367,7 +409,7 @@ function timeStep(ps) {
       const mu = a.m * b.m / (a.m + b.m);
       let f;   // how hard the pair pulls or pushes (eV/nm)
       if (qq) f = KE / (r * r);
-      else if (ap && bp) { const s6 = (HH_RM / r) ** 6; f = 12 * HH_EPS * (s6 * s6 + s6) / r; }
+      else if (ap && bp) { const s6 = (HH_RM / r) ** 6; f = a.paired === b ? Math.abs(singletForce(r)) + 1e-6 : a.hl && b.hl ? Math.abs(tripletForce(r)) + 6 * C6_HH / r ** 7 + 1e-9 : 12 * HH_EPS * (s6 * s6 + s6) / r; }
       else {
         const at = ap ? a : b, pol = at.pol, F = KE / (r * r); f = dipoleMag(F, pol) * 2 * F / r + 8 * pol.c8 / r ** 9;
         if (at.dip) f += 2 * KE * Math.hypot(at.dip[0], at.dip[1], at.dip[2]) / (r * r + (at.soft || 0) ** 2) ** 1.5;

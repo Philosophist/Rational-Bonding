@@ -120,12 +120,23 @@ and what the waves cost per frame.
   free flight (`spinCircle`) the point turns about the axis through the middle of its packet at
   ħ/(m·σ²), a corkscrew about 0.4 nm wide at 0.1 eV; the forces move the packet's middle and the
   point is the middle plus its offset. A locked shot rides the middle and flies straight.
-  Departures, flagged: the circling inside an atom is shown at most 1.2 turns per screen second
-  (really about 270 a second at this clock; shown true it would be a flicker, which the game
-  never allows); the free packet is taken as round and of fixed width (a spreading packet for
+  Inside an atom the circling is far too fast to follow (about 270 turns a second at this clock),
+  so above 3 turns per screen second the point is drawn as a blurred ring along the loop it runs
+  round (`spinLoop`, three faint loops side by side), in place of the dot.
+  Departures, flagged: the ring is retraced every 6 frames (12 on phones), not every frame; the
+  free packet is taken as round and of fixed width (a spreading packet for
   every electron is too much to carry); the axis is not turned by magnetic fields (those in the
   level are far too weak to turn it during a flight); spin's own magnetic field and spin–orbit
-  coupling are not computed (too weak to move anything here); spins do not yet pair (no H₂).
+  coupling are not computed (too weak to move anything here).
+- **Spin pairing.** When two 1s atoms come within 0.6 nm, their electrons are found paired or not.
+  The chance of paired is the real one for their two spin axes, (1 − ŝ₁·ŝ₂)/4 (a quarter on
+  average), rolled once per meeting. Paired, they feel the well worked out from their two 1s
+  waves (Heitler and London's integrals, `heitlerLondon`: 3.16 eV deep at 0.087 nm); unpaired,
+  the push from the same waves (this replaces the fitted core for 1s pairs). They stay together
+  as H₂ only if something else carries off the energy they gain. Departures, flagged: the roll
+  stands in for the joint spin wave of the two electrons; the two 1s waves are taken undistorted
+  (the real well is 4.75 eV at 0.074 nm); the pair is still drawn as two 1s clouds; an atom pairs
+  with one partner only. All four need the joint two-electron wave, which is beyond a phone.
 - **Van der Waals from the waves (wells mode).** The pull between two neutral atoms is London's
   sum over each atom's own standing waves (`c6`): −C₆/(r⁶ + S⁶), S the two clouds' sizes added.
   For 1s with 1s it gives C₆ = 5.8 (exact 6.499; the missing tenth is in waves above the energy

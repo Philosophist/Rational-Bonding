@@ -1024,6 +1024,23 @@ export function rideCompiled(cw, p, t, maxSub = 120, spin = null, spinTurn = Inf
   if (r > 0.97 * cw.R) { const k = 0.97 * cw.R / r; p[0] *= k; p[1] *= k; p[2] *= k; }
   return n;
 }
+// The loop the spin term carries the point round, traced from p in n steps (points in a₀), and how
+// fast it goes round it (radians per a.u. of time). For a round cloud it is a circle about the axis.
+export function spinLoop(cw, p, spin, n = 32) {
+  const sv = q => { const a = flowCompiled(cw, q), b = flowCompiled(cw, q, spin); return [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; };
+  const al = p[0] * spin[0] + p[1] * spin[1] + p[2] * spin[2], perp = Math.hypot(p[0] - al * spin[0], p[1] - al * spin[1], p[2] - al * spin[2]);
+  const v0 = sv(p), sp0 = Math.hypot(v0[0], v0[1], v0[2]), pts = [[p[0], p[1], p[2]]];
+  if (sp0 < 1e-9 || perp < 1e-6) return { pts, rate: 0 };
+  const ds = 2 * Math.PI * perp / n; let q = [p[0], p[1], p[2]];
+  for (let i = 0; i < n; i++) {
+    const v = sv(q), sp = Math.hypot(v[0], v[1], v[2]); if (sp < 1e-12) break;
+    const mid = [0, 1, 2].map(k => q[k] + 0.5 * ds * v[k] / sp), vm = sv(mid), sm = Math.hypot(vm[0], vm[1], vm[2]); if (sm < 1e-12) break;
+    q = [0, 1, 2].map(k => q[k] + ds * vm[k] / sm);
+    if (Math.hypot(q[0], q[1], q[2]) > 0.97 * cw.R) break;
+    pts.push(q);
+  }
+  return { pts, rate: sp0 / perp };
+}
 // A starting point drawn from |ψ|² (the Born rule): a Metropolis walk on the compiled wave.
 export function sampleCompiled(cw, scale, rand = Math.random, steps = 800) {
   let p = [scale * (rand() - 0.5), scale * (rand() - 0.5), scale * (rand() - 0.5)];

@@ -671,6 +671,29 @@ function wellBlend(x, wFrom, b, wTo, ph) {
 // turns per screen second, like every other fast swing in the game, so it does not flicker.
 const spinOf = a => a.spin || (a.spin = randomDir());
 const spinTurn = dtReal => 2 * Math.PI * showHz() * Math.max(dtReal, 1 / 240);
+// When the real circling is faster than the eye can follow (more than BLUR_HZ turns per screen
+// second) the point is drawn as what it would look like: a blurred ring along the loop it runs
+// round, in place of the dot. The loop is retraced every few frames.
+const BLUR_HZ = 3;
+function spinRing(a) {
+  if (!a.pt || !a.cw) return null;
+  const every = phone.matches ? 12 : 6;
+  if (!a.ring || a.ring.cw !== a.cw && S.frameN - a.ring.at >= 2 || S.frameN - a.ring.at >= every) {
+    const L = WL.spinLoop(a.cw, a.pt, spinOf(a), phone.matches ? 24 : 36);
+    a.ring = { ...L, cw: a.cw, at: S.frameN, hz: L.rate * AU_PER_FS * (S.fsRate || FS_PER_S) / (2 * Math.PI) };
+  }
+  return a.ring.hz > BLUR_HZ && a.ring.pts.length > 4 ? a.ring : null;
+}
+function drawBoundPoints(glows) {
+  for (const a of S.atoms) {
+    if (!a.pt || a.capt) continue;
+    const ring = spinRing(a), s = spinOf(a), col = [0.6, 0.8, 1.2];
+    if (!ring) { glows.push({ pos: v3.add(a.p.pos, v3.scale(a.pt, P.A0)), size: 0.006, col }); continue; }
+    // three loops side by side read as a soft tube
+    const al = v3.dot(a.pt, s), ctr = v3.scale(s, al), at = (q, k) => v3.add(a.p.pos, v3.scale(v3.add(ctr, v3.scale(v3.sub(q, ctr), k)), P.A0));
+    for (const [k, alpha] of [[0.93, 0.22], [1, 0.6], [1.07, 0.22]]) for (let i = 1; i < ring.pts.length; i++) lines.seg(at(ring.pts[i - 1], k), at(ring.pts[i], k), col, alpha * Math.min(1, a.fade * 3));
+  }
+}
 function wellCloud(a, dtReal) {
   // A settled cloud changes slowly: rebuild it every few frames (the point still moves every frame).
   const morphing = a.capt || a.trans || (a.emitL && a.pending);
@@ -1455,12 +1478,14 @@ function step(dtReal) {
   const want = slowTarget(), rate = want < S.slow ? 10 : 1.5;
   S.slow += (want - S.slow) * (1 - Math.exp(-dtReal * rate));
   const dtFs = dt * FS_PER_S * S.slow;
+  S.fsRate = dtReal > 0 ? dtFs / dtReal : FS_PER_S;   // game femtoseconds per screen second right now
   S.simFs += dtFs;
   for (const a of S.atoms) a.p.pol = P.atomPol(Math.max(1, a.st.n || 1));   // how strongly fields pull on each atom
   updateGuides();
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
   spinCircle(dtFs);
+  updateSpinPairs();
   updateOrbits();
   for (const e of freeElectrons()) {
     // Its wave's crests drift back through the packet at half the electron's speed (phase speed v/2),
@@ -2151,8 +2176,6 @@ function draw(views, panel) {
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
   for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
-  // Gravity-well physics, pilot-wave view: each bound electron's point, riding its wave.
-  if (WELLS && S.pilot) for (const a of S.atoms) if (a.pt && !a.capt) glows.push({ pos: v3.add(a.p.pos, v3.scale(a.pt, P.A0)), size: 0.006, col: [0.6, 0.8, 1.2] });
   glows.push(...fallGlows);
   for (const f of S.flashes) {
     const x = f.t / f.life;
@@ -2160,6 +2183,8 @@ function draw(views, panel) {
   }
 
   lines.begin();
+  // Gravity-well physics, pilot-wave view: each bound electron's point riding its wave (a blurred ring when it circles too fast to follow).
+  if (WELLS && S.pilot) drawBoundPoints(glows);
   if (S.fieldView && !S.pilot) fieldLines();   // the pilot-wave view shows matter waves instead
   for (const e of freeElectrons()) {
     // Its path only where it swings close by a proton (inside TRAIL_NEAR nm), where the pull bends it.
@@ -2235,6 +2260,50 @@ function updateGuides() {
       // (the spin term of the guidance rule: the point is also carried round its spin axis wherever the wave's density changes)
       return e.spin ? v3.add(v, MW.spinVelocity(gd.E, gd.u, r, e.spin, vmax)) : v;
     };
+  }
+}
+// Spin pairing. When two 1s atoms come close enough for their clouds to overlap (PAIR_R), their two
+// electrons are found either paired (singlet) or not (triplet). The chance of paired is the real
+// one for their two spin axes, (1 − ŝ₁·ŝ₂)/4: a quarter on average, a half for opposite axes, none
+// for the same axis. It is rolled once per meeting. Paired, the two atoms feel the deep well
+// worked out from their two 1s waves (physics.js heitlerLondon); unpaired, the push from the same
+// waves. Two atoms that pair still fly apart again unless something else carries off the energy
+// they gain falling together; if their energy does end up below zero they are an H₂ molecule.
+// Departures, flagged: the roll stands in for the joint spin wave of the two electrons, which
+// would settle it; an atom pairs with one partner only; the two clouds are still drawn as two 1s
+// clouds rather than one bond cloud (both need the joint two-electron wave, which is beyond a phone).
+const PAIR_R = 0.6;   // nm
+function updateSpinPairs() {
+  if (!WELLS) return;
+  for (const p of S.ps) if (p.paired && (p.q || p.paired.q || !p.active || !p.paired.active)) { p.paired.paired = null; p.paired = null; }
+  for (const a of S.atoms) a.p.hl = a.st.n === 1;
+  const at = S.atoms.filter(a => a.st.n === 1 && !a.capt && !a.trans), meet = S.meet || (S.meet = new Map());
+  for (let i = 0; i < at.length; i++) for (let j = i + 1; j < at.length; j++) {
+    const a = at[i], b = at[j], r = v3.len(v3.sub(a.p.pos, b.p.pos)), key = `${a.p.id}:${b.p.id}`, rec = meet.get(key);
+    if (!rec) {
+      if (r > PAIR_R) continue;
+      const chance = P.singletChance(spinOf(a), spinOf(b)), paired = !a.p.paired && !b.p.paired && Math.random() < chance;
+      meet.set(key, { paired, since: S.simFs, below: 0 });
+      S.meetN = (S.meetN || 0) + 1;
+      if (paired) { a.p.paired = b.p; b.p.paired = a.p; }
+      if (S.meetN <= 4 || paired) log(paired
+        ? `Two hydrogen atoms met and their electrons' spins paired (the chance for their two spin axes was ${Math.round(100 * chance)}%). Paired, the atoms pull each other hard, up to 3 eV. They stay together only if something carries that energy away.`
+        : `Two hydrogen atoms met and their electrons' spins did not pair (the chance for their two spin axes was ${Math.round(100 * chance)}%), so they push each other apart.`, paired ? 'hit' : undefined);
+      continue;
+    }
+    if (r > PAIR_R * 1.3) {
+      if (rec.paired) { if (a.p.paired === b.p) { a.p.paired = null; b.p.paired = null; } if (!rec.bound) log('The paired atoms flew apart again: nothing took away the energy they gained falling together.'); }
+      meet.delete(key); continue;
+    }
+    if (rec.paired && !rec.bound && a.p.paired === b.p) {
+      const rv = v3.sub(a.p.vel, b.p.vel), mu = a.p.m * b.p.m / (a.p.m + b.p.m), E = 0.5 * mu * v3.dot(rv, rv) + P.singletEnergy(r);
+      rec.below = E < -0.02 ? rec.below + 1 : 0;
+      if (rec.below > 30 && S.simFs - rec.since > 40) {
+        rec.bound = true; S.h2 = (S.h2 || 0) + 1;
+        log(`H₂: two hydrogen atoms are now bound to each other by ${(-E).toFixed(2)} eV, their electrons' spins paired.`, 'hit');
+        if (S.h2 === 1) say('You made a hydrogen molecule, H₂. Two atoms met with their electrons\' spins paired, which pulls them together, and something nearby carried off enough energy that they could not fly apart again.');
+      }
+    }
   }
 }
 // Spin, in free flight. The guidance rule's spin term, (ħ/2m)·∇ln ρ × ŝ, carries the point round
