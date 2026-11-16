@@ -666,11 +666,9 @@ function wellBlend(x, wFrom, b, wTo, ph) {
 }
 // The cloud for one atom under gravity-well physics, and its point riding the wave.
 // A held electron's spin axis (its wave's; random if the atom was made without one), and how far
-// the spin term may carry the point round it per frame. Really the point in 1s goes round about
-// once every 150 attoseconds (270 times a second at this clock); it is shown at most SWING_HZ
-// turns per screen second, like every other fast swing in the game, so it does not flicker.
+// the spin term may carry the point round it per frame.
 const spinOf = a => a.spin || (a.spin = randomDir());
-const spinTurn = dtReal => 2 * Math.PI * showHz() * Math.max(dtReal, 1 / 240);
+const spinTurn = dtReal => 2 * Math.PI * 3 * Math.max(dtReal, 1 / 240);   // (3 = BLUR_HZ: slower than that the dot moves at its true rate; faster, the ring is drawn instead)
 // When the real circling is faster than the eye can follow (more than BLUR_HZ turns per screen
 // second) the point is drawn as what it would look like: a blurred ring along the loop it runs
 // round, in place of the dot. The loop is retraced every few frames.
