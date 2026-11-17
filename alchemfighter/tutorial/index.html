@@ -153,7 +153,7 @@ a { color: var(--cyan); }
     <h1 class="keep">Alchemfighter · Level 1</h1>
     <div class="head keep"><h2 id="beatTitle">Meet the proton</h2><ul class="goals" id="goals"></ul><button type="button" id="tutorToggle" aria-expanded="false" aria-controls="tutorText" title="Show the tutor and options">ⓘ</button></div>
     <div class="say" id="tutorText"></div>
-    <div class="row"><button type="button" id="fieldBtn" aria-pressed="false" title="Glow view: a calmer view without field lines (V)">Glow view</button><button type="button" id="pilotBtn" aria-pressed="true" title="Pilot-wave view: each electron and photon is a point riding its wave (P). Off: the waves alone.">Pilot-wave view</button><button type="button" id="vrBtn" title="Play in a PC VR headset">Enter VR</button><button type="button" id="skipBtn" title="Skip ahead to the electron gun">Skip to the gun</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
+    <div class="row"><button type="button" id="pilotBtn" aria-pressed="true" title="Pilot-wave view (the default): each electron and photon is a point riding its wave (V switches views)">Pilot-wave view</button><button type="button" id="fieldBtn" aria-pressed="false" title="EM field lines: the electric field lines of every charge, and each photon's electric wave (V switches views)">EM field lines</button><button type="button" id="vrBtn" title="Play in a PC VR headset">Enter VR</button><button type="button" id="skipBtn" title="Skip ahead to the electron gun">Skip to the gun</button><button type="button" id="restartBtn">Restart</button><a class="fine" href="../">About the game</a></div>
   </section>
 
   <div class="right">
@@ -228,8 +228,8 @@ a { color: var(--cyan); }
     <h1>Alchemfighter</h1>
     <h2>Level 1: Electromagnetic Stardust</h2>
     <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. In this level, the edge of the system holds matter in, but not light (photons).</p>
-    <p class="warn" role="note"><b>Photosensitivity warning.</b> This game has flashes of light and moving patterns. If you have photosensitive epilepsy, or flashing lights have ever affected you, please talk to a doctor before playing, and stop at once if you feel unwell. Glow view (V, or ⓘ on phones) is the calmer view.</p>
-    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="startCalmBtn" title="Start in Glow view: no field lines or light waves">Start in Glow view</button><button type="button" id="vrBtn2">Enter VR</button></div>
+    <p class="warn" role="note"><b>Photosensitivity warning.</b> This game has flashes of light and moving patterns. If you have photosensitive epilepsy, or flashing lights have ever affected you, please talk to a doctor before playing, and stop at once if you feel unwell.</p>
+    <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="vrBtn2">Enter VR</button></div>
     <p class="fine" style="margin-top:10px">Physics: <button type="button" id="physWells" aria-pressed="true" title="New: every atom's electron is a wave worked out on its own grid from Schrödinger's equation (a well bubble), tilted and dented by every other charge, with the electron's point riding it">Gravity wells (new)</button> <button type="button" id="physClassic" aria-pressed="false" title="The earlier model: each shell's orbitals, mixed by the field along one axis">Classic</button></p>
     <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>
   </div>

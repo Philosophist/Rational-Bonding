@@ -111,6 +111,17 @@ and what the waves cost per frame.
   A charge inside the cloud also feels the part of the proton the electron no longer covers
   (`enclosed`: the share of the electron inside each radius), and its field on the wave is
   softened over the cloud's size (1.5·n² a₀) so the pair stay matched.
+- **Light from the wave's own swing** (Steve, 2026-11-17). Each part of the electron's wave
+  swings its charge toward every lower standing wave b; the light toward b comes from all those
+  swings added with their amplitudes and phases (`sloshChannels`: D_b = Σ c_a·√(4ω³/3c³)·⟨b|r|a⟩,
+  chance per unit time |D_b|²), and the photon's swing axis is the long axis of D_b. Parts at one
+  energy add or cancel, so a mixed wave steers where the electron lands and which way the light
+  goes. Over a whole lower shell the cross terms between different shapes cancel (rotational
+  symmetry), so the total chance is still the shares times the rates. A pure standing wave keeps
+  its measured lifetime. Departures, flagged: the moment of release is still rolled from that
+  chance (the true trigger is the light field's own restlessness, far too much to simulate);
+  parts at different energies are counted separately (their cross terms beat faster than any
+  step resolves); the 2s two-photon way out stays a rate.
 - **Spin.** Every electron has a spin axis, a unit vector that belongs to its wave (random from
   the gun, which is unpolarised; an atom keeps the axis of the electron it caught). The point's
   guidance rule has its spin term: v = (ħ/m)·Im(∇ψ/ψ) + (ħ/2m)·∇ln ρ × ŝ. The axis is not read off
@@ -268,8 +279,7 @@ and what the waves cost per frame.
     on the game's clock. When the photon is found, the swing stops and the rest of the wave, now
     empty, runs out at c.
   - *No flicker:* a swing faster than 1.2 per screen second blends into its average
-    (nested surfaces of equal average field strength), fully so above 2.2 per second. Glow view
-    always shows the average, dimmer.
+    (nested surfaces of equal average field strength), fully so above 2.2 per second.
 - **Electron clouds follow Schrödinger's equation live.** While a lone atom sends light, its cloud
   is part upper shape and part lower, beating at the light's real frequency (that beat is what
   swings the charge); its share in the upper level fades as e^(−t/τ). When the beat is too fast
@@ -384,7 +394,7 @@ and what the waves cost per frame.
 - **Windows:** the HUD windows have fully clear backgrounds (only a thin outline). Every one has a − button (top right) that folds it to
   its title row, and + opens it again (remembered between visits; I folds the tutor). The Game time
   row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a faint "H" label.
-- **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
+- **Photosensitivity:** the start card carries a warning (the calmer Glow view was removed at Steve's request, 2026-11-17);
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every catch has settled (in any orbital). Protons this far apart barely move:
@@ -400,7 +410,7 @@ and what the waves cost per frame.
   separate orbitals at once.
 - **One electron, one cloud.** Between two levels the cloud is one wave made of both shapes,
   sloshing at the light's real frequency (that slosh is the swinging charge that sends the light).
-  Faster than 1.2 swings per screen second it is shown at 1.2 (0.5 in Glow view) rather than
+  Faster than 1.2 swings per screen second it is shown at 1.2 rather than
   blurred into two nested shapes, which would also flicker. The only clouds drawn as two shapes
   added together are atoms sharing an excitation with other atoms: then this atom's part of the
   shared state really is split between two possibilities.
@@ -426,11 +436,11 @@ and what the waves cost per frame.
 
 ## Views and controls
 
-- **Field view** (default): electric field lines, and each photon's electric wave. Nothing is drawn
+- **Two views** (Steve, 2026-11-17; the Glow view was removed): the **pilot-wave view** (the
+  default) and **EM field lines** (V, the two buttons, or X in VR). EM field lines: and each photon's electric wave. Nothing is drawn
   stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn
   (still counted in the physics): the magnetic fields of moving electrons and of light push on
   these slow charges about 1,000 times less than the electric fields, so they are left out.
-- **Glow view** (V): the calmer view, glows only.
 - **Window:** drag to look, or double-click for mouse look (double-click again or Esc frees the cursor; raw movement, first reading and big jumps skipped to stop drift), click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
   [ ] or the wheel for electron speed, , and . for game speed.
 - **Phones and tablets:** a flight pad bottom left (thrust ▲ ▼ ◀ ▶, rise, sink, ■ brake) and the
@@ -439,7 +449,7 @@ and what the waves cost per frame.
 - **VR:** 1 metre in the headset is drawn as 1 nm. Left stick thrusts where you look (the ship keeps drifting;
   squeeze the left grip to brake; Y changes game speed); right stick turns
   and rises or sinks; trigger fires along the right controller; A / B change electron speed; X
-  switches Field / Glow view. The tutor text and odds are on a panel above the left hand.
+  switches between the pilot-wave view and EM field lines. The tutor text and odds are on a panel above the left hand.
   Tested only with a simulated headset so far.
 
 Not in this slice yet: the photon gun, H2, the potential-landscape grid,

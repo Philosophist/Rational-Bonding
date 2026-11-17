@@ -104,7 +104,7 @@ function newState() {
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
     shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
-    b1: { start: null, maxAngle: 0, toggled: false, glowTried: false, moved: false },
+    b1: { start: null, maxAngle: 0, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0, lessonAt: 0, lesson: false },
     lock: { on: true, target: null, prog: 0, locked: false }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
   };
@@ -129,7 +129,7 @@ const freeElectrons = () => S.ps.filter(p => p.kind === 'electron' && p.active);
 const BEATS = {
   1: {
     title: 'Meet the proton',
-    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field: the lines show it. They fade as the field weakens with distance, so the bright part shows where it is strong enough to catch an electron. If the lines feel busy, press V for the calmer Glow view. Your ship drifts like anything in space: the keys fire thrusters, and X brakes.',
+    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field. The glow shows how strong it is, brightest close in, where it is strong enough to catch an electron. Press V (or EM field lines) to see the field\'s lines, and V again to come back to the pilot-wave view. Your ship drifts like anything in space: the keys fire thrusters, and X brakes.',
   },
   2: {
     title: 'First capture',
@@ -180,7 +180,6 @@ function goals() {
     return [
       ['Fly around the proton (W A S D, X to brake)', S.b1.moved],
       ['Look at it from two sides', S.b1.maxAngle > 1.3],
-      ['Try Glow view and back (V)', S.b1.toggled],
     ];
   }
   if (S.beat === 2) {
@@ -537,11 +536,11 @@ function stepWells(dtFs) {
     if (t <= 0) continue;
     WL.stepNear(WELL, wv, pull.F, pull.T, t, pull.lip);
     used++;
-    // Light: what the step lost is the chance that a photon left in it (the quantum-jump method).
     // The electron itself: what leaked over the lip of the tilted well is the chance that it left.
     if (!a.capt && a.fade >= 1 && wv.lostEsc > 0 && Math.random() < wv.lostEsc && spill(a, wv, pull)) continue;
     const free = a.pending && a.pending.hazard && a.hold <= 0 && a.fade >= 1 && !a.capt;
-    if (free && Math.random() < wv.lostLight) a.wvJump = WL.pickJump(WELL, wv.s);
+    // Light: the chance comes from the wave's own swing toward each lower standing wave, all its parts added (sloshChannels).
+    if (free && Math.random() < 1 - Math.exp(-WL.sloshChannels(WELL, wv.s).total * t)) a.wvJump = WL.pickJumpSlosh(WELL, wv.s);
     WL.normalize(wv.s);
     if (!a.wvJump) relabel(a);
     // What the other charges feel from this atom: its wave's own dipole, and how much of the
@@ -606,7 +605,7 @@ function wellStep(a) {
   a.st = from; a.wvKey = stKey(from); a.wv = WL.waveFromIndex(WELL, j.from); a.disp = null;
   if (j.twoPhoton) { const d = P.pickDecay({ n: 2, l: 0, m: 0 }); d.delayNs = delayNs; d.to = to; return d; }
   const eV = (A.E - B.E) * WL.HARTREE, dv = WL.dipoleVector(WELL, j.from, j.to), dm = v3.len(dv);
-  return { photons: [P.HC / eV], to, twoPhoton: false, dm: 0, axis: dm > 0 ? v3.scale(dv, 1 / dm) : [0, 1, 0], delayNs, tauNs };
+  return { photons: [P.HC / eV], to, twoPhoton: false, dm: 0, axis: j.axis || (dm > 0 ? v3.scale(dv, 1 / dm) : [0, 1, 0]), delayNs, tauNs };
 }
 // What is drawn and ridden: the near waves with their true phases where they change slowly, and
 // with their swings shown at most SWING_HZ per screen second where they change faster than that
@@ -1514,7 +1513,7 @@ function step(dtReal) {
     const d = v3.norm(v3.sub(camBasis().p, p.pos));
     if (!S.b1.start) S.b1.start = d;
     S.b1.maxAngle = Math.max(S.b1.maxAngle, Math.acos(Math.max(-1, Math.min(1, v3.dot(d, S.b1.start)))));
-    if (S.b1.moved && S.b1.maxAngle > 1.3 && S.b1.toggled) {
+    if (S.b1.moved && S.b1.maxAngle > 1.3) {
       log('Nicely done: you have seen the field from two sides. Your electron gun is ready.');
       startBeat(2);
     }
@@ -1673,36 +1672,33 @@ function coast(dt, margin) {
   }
 }
 
-// Field view (lines, the default) or Glow view (calmer: no lines).
-function toggleField() {
-  S.fieldView = !S.fieldView;
-  $('fieldBtn').setAttribute('aria-pressed', String(!S.fieldView));
-  if (!S.fieldView) S.b1.glowTried = true;
-  if (S.fieldView && S.b1.glowTried) S.b1.toggled = true;
-  panelDirty();
-}
+// Two views (Steve, 2026-11-17: no Glow view): the pilot-wave view (the default) and EM field lines.
+// V, the two buttons, or X in VR switch between them.
+function toggleField() { setPilot(!S.pilot); }
 function setDial(i) {
   S.dial = Math.max(0, Math.min(DIAL.length - 1, i));
   const E = DIAL[S.dial];
   $('dialOut').textContent = `${E} eV`;
   $('speedOut').textContent = `${Math.round(P.electronSpeed(E) * 1e3).toLocaleString('en-US')} km/s · ${E <= 0.2 ? 'slow' : E < 2 ? 'medium' : 'fast'}`;
 }
-$('fieldBtn').addEventListener('click', toggleField);
+$('fieldBtn').addEventListener('click', () => setPilot(false));
 // Pilot-wave view (the default): each photon is drawn as a particle riding its wave as well as the
 // wave itself. Off, only the wave is drawn. The physics is the same either way: in both, the photon
 // is taken where its path runs.
 function linesNote() {
   $('linesNote').textContent = S.pilot
-    ? 'Pilot-wave view: each electron is a point riding its matter wave; near a proton the wave bends its path. Glow brightness follows the electric field (log scale, capped at the centre). P for field lines.'
-    : 'Lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre).';
+    ? 'Pilot-wave view: each electron is a point riding its matter wave; near a proton the wave bends its path. Glow brightness follows the electric field (log scale, capped at the centre). V for EM field lines.'
+    : 'EM field lines view: lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre). V for the pilot-wave view.';
 }
-function togglePilot() {
-  S.pilot = !S.pilot;
+function setPilot(on) {
+  S.pilot = on;
   linesNote();
   $('pilotBtn').setAttribute('aria-pressed', String(S.pilot));
+  $('fieldBtn').setAttribute('aria-pressed', String(!S.pilot));
   panelDirty();
 }
-$('pilotBtn').addEventListener('click', togglePilot);
+function togglePilot() { setPilot(!S.pilot); }
+$('pilotBtn').addEventListener('click', () => setPilot(true));
 $('dialDown').addEventListener('click', () => setDial(S.dial - 1));
 $('dialUp').addEventListener('click', () => setDial(S.dial + 1));
 $('fireBtn').addEventListener('click', fire);
@@ -1723,15 +1719,13 @@ $('physClassic').addEventListener('click', () => setPhysics(false));
 $('physWells').setAttribute('aria-pressed', String(WELLS)); $('physClassic').setAttribute('aria-pressed', String(!WELLS));
 // Work out the wells' alphabet while the start card is up, so the first catch doesn't stall.
 if (WELLS) setTimeout(wellAlphabet, 200);
-$('startCalmBtn').addEventListener('click', () => { $('startBox').hidden = true; if (S.fieldView) toggleField(); });
 
 function restart() {
   S = newState();
   cam.p = [0, 1.5, 24]; cam.v = [0, 0, 0]; cam.yaw = Math.PI; cam.pitch = -0.06;
   logLines.length = 0; $('logBox').innerHTML = '';
   renderPasses(); setDial(1); setSpeed(S.speed); startBeat(1);
-  $('fieldBtn').setAttribute('aria-pressed', 'false');
-  $('pilotBtn').setAttribute('aria-pressed', 'true'); linesNote();
+  setPilot(true);
   $('lockBtn').hidden = true; $('lockBtn').setAttribute('aria-pressed', 'true'); $('rateTag').hidden = true;
   panelDirty();
 }
@@ -1898,7 +1892,7 @@ function fieldLines() {
 }
 // How fast a swing at angular frequency w (rad/fs) looks on screen, in swings per second, and how
 // much of it to draw as its average instead (0: as it is, 1: averaged). Fast swings are averaged so
-// nothing flickers (photosensitivity); Glow view always shows the average.
+// nothing flickers (photosensitivity).
 const screenHz = w => w / (2 * Math.PI) * FS_PER_S * SPEEDS[S.speed] * S.slow;
 const avgShare = w => (!S.fieldView ? 1 : Math.max(0, Math.min(1, (screenHz(w) - SWING_HZ) / (SWING_HZ_AVG - SWING_HZ))));
 // The light's field, exactly (light.js), at its real wavelength.
@@ -1909,7 +1903,7 @@ const avgShare = w => (!S.fieldView ? 1 : Math.max(0, Math.min(1, (screenHz(w) -
 //   for Lyman light, beyond about λ/4 loops break off and travel out (the radiation).
 // - A circular swing: electric field lines followed out from the atom, in 3D; they wind into
 //   spirals as the swing turns. Magnetic lines are followed round as loops.
-// - Too fast to show (or Glow view): nested surfaces of equal average field strength, which don't
+// - Too fast to show: nested surfaces of equal average field strength, which don't
 //   move, so the wave's shape and reach are seen without flicker.
 const WAVE_PLANES = 6, PSI_STEP = 1 / 30, PSI_LEVELS = 9;
 const inSystem = x => v3.dot(x, x) <= P.SPHERE_R * P.SPHERE_R;
@@ -2472,7 +2466,7 @@ function frame(now) {
 // ---------------------------------------------------------------------------
 // VR (WebXR). In the headset, 1 metre is drawn as 1 nanometre, so the sphere is 80 m across.
 // Left stick: fly where you look. Right stick: turn (left/right) and rise or sink (up/down).
-// Trigger: fire along the right controller. A/B: faster/slower electrons. X: Field/Glow view.
+// Trigger: fire along the right controller. A/B: faster/slower electrons. X: pilot-wave view or EM field lines.
 // The sticks fire thrusters: the ship keeps drifting until you brake (squeeze the left grip).
 // Y: game speed. Left stick click: pilot-wave view on or off. Right stick click: atomic lock-on on or off.
 // ---------------------------------------------------------------------------
@@ -2537,10 +2531,9 @@ function xrInput(frame, dt) {
     const edge = (key, i) => { const p = pressed(i), was = xr.buttons[key]; xr.buttons[key] = p; return p && !was; };
     if (hand === 'left') {
       if (xr.head) move = v3.add(move, v3.add(v3.scale(xr.head.f, -dz(ax[1])), v3.scale(xr.head.r, dz(ax[0]))));
-      if (edge('X', 4)) toggleField();
+      if (edge('X', 4)) togglePilot();   // X: pilot-wave view or EM field lines
       xr.brake = pressed(1);   // left grip squeeze: brake
       if (edge('Y', 5)) setSpeed(S.speed === SPEEDS.length - 1 ? 0 : S.speed + 1);
-      if (edge('LS', 3)) togglePilot();   // left stick click: pilot-wave view on/off
     } else {
       cam.yaw -= dz(ax[0]) * 1.5 * dt;
       move = v3.add(move, [0, -dz(ax[1]), 0]);
@@ -2624,7 +2617,7 @@ function drawPanelCanvas() {
   y = wrap(g, `Electron gun ${$('dialOut').textContent} · ${$('aimOut').textContent}`, 28, y + 12, W - 56, 30, 2);
   g.fillStyle = '#8a9db1';
   for (const p of S.passes.slice(0, 2)) y = wrap(g, `${p.who}: ${fmtPm(p.b)} off-centre, target ${fmtPm(2 * p.disc)} · ${p.caught ? 'CAUGHT' : 'missed'}`, 28, y + 4, W - 56, 28, 1);
-  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.fieldView ? 'Field view' : 'Glow view'} (X)   ·   pilot-wave view ${S.pilot ? 'on' : 'off'} (stick click)${lockReady() ? ` · lock-on ${S.lock.on ? 'on' : 'off'} (right stick click)` : ''}   ·   A/B electron speed   ·   ship ${$('shipOut').textContent}`, 28, H - 28);
+  g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.pilot ? 'Pilot-wave view' : 'EM field lines'} (X)${lockReady() ? ` · lock-on ${S.lock.on ? 'on' : 'off'} (right stick click)` : ''}   ·   A/B electron speed   ·   ship ${$('shipOut').textContent}`, 28, H - 28);
 }
 for (const id of ['vrBtn', 'vrBtn2']) $(id).addEventListener('click', toggleVR);
 vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).title = 'No VR headset found in this browser'; });

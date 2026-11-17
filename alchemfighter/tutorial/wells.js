@@ -449,6 +449,67 @@ export function pickJump(W, s, rand = Math.random) {
   }
   return null;
 }
+// Light from the wave's own swing. Where the electron's wave is a mix, each part of it swings its
+// charge toward a lower standing wave b with the dipole ⟨b|r|a⟩, and the light toward b comes from
+// all those swings added with their amplitudes and phases: D_b = Σ_a c_a·√(4ω³/3c³)·⟨b|r|a⟩, the
+// chance per unit time of a photon leaving toward b is |D_b|², and the light's swing (its
+// polarisation and pattern) is D_b itself. Parts at one energy add and can cancel (the same
+// frequency); parts at different energies swing at different frequencies and their cross terms
+// average out over a step (they would show as quantum beats too fast to resolve here), so they are
+// counted separately. For a pure standing wave this is exactly its usual rates. Summed over every
+// lower b in a whole shell the cross terms between different shapes cancel (rotational symmetry),
+// so the mix chiefly changes WHERE the electron lands and which way the light goes; the total
+// changes only where the near set holds part of a shell.
+// The 2s two-photon way out has no dipole swing and stays a rate on 2s's share.
+export function sloshChannels(W, s) {
+  const n2 = normSq(s), NS = s.re.length, list = [], groups = new Map(); let two = 0;
+  for (let a = 0; a < NS; a++) {
+    const p = (s.re[a] * s.re[a] + s.im[a] * s.im[a]) / n2;
+    if (p < 1e-7) continue;   // (parts this small change no chance noticeably)
+    const A = W.states[a];
+    if (A.l === 0 && A.k === 1 && A.E < 0) two += TWO_PHOTON_2S * p;
+    if (!W.down[a].length) continue;
+    const g = Math.round(A.E * 2e4);   // parts within 5e-5 hartree swing together
+    let G = groups.get(g); if (!G) groups.set(g, G = []); G.push(a);
+  }
+  // dense scratch over the lower waves, reused
+  if (!W._sl || W._sl.re.length !== 3 * NS) W._sl = { re: new Float64Array(3 * NS), im: new Float64Array(3 * NS), from: new Int32Array(NS), best: new Float64Array(NS), seen: new Uint8Array(NS) };
+  const X = W._sl, kn = 1 / Math.sqrt(n2);
+  for (const G of groups.values()) {
+    const touched = [];
+    for (const a of G) {
+      const xr = kn * s.re[a], xi = kn * s.im[a], p = xr * xr + xi * xi;
+      for (const dn of W.down[a]) {
+        // (each step's swing √rate·⟨b|r|a⟩/|⟨b|r|a⟩| is worked out once and kept)
+        if (!dn.d) { const r = dipoleVector(W, a, dn.b), rm = Math.hypot(r[0], r[1], r[2]) || 1; dn.d = r.map(v => v * Math.sqrt(dn.rate) / rm); }
+        const b = dn.b, d = dn.d, o = 3 * b;
+        if (!X.seen[b]) { X.seen[b] = 1; touched.push(b); X.best[b] = -1; }
+        X.re[o] += xr * d[0]; X.re[o + 1] += xr * d[1]; X.re[o + 2] += xr * d[2];
+        X.im[o] += xi * d[0]; X.im[o + 1] += xi * d[1]; X.im[o + 2] += xi * d[2];
+        const own = dn.rate * p; if (own > X.best[b]) { X.best[b] = own; X.from[b] = a; }
+      }
+    }
+    for (const b of touched) {
+      const o = 3 * b, re = [X.re[o], X.re[o + 1], X.re[o + 2]], im = [X.im[o], X.im[o + 1], X.im[o + 2]];
+      list.push({ b, re, im, from: X.from[b], rate: re[0] * re[0] + re[1] * re[1] + re[2] * re[2] + im[0] * im[0] + im[1] * im[1] + im[2] * im[2] });
+      X.re[o] = X.re[o + 1] = X.re[o + 2] = X.im[o] = X.im[o + 1] = X.im[o + 2] = 0; X.seen[b] = 0;
+    }
+  }
+  return { list, two, total: list.reduce((t, c) => t + c.rate, two) };
+}
+// Picks the photon: which lower wave b, and the swing that sends it (axis: the long axis of the
+// swing's ellipse).
+export function pickJumpSlosh(W, s, rand = Math.random) {
+  const { list, two, total } = sloshChannels(W, s);
+  if (!(total > 0)) return null;
+  let x = rand() * total;
+  if (two > 0 && (x -= two) <= 0) { let a2 = -1, best = 0; for (let a = 0; a < s.re.length; a++) { const S2 = W.states[a]; if (S2.l === 0 && S2.k === 1 && S2.E < 0) { const p = s.re[a] ** 2 + s.im[a] ** 2; if (p > best) { best = p; a2 = a; } } } return { from: a2, to: W.index(1, 0, 0), twoPhoton: true }; }
+  let c = list[list.length - 1];
+  for (const y of list) { x -= y.rate; if (x <= 0) { c = y; break; } }
+  const U = c.re, V = c.im, uu = U[0] ** 2 + U[1] ** 2 + U[2] ** 2, vv = V[0] ** 2 + V[1] ** 2 + V[2] ** 2, uv = U[0] * V[0] + U[1] * V[1] + U[2] * V[2];
+  const th = 0.5 * Math.atan2(2 * uv, uu - vv), ax = [0, 1, 2].map(q => U[q] * Math.cos(th) + V[q] * Math.sin(th)), am = Math.hypot(ax[0], ax[1], ax[2]);
+  return { from: c.from, to: c.b, twoPhoton: false, axis: am > 0 ? ax.map(v => v / am) : null, swing: { re: U, im: V } };
+}
 // Each standing wave's share, and the largest one.
 export function shares(s) {
   const n2 = normSq(s), p = new Float64Array(s.re.length);
