@@ -247,24 +247,56 @@ function getAim() {
   const B = flatBasis();
   return { eye: B.p, f: B.f, muzzle: v3.add(B.p, v3.add(v3.scale(B.u, -0.45), v3.scale(B.r, 0.3))) };
 }
-// Where a shot would go: stepped through the field of every charge in the system as it is right
-// now (the others are held where they are for the prediction), so the path shifts as they move.
+// Where a shot would go, worked out by the same rules that will move it: stepped through the field
+// of every charge in the system as it is right now (the others are held where they are for the
+// prediction, so the path shifts as they move), with the same close-in force as the game's
+// motion, and, once it comes within a bare proton's guide radius on the way in, carried by that
+// proton's Coulomb matter wave exactly as the shot will be (updateGuides). It is the path of the
+// middle of the electron's wave: an unaided shot's point starts somewhere in the wave's width
+// (the cone), and its spin, which the gun does not choose, makes it corkscrew about this path.
+const SOFT2_AIM = 1e-6;   // nm², the same softening as physics.js
 function predictPath(start, vel, target) {
-  const charges = S.ps.filter(q => q.active && q.q);
-  let x = [...start], v = [...vel], best = { r: Infinity, L: 0 };
+  const charges = S.ps.filter(q => q.active && q.q), protons = bareProtons();
+  let x = [...start], v = [...vel], best = { r: Infinity, L: 0 }, gd = null, entry = null;
   const pts = [[...x]];
-  for (let i = 0; i < 2500; i++) {
-    let rmin = Infinity;
+  const fieldHere = y => { const F = [0, 0, 0]; for (const q of charges) { const d = v3.sub(y, q.pos), r2 = v3.dot(d, d) + SOFT2_AIM, k = P.KE * q.q / (r2 * Math.sqrt(r2)); F[0] += k * d[0]; F[1] += k * d[1]; F[2] += k * d[2]; } return F; };
+  const flow = y => { const r = v3.sub(y, gd.p.pos), rl = Math.max(v3.len(r), 0.005), vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME); return v3.add(gd.p.vel, MW.guideVelocity(gd.E, gd.u, r, vmax)); };
+  for (let i = 0; i < 4000; i++) {
+    let rmin = Infinity, near = null;
     for (const q of charges) rmin = Math.min(rmin, v3.len(v3.sub(x, q.pos)));
-    const h = Math.min(2, 0.03 * Math.max(rmin, 0.01) / v3.len(v));
-    const E = P.fieldAt(x, charges);
-    v = v3.add(v, v3.scale(E, -h / P.ME)); x = v3.add(x, v3.scale(v, h));
+    if (!gd) {
+      let d = Infinity;
+      for (const q of protons) { const r = v3.len(v3.sub(x, q.pos)); if (r < d) { d = r; near = q; } }
+      if (near) {
+        const rel = v3.sub(v, near.vel), E = 0.5 * P.ME * v3.dot(rel, rel) - P.KE / Math.max(d, 0.01);
+        if (E >= 0.01 && d <= MW.guideRadius(E) && v3.dot(v3.sub(x, near.pos), rel) <= 0) {
+          gd = { p: near, E, R: MW.guideRadius(E), u: v3.norm(rel) };
+          // the pass's angular momentum (what the odds depend on) is the one it brings in with it
+          if (near === target && !entry) entry = v3.scale(v3.cross(v3.sub(x, near.pos), rel), P.ME / P.HBAR);
+        }
+      }
+    }
+    if (gd) {
+      const r = v3.len(v3.sub(x, gd.p.pos));
+      const h = Math.min(2, 0.02 * Math.max(r, 0.002) / Math.max(v3.len(v), 1e-6));
+      const v1 = flow(x), v2 = flow(v3.add(x, v3.scale(v1, 0.5 * h)));
+      x = v3.add(x, v3.scale(v2, h)); v = v2;
+      const r2 = v3.len(v3.sub(x, gd.p.pos));
+      if (r2 > gd.R * 1.02) {
+        const rel = v3.sub(v, gd.p.vel), sp = Math.sqrt(2 * Math.max(1e-6, gd.E + P.KE / Math.max(r2, 0.01)) / P.ME);
+        v = v3.add(gd.p.vel, v3.scale(v3.norm(rel), sp)); gd = null;
+      }
+    } else {
+      const h = Math.min(2, 0.02 * Math.max(rmin, 0.002) / v3.len(v));
+      // leapfrog, as the game moves charges
+      v = v3.add(v, v3.scale(fieldHere(x), -0.5 * h / P.ME)); x = v3.add(x, v3.scale(v, h)); v = v3.add(v, v3.scale(fieldHere(x), -0.5 * h / P.ME));
+    }
     pts.push([...x]);
     const d = v3.sub(x, target.pos), r = v3.len(d);
     if (r < best.r) { const Lv = v3.scale(v3.cross(d, v3.sub(v, target.vel)), P.ME / P.HBAR); best = { r, L: v3.len(Lv), Lvec: Lv, v: v3.sub(v, target.vel) }; }
-    if (v3.len(x) > P.SPHERE_R || (r > best.r + 3 && best.r < 3) || pts.length > 2000) break;
+    if (v3.len(x) > P.SPHERE_R || (r > best.r + 3 && best.r < 3) || pts.length > 3000) break;
   }
-  return { pts, rp: best.r, L: best.L, Lvec: best.Lvec };
+  return entry ? { pts, rp: best.r, L: v3.len(entry), Lvec: entry } : { pts, rp: best.r, L: best.L, Lvec: best.Lvec };
 }
 let aimCache = null;
 function aimInfo() {
@@ -782,6 +814,43 @@ function startLight({ pos, lam, pattern = 'lin', axis = randomDir(), from = null
 function emitPhoton(pos, lam, pattern = 'lin', axis = randomDir(), from = null, show = LIGHT_SHOW) {
   return startLight({ pos, lam, pattern, axis, from, show }).dir;
 }
+// Braking light (bremsstrahlung). An electron turned or slowed by a proton's pull radiates
+// (Larmor: power ⅔·e²a²/c³), at about the rate it is being turned (ω ≈ |a|/|v|). That energy can
+// only leave as whole photons, so the chance of one this frame is the energy radiated over a
+// photon's energy, and the photon's energy is drawn from the real spread (equal energy per
+// frequency up to ω, so photons as 1/ω), between a tenth of ω and ω. The electron pays the
+// photon's energy. The acceleration is the one the game actually gives the point (physics.js adds
+// it up), including the wave's guidance near a proton. It is very rare at these speeds: a slow
+// pass radiates about a ten-millionth of a photon.
+// Departures, flagged: the classical rate stands in for the quantum one (they agree within a
+// factor of about one for slow electrons); the softest light, below a tenth of ω, carries 10% of
+// the energy in photons too weak to matter and is not sent; only electrons free of every proton
+// radiate this way (a bound electron's light comes from its orbital).
+function brakingLight(e) {
+  const A2 = e.brem || 0, W2 = e.bremW || 0, dir = e.bremA;
+  e.brem = 0; e.bremW = 0; e.bremA = null;
+  if (!(A2 > 0)) return;
+  const dE = (2 / 3) * P.KE * A2 / P.C ** 3;   // eV
+  const w = W2 / A2, hw = P.HBAR * w;          // 1/fs, eV
+  if (!(hw > 0)) return;
+  const mean = hw * 0.9 / Math.LN10;           // mean photon energy over [ω/10, ω] for dN ∝ dω/ω
+  if (Math.random() >= dE / mean) return;
+  // its energy: dN ∝ dω/ω between ω/10 and ω
+  let Eph = hw * Math.pow(10, Math.random() - 1);
+  // what it has to give: its energy against the nearest proton (it must stay free)
+  let Erel = Infinity;
+  for (const q of bareProtons()) { const d = v3.len(v3.sub(e.pos, q.pos)), rel = v3.sub(e.vel, q.vel); Erel = Math.min(Erel, 0.5 * P.ME * v3.dot(rel, rel) - P.KE / Math.max(d, 0.01)); }
+  const KE = 0.5 * P.ME * v3.dot(e.vel, e.vel);
+  if (!(Erel > 0) && Erel !== Infinity) return;
+  Eph = Math.min(Eph, 0.9 * Math.min(Erel, KE));
+  if (!(Eph > 1e-4)) return;
+  e.vel = v3.scale(e.vel, Math.sqrt(Math.max(0, 1 - Eph / KE)));
+  const axis = dir && v3.len(dir) > 0 ? v3.norm(dir) : randomDir();
+  const L = startLight({ pos: [...e.pos], lam: P.HC / Eph, pattern: 'lin', axis });
+  e.vel = v3.sub(e.vel, v3.scale(L.dir || [0, 0, 0], Eph / P.C / P.ME));
+  S.braking = (S.braking || 0) + 1;
+  log(`Braking light: an electron turned by a proton's pull sent out a ${(P.HC / Eph).toFixed(0)} nm photon (${Eph.toFixed(3)} eV, ${describe(P.HC / Eph, 0)}) and slowed down by that much.`);
+}
 // A direction drawn from the swing's radiation pattern (times `extra(dir)` ≤ extraMax, if given).
 function patternDir(pattern, axis, extra = null, extraMax = 1) {
   let dir;
@@ -1252,6 +1321,7 @@ function endGroup(q, how, M) {
     if (!q.reex || S.paired <= 3) log(`${N > 2 ? `A group of ${N} atoms` : 'Two atoms'} let the shared photon go after ${realNs.toFixed(1)} ns${rate > 1.3 ? `, flashing together (${rate.toFixed(1)}× one atom's rate)` : rate < 0.5 ? ', after holding it back' : ''}: ${q.lam.toFixed(1)} nm ${describe(q.lam, 1)}`);
     if (rate > 1.5 && !S.flashSaid) { S.flashSaid = true; say('Those atoms just flashed together. Their little antennas were swinging in step, so their waves added up and the light left faster than any one atom could send it. Physicists call it superradiance.'); }
     x.reex = false;
+    stimJoin(x, q.up, q);
     return;
   }
   if (L) cancelLight(L);
@@ -1260,6 +1330,52 @@ function endGroup(q, how, M) {
   let d; do d = P.pickDecay(q.up); while (d.to.n === 1);
   d.delayNs = realNs; d.noShare = true;   // this step isn't Lyman light: nothing to share
   x.pending = d; x.waitFs = 0; x.hold = 0;
+}
+// Stimulated emission. When an atom sends Lyman light from an np level while another atom (or a
+// group sharing one excitation) is still up in the same np level, the light does not tell which
+// atom it came from: inside the light's wavelength the two radiate into the same light wave. So the
+// atom that just sent it lands in 1s already in step (or exactly out of step) with the excitation
+// that is left: the leftover excitation is shared between them from that moment, and in step it
+// leaves twice as fast (the pair flashes together). This is how stimulated emission works when
+// the atoms are closer together than a wavelength (Dicke's account of it). In step or out of step
+// is rolled with the real odds, (1 ± F)/2, where F is how strongly the two atoms' light adds up
+// (P.pairCoupling: 1 when close, falling off past λ/2π). Departure, flagged: the roll stands in
+// for following the light field itself.
+function stimJoin(x, up, from = null) {
+  if (!up || up.l !== 1 || up.n < 2) return false;
+  let q2 = null, bd = Infinity;
+  for (const q of S.pairs) {
+    if (q === from || q.up.n !== up.n || q.up.l !== 1 || q.members.includes(x)) continue;
+    const t = q.members[q.top || 0], d = v3.len(v3.sub(t.p.pos, x.p.pos));
+    if (d < bd) { bd = d; q2 = q; }
+  }
+  if (!q2) {
+    // a lone atom still up in the same level: it starts sharing now (x is one of the resting atoms it takes in)
+    const b = S.atoms.find(o => o !== x && !o.pair && o.pending && !o.pending.noShare && o.st.n === up.n && o.st.l === 1 && o.fade >= 1 && !(o.emitL && o.emitL.launched));
+    if (!b || !tryGroup(b)) return false;
+    if (b.emitL) { cancelLight(b.emitL); b.emitL = null; }
+    q2 = b.pair; q2.fresh = false;
+  }
+  const pOf = pOfUp(q2.up);
+  let sr = 0, si = 0, n2 = 0, xi = q2.members.indexOf(x);
+  q2.members.forEach((a, j) => {
+    if (a === x) return;
+    const d = v3.sub(a.p.pos, x.p.pos), r = v3.len(d), u = r > 1e-9 ? v3.scale(d, 1 / r) : [1, 0, 0];
+    const k = P.pairCoupling(2 * Math.PI * Math.max(r, PAIR_MIN_R) / q2.lam, pOf(u));
+    sr += k.F * q2.c.re[j]; si += k.F * q2.c.im[j]; n2 += q2.c.re[j] ** 2 + q2.c.im[j] ** 2;
+  });
+  const m = Math.hypot(sr, si), F = n2 > 0 ? Math.min(1, m / Math.sqrt(n2)) : 0;
+  if (F < 0.05) return false;
+  const sign = Math.random() < (1 + F) / 2 ? 1 : -1, k = sign * Math.sqrt(n2) / m;
+  if (xi < 0) { addMember(q2, x); xi = q2.members.length - 1; }
+  q2.c.re[xi] = k * sr; q2.c.im[xi] = k * si;
+  // the excitation left is still one excitation: the same total, now spread over both
+  for (let j = 0; j < q2.c.re.length; j++) { q2.c.re[j] /= Math.SQRT2; q2.c.im[j] /= Math.SQRT2; }
+  q2.w = q2.c.re.map((v, j) => v * v + q2.c.im[j] ** 2);
+  x.pair = q2; x.mix = { st: q2.up, w: q2.w[xi] };
+  S.stim = (S.stim || 0) + 1;
+  if (S.stim <= 2) log(`Stimulated emission: the ${P.stateName(up)} atom that just sent light landed in 1s ${sign > 0 ? 'in step' : 'out of step'} with a neighbour still in ${P.stateName(q2.up)}, so the two now share what is left${sign > 0 ? ' and will flash together, twice as fast' : ', and it can hardly get out'}.`);
+  return true;
 }
 // "far ultraviolet (Lyman-α, Lyman series)": what kind of radiation a photon is.
 function describe(lam, nLow, capture, cap = false) {
@@ -1288,6 +1404,11 @@ function startEmission(a, d) {
         if (a.emitL !== L || !S.atoms.includes(a)) return;
         const up = W.emitterShare(S.simFs - L.em.t0, L.em.tau);
         a.emitL = null; a.pending = null;
+        if (d.to.n === 1 && !d.twoPhoton && a.st.l === 1) {
+          const was = a.st; setPure(a, d.to); a.fade = Math.max(a.fade, 1);
+          if (stimJoin(a, was)) return;
+          setPure(a, was);
+        }
         a.trans = { from: a.st, to: d.to, t: 0, dur: SETTLE, s0: 2 / Math.PI * Math.asin(Math.sqrt(1 - up)), emit: L };
       },
     } });
@@ -1486,6 +1607,7 @@ function step(dtReal) {
   updateGuides();
   const res = P.stepCharges(S.ps, dtFs, S.enc);
   for (const ev of res.events) onPass(ev);
+  for (const e of freeElectrons()) brakingLight(e);
   spinCircle(dtFs);
   updateSpinPairs();
   updateOrbits();
@@ -2032,7 +2154,8 @@ const GLYPH = {
   H: [[0, 0, 0, 2], [1, 0, 1, 2], [0, 1, 1, 1]], '+': [[0, 1.6, 0.8, 1.6], [0.4, 1.2, 0.4, 2]],
   s: [[1, 1, 0, 1], [0, 1, 0, 0.5], [0, 0.5, 1, 0.5], [1, 0.5, 1, 0], [1, 0, 0, 0]], d: [[1, 2, 1, 0], [1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 1, 1]],
   f: [[1, 2, 0.5, 2], [0.5, 2, 0.5, 0], [0, 1, 1, 1]], g: [[1, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 1, 1, -1], [1, -1, 0, -1]],
-  h: [[0, 2, 0, 0], [0, 1, 1, 1], [1, 1, 1, 0]], i: [[0.5, 0, 0.5, 1], [0.5, 1.5, 0.5, 1.7]], m: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0.5, 1, 0.5, 0]], p: [[0, -1, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
+  h: [[0, 2, 0, 0], [0, 1, 1, 1], [1, 1, 1, 0]], '*': [[0.5, 0.7, 0.5, 1.9], [0, 1, 1, 1.6], [0, 1.6, 1, 1]],
+  'σ': [[0, 0, 0.8, 0], [0.8, 0, 0.8, 1], [0.8, 1, 0, 1], [0, 1, 0, 0], [0.8, 1, 1.3, 1]], i: [[0.5, 0, 0.5, 1], [0.5, 1.5, 0.5, 1.7]], m: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0.5, 1, 0.5, 0]], p: [[0, -1, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
 };
 function strokeText(str, at, h, col, alpha) {
   const B = camBasis(), w = 0.5 * h;
@@ -2043,12 +2166,12 @@ function strokeText(str, at, h, col, alpha) {
       const p2 = v3.add(at, v3.add(v3.scale(B.r, (x + x2) * w), v3.scale(B.u, y2 * w)));
       lines.seg(p1, p2, col, alpha);
     }
-    x += ch === '.' ? 1 : ch === ' ' ? 0.8 : ch === '+' ? 1 : 1.6;
+    x += glyphAdv(ch);
   }
 }
 // The same, centred on `at` (its width in the font's own steps).
 function strokeTextC(str, at, h, col, alpha) {
-  let wd = 0; for (const ch of str) wd += ch === '.' ? 1 : ch === ' ' ? 0.8 : ch === '+' ? 1 : 1.6;
+  let wd = 0; for (const ch of str) wd += glyphAdv(ch);
   wd -= 0.6;
   strokeText(str, v3.add(at, v3.scale(camBasis().r, -0.5 * wd * 0.5 * h)), h, col, alpha);
 }
@@ -2107,18 +2230,21 @@ function fallPos(f, t = f.t) {
   const x = Math.min(1, t / (0.5 * FALL_DUR)), s = x * x * (3 - 2 * x);
   return v3.add(f.atom.p.pos, v3.scale(f.off, 1 - s));
 }
-// Drawing resolution adapts to the device: when frames take too long (an electron cloud filling a
-// phone's screen is the heaviest thing to draw), the picture is drawn with fewer pixels and fewer
-// steps through each cloud, and it climbs back when there is time to spare.
-let renderScale = 1, frameAvg = 16;
-function adaptResolution(dtMs) {
+// Drawing resolution adapts to the device: when the graphics chip can't keep up (an electron
+// cloud filling a phone's screen is the heaviest thing to draw), the picture is drawn with fewer
+// pixels and fewer steps through each cloud, and it climbs back when there is time to spare.
+// Only time the frame spends waiting on drawing counts: when the physics itself is what takes
+// long, fewer pixels would only blur the picture without speeding anything up.
+let renderScale = 1, frameAvg = 16, gpuAvg = 8;
+function adaptResolution(dtMs, cpuMs) {
   frameAvg += (dtMs - frameAvg) * 0.1;
-  if (frameAvg > 45 && renderScale > 0.35) { renderScale = Math.max(0.35, renderScale * 0.85); frameAvg = 30; }
-  else if (frameAvg < 20 && renderScale < 1) renderScale = Math.min(1, renderScale * 1.03);
+  gpuAvg += (Math.max(0, dtMs - cpuMs) - gpuAvg) * 0.1;
+  if (frameAvg > 45 && gpuAvg > 0.5 * frameAvg && renderScale > 0.5) { renderScale = Math.max(0.5, renderScale * 0.85); frameAvg = 30; }
+  else if ((frameAvg < 22 || gpuAvg < 0.3 * frameAvg) && renderScale < 1) renderScale = Math.min(1, renderScale * 1.03);
 }
 const cloudSteps = () => Math.round((phone.matches ? 48 : 72) * Math.max(0.6, renderScale));
 function flatViews() {
-  const dpr = Math.min(devicePixelRatio || 1, 1.5) * renderScale;
+  const dpr = Math.min(devicePixelRatio || 1, 2) * renderScale;
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const B = flatBasis();
@@ -2444,22 +2570,102 @@ function drawZoom() {
   }
   g.textAlign = 'left';
 }
-// Faint labels, so the player connects what they see with chemistry's names: "H" centred above
-// every neutral atom with its orbital's name just under it (1s, 2p, 3d …: the orbital the atom is
-// named by, its largest share), and "H+" above every bare proton. Drawn as strokes facing the
-// viewer, sized with distance so they read the same anywhere.
+// Faint labels, so the player connects what they see with chemistry's names. Every neutral atom
+// carries the name of the orbital its cloud shows, set just outside the cloud's drawn edge (on the
+// side facing up on screen), with "H" above it; every bare proton carries "H+".
+// The orbital's name follows chemistry's own system:
+// - one orbital (90% or more of the bound wave): its name, like 2p;
+// - several orbitals of one shell mixed: a hybrid, named as chemists name them, sp^λ (λ = p share
+//   over s share, so an even 2s + 2p mix is sp, one part s to three parts p is sp³), with d and
+//   higher letters the same way (sp³d²); the leading number is the shell;
+// - when the name covers less than 90% of the bound wave (other shells mixed in, or a strong pull
+//   distorting it), an asterisk follows: 2p* means "mostly 2p, distorted".
+// Two paired 1s atoms (H₂) share one bonding orbital, σ1s, labelled once above the pair.
 const ORB_L = 'spdfghi';
+const fmtExp = x => { const r = Math.round(x); return Math.abs(x - r) < 0.15 || x >= 10 ? (r === 1 ? '' : String(r)) : x.toFixed(1); };
+function orbitalName(a) {
+  const st = a.st, n0 = st.n || 0;
+  if (!n0) return null;
+  const base = [{ t: `${n0}${ORB_L[st.l] || '?'}` }];
+  if (!WELLS || !a.wv || a.trans || a.mix || a.pair) return base;
+  const p = WL.shares(a.wv.s).p, byN = new Map();
+  let tot = 0;
+  for (let i = 0; i < p.length; i++) {
+    if (WELL.energies[i] >= 0 || p[i] < 1e-6) continue;
+    const x = WELL.states[i];
+    tot += p[i];
+    const e = byN.get(x.n) || { w: 0, l: new Float64Array(8) };
+    e.w += p[i]; e.l[x.l] += p[i]; byN.set(x.n, e);
+  }
+  if (tot <= 0) return base;
+  let n = n0, best = -1;
+  for (const [k, e] of byN) if (e.w > best) { best = e.w; n = k; }
+  const e = byN.get(n), ls = [];
+  for (let l = 0; l < 8; l++) if (e.l[l] / e.w >= 0.1) ls.push(l);
+  if (!ls.length) return base;
+  let covered = 0; for (const l of ls) covered += e.l[l];
+  const parts = [{ t: String(n) }];
+  const lead = e.l[ls[0]];
+  for (const l of ls) { parts.push({ t: ORB_L[l] || '?' }); const x = fmtExp(e.l[l] / lead); if (x) parts.push({ t: x, sup: true }); }
+  if (covered / tot < 0.9) parts.push({ t: '*' });
+  return parts;
+}
+const glyphAdv = ch => (ch === '.' ? 1 : ch === ' ' ? 0.8 : ch === '+' || ch === 'i' ? 1 : 1.6);
+// Text in parts (superscripts drawn smaller and raised), centred on `at`.
+function strokeParts(parts, at, h, col, alpha) {
+  const B = camBasis(), w = 0.5 * h;
+  let wd = 0; for (const q of parts) for (const ch of q.t) wd += glyphAdv(ch) * (q.sup ? 0.6 : 1);
+  let x = -0.5 * (wd - 0.6);
+  for (const q of parts) {
+    const k = q.sup ? 0.6 : 1, dy = q.sup ? 1.3 : 0;
+    for (const ch of q.t) {
+      for (const [x1, y1, x2, y2] of GLYPH[ch] || []) {
+        const p1 = v3.add(at, v3.add(v3.scale(B.r, (x + x1 * k) * w), v3.scale(B.u, (dy + y1 * k) * w)));
+        const p2 = v3.add(at, v3.add(v3.scale(B.r, (x + x2 * k) * w), v3.scale(B.u, (dy + y2 * k) * w)));
+        lines.seg(p1, p2, col, alpha);
+      }
+      x += glyphAdv(ch) * k;
+    }
+  }
+}
+// How far the drawn cloud reaches toward the top of the screen (nm from the nucleus): walk in
+// from the cloud's outer radius along a small fan of directions around screen-up until the
+// density reaches the level the cloud is drawn at, and keep the highest point found.
+function cloudTop(a, B) {
+  const c = a.cloud;
+  if (!c) return 0.06;
+  if (!a.cw) return 0.7 * c.radius;
+  const thr = Math.min(0.3 * c.iso, 0.01) / c.invMax, rmax = c.radius / P.A0;
+  let top = 0;
+  for (let k = -3; k <= 3; k++) {
+    const t = k * 0.22, d = v3.add(v3.scale(B.u, Math.cos(t)), v3.scale(B.r, Math.sin(t)));
+    for (let i = 48; i > 0; i--) {
+      const r = rmax * i / 48, [re, im] = WL.evalCompiled(a.cw, [d[0] * r, d[1] * r, d[2] * r]);
+      if (re * re + im * im >= thr) { top = Math.max(top, r * Math.cos(t)); break; }
+    }
+  }
+  return Math.max(top * P.A0, 0.03);
+}
 function atomLabels(eye) {
   const B = camBasis(), col = [0.75, 0.9, 1];
   const size = pos => Math.min(2, Math.max(0.075, 0.02 * v3.len(v3.sub(pos, eye))));
+  const done = new Set();
   for (const a of S.atoms) {
     const k = Math.min(1, a.fade || 0);
-    if (k < 0.05 || a.capt) continue;
-    const h = size(a.p.pos), st = a.st, n = st.n || 0;
-    const top = v3.add(a.p.pos, v3.scale(B.u, 1.8 * h));
-    strokeTextC('H', top, h, col, 0.32 * k); // centred just above the nucleus
-    // the orbital it holds, just below the nucleus (largest bound share)
-    if (n) strokeTextC(`${n}${ORB_L[st.l] || '?'}`, v3.add(a.p.pos, v3.scale(B.u, -2.6 * h)), 0.8 * h, col, 0.28 * k);
+    if (k < 0.05 || a.capt || done.has(a)) continue;
+    // cached for a few frames: the name and the cloud's edge change slowly
+    if (!a.lab || S.frameN - a.lab.at > 8 || a.lab.key !== a.wvKey) a.lab = { at: S.frameN, key: a.wvKey, name: orbitalName(a), top: cloudTop(a, B) };
+    let pos = a.p.pos, top = a.lab.top, name = a.lab.name;
+    const b = a.p.paired && S.atoms.find(x => x.p === a.p.paired);
+    if (b && a.st.n === 1 && b.st.n === 1) {
+      done.add(b);
+      pos = v3.scale(v3.add(a.p.pos, b.p.pos), 0.5);
+      top = Math.max(top, (b.lab && b.lab.top) || top) + 0.5 * Math.abs(v3.dot(v3.sub(b.p.pos, a.p.pos), B.u));
+      name = [{ t: 'σ1s' }];
+    }
+    const h = size(pos), edge = v3.add(pos, v3.scale(B.u, top + 1.2 * h));
+    if (name) strokeParts(name, edge, 0.8 * h, col, 0.3 * k);
+    strokeTextC(b && name && name[0].t === 'σ1s' ? 'H2' : 'H', v3.add(edge, v3.scale(B.u, (name ? 1.6 : 0) * h)), h, col, 0.32 * k);
   }
   for (const p of S.ps) {
     if (p.kind !== 'proton' || !p.active || p.q !== 1) continue;
@@ -2474,13 +2680,14 @@ function atomLabels(eye) {
 let last = performance.now();
 function frame(now) {
   if (xr.session) return;   // the headset drives the loop while in VR
-  const dtMs = now - last, dt = Math.min(0.05, Math.max(0, dtMs / 1000)); last = now;
-  adaptResolution(dtMs);
+  const t0 = performance.now(), dtMs = now - last, dt = Math.min(0.05, Math.max(0, dtMs / 1000)); last = now;
+  adaptResolution(dtMs, S.cpuMs || 0);
   const paused = !$('startBox').hidden || !$('doneBox').hidden;
   fly(paused ? 0 : dt);
   if (!paused) { step(dt); updateLock(dt); }
   updateHud(); drawSpectro(); drawLadder(); drawZoom();
   draw(flatViews(), null);
+  S.cpuMs = performance.now() - t0;
   requestAnimationFrame(frame);
 }
 
@@ -2646,5 +2853,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('lockBtn').addEventListener('click', toggleLock);
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);

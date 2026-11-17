@@ -124,7 +124,9 @@ vec4 sampleCloud(int i, Cloud C, vec3 pw){
 }
 void marchCloud(int i, Cloud C, vec3 ro, vec3 rd, float t0, float t1, inout vec3 acc, inout float T){
   float dt = (t1 - t0) / float(uSteps);
-  float t = t0 + dt * hash(gl_FragCoord.xy + fract(uTime) * 61.0 + float(i) * 7.3);
+  // interleaved gradient noise: a fine, even dither (far less blotchy grain than a plain hash)
+  vec2 fc = gl_FragCoord.xy + vec2(5.588238, 5.588238) * floor(fract(uTime * 7.0) * 64.0) + float(i) * 17.0;
+  float t = t0 + dt * fract(52.9829189 * fract(dot(fc, vec2(0.06711056, 0.00583715))));
   float k = dt / C.radius;
   for (int s = 0; s < 256; s++) {
     if (s >= uSteps) break;

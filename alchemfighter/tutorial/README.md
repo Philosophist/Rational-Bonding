@@ -444,6 +444,35 @@ and what the waves cost per frame.
 
 ## Views and controls
 
+- **Orbital labels** (Steve, 2026-11-17): every neutral atom's orbital is named just outside the
+  drawn edge of its cloud (found by walking in from the cloud's rim until the density reaches the
+  level it is drawn at), with "H" above it. Names follow chemistry's own system: one orbital (90% or
+  more of the bound wave) by its name (2p); several orbitals of one shell as a hybrid, sp^λ with
+  λ = p share over s share (sp, sp², sp³, sp³d²; the leading number is the shell); an asterisk when
+  the name covers less than 90% of the bound wave (other shells mixed in or a strong pull
+  distorting it): 2p*. A spin-paired H₂ shows σ1s once, above the pair.
+- **Aim path** (Steve, 2026-11-17): the predicted path now follows the same rules as the shot: the
+  game's own close-in force and leapfrog steps, and inside a bare proton's guide radius the Coulomb
+  matter wave's flow (updateGuides). It is the path of the middle of the wave; an unaided shot's
+  point starts somewhere in the wave's width and its spin makes it corkscrew about the path. The
+  odds use the angular momentum the shot brings in. Checked: exit direction within 1 to 2° of the
+  real shot (the old classical path was off by over 100° on close passes).
+- **Sharper picture:** the resolution only drops when the graphics chip is what's slow (not when
+  the physics is), never below half, and up to 2 device pixels per screen pixel; clouds use a fine
+  interleaved-gradient dither instead of a blotchy hash.
+- **Stimulated emission** (Steve, 2026-11-17): when an atom sends Lyman light from np while another
+  atom or group is still up in the same np level, the light can't tell which atom sent it (they
+  are inside a wavelength of each other), so the sender lands in 1s sharing the leftover
+  excitation, in step with chance (1 + F)/2 (then the two flash together, about twice as fast) or
+  out of step (it can hardly get out). This is stimulated emission for atoms closer than a
+  wavelength (Dicke). Departure: the roll stands in for following the light field itself.
+- **Braking light** (bremsstrahlung, Steve 2026-11-17): physics.js adds up each electron's
+  acceleration (∫a²dt; near a proton the wave's Coulomb pull at the point stands in for jumps in
+  the guided flow); the game turns Larmor's radiated energy into whole photons with energies
+  spread as 1/ω between ω/10 and ω (ω ≈ |a|/|v|), and the electron pays each photon's energy.
+  Very rare: about 2 in a million passes at 1 nm, 6 in 100,000 at 0.1 nm (0.1 eV). Departures:
+  classical rate for the quantum one; light below ω/10 (10% of the energy, very soft) not sent;
+  only free electrons radiate this way.
 - **Two views** (Steve, 2026-11-17; the Glow view was removed): the **pilot-wave view** (the
   default) and **EM field lines** (V, the two buttons, or X in VR). EM field lines: and each photon's electric wave. Nothing is drawn
   stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn
