@@ -1691,8 +1691,8 @@ $('fieldBtn').addEventListener('click', () => setPilot(false));
 // is taken where its path runs.
 function linesNote() {
   $('linesNote').textContent = S.pilot
-    ? 'Pilot-wave view: each electron is a point riding its matter wave; near a proton the wave bends its path. Glow brightness follows the electric field (log scale, capped at the centre). V for EM field lines.'
-    : 'EM field lines view: lines follow the electric field. Glow brightness follows its strength (log scale, capped at the centre). V for the pilot-wave view.';
+    ? 'Pilot-wave view: each electron is a point riding its matter wave; near a proton the wave bends its path. The haze around each charge brightens with the electric field (log scale, capped at the centre). V for EM field lines.'
+    : 'EM field lines view: lines follow the electric field. The haze around each charge brightens with its strength (log scale, capped at the centre). V for the pilot-wave view.';
 }
 function setPilot(on) {
   S.pilot = on;
@@ -2028,7 +2028,11 @@ const GLYPH = {
   3: [[0, 2, 1, 2], [1, 2, 1, 0], [1, 0, 0, 0], [0, 1, 1, 1]], 4: [[0, 2, 0, 1], [0, 1, 1, 1], [1, 2, 1, 0]], 5: [[1, 2, 0, 2], [0, 2, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
   6: [[1, 2, 0, 2], [0, 2, 0, 0], [0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]], 7: [[0, 2, 1, 2], [1, 2, 1, 0]], 8: [[0, 0, 1, 0], [1, 0, 1, 2], [1, 2, 0, 2], [0, 2, 0, 0], [0, 1, 1, 1]],
   9: [[1, 1, 0, 1], [0, 1, 0, 2], [0, 2, 1, 2], [1, 2, 1, 0], [1, 0, 0, 0]], '.': [[0.4, 0, 0.6, 0]],
-  n: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0]], m: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0.5, 1, 0.5, 0]], p: [[0, -1, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
+  n: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0]],
+  H: [[0, 0, 0, 2], [1, 0, 1, 2], [0, 1, 1, 1]], '+': [[0, 1.6, 0.8, 1.6], [0.4, 1.2, 0.4, 2]],
+  s: [[1, 1, 0, 1], [0, 1, 0, 0.5], [0, 0.5, 1, 0.5], [1, 0.5, 1, 0], [1, 0, 0, 0]], d: [[1, 2, 1, 0], [1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 1, 1]],
+  f: [[1, 2, 0.5, 2], [0.5, 2, 0.5, 0], [0, 1, 1, 1]], g: [[1, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 1, 1, -1], [1, -1, 0, -1]],
+  h: [[0, 2, 0, 0], [0, 1, 1, 1], [1, 1, 1, 0]], i: [[0.5, 0, 0.5, 1], [0.5, 1.5, 0.5, 1.7]], m: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [0.5, 1, 0.5, 0]], p: [[0, -1, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]],
 };
 function strokeText(str, at, h, col, alpha) {
   const B = camBasis(), w = 0.5 * h;
@@ -2039,8 +2043,14 @@ function strokeText(str, at, h, col, alpha) {
       const p2 = v3.add(at, v3.add(v3.scale(B.r, (x + x2) * w), v3.scale(B.u, y2 * w)));
       lines.seg(p1, p2, col, alpha);
     }
-    x += ch === '.' ? 1 : ch === ' ' ? 0.8 : 1.6;
+    x += ch === '.' ? 1 : ch === ' ' ? 0.8 : ch === '+' ? 1 : 1.6;
   }
+}
+// The same, centred on `at` (its width in the font's own steps).
+function strokeTextC(str, at, h, col, alpha) {
+  let wd = 0; for (const ch of str) wd += ch === '.' ? 1 : ch === ' ' ? 0.8 : ch === '+' ? 1 : 1.6;
+  wd -= 0.6;
+  strokeText(str, v3.add(at, v3.scale(camBasis().r, -0.5 * wd * 0.5 * h)), h, col, alpha);
 }
 const fmtLen = nm => (nm < 0.1 ? `${(nm * 1000).toFixed(0)} pm` : nm < 10 ? `${nm.toFixed(nm < 1 ? 2 : 1)} nm` : `${nm.toFixed(0)} nm`);
 function aimPath(a) {
@@ -2434,20 +2444,27 @@ function drawZoom() {
   }
   g.textAlign = 'left';
 }
-// A faint "H" beside every neutral atom, so the player connects the caught proton with hydrogen.
-// Drawn as three strokes facing the viewer, sized with distance so it reads the same anywhere.
+// Faint labels, so the player connects what they see with chemistry's names: "H" centred above
+// every neutral atom with its orbital's name just under it (1s, 2p, 3d …: the orbital the atom is
+// named by, its largest share), and "H+" above every bare proton. Drawn as strokes facing the
+// viewer, sized with distance so they read the same anywhere.
+const ORB_L = 'spdfghi';
 function atomLabels(eye) {
-  const B = camBasis();
+  const B = camBasis(), col = [0.75, 0.9, 1];
+  const size = pos => Math.min(2, Math.max(0.075, 0.02 * v3.len(v3.sub(pos, eye))));
   for (const a of S.atoms) {
     const k = Math.min(1, a.fade || 0);
     if (k < 0.05 || a.capt) continue;
-    const d = v3.len(v3.sub(a.p.pos, eye)), h = Math.min(4, Math.max(0.15, 0.04 * d));
-    const c = v3.add(a.p.pos, v3.add(v3.scale(B.u, 0.25 * a.st.n * a.st.n + 1.1 * h), v3.scale(B.r, 0.6 * h)));
-    const at = (x, y) => v3.add(c, v3.add(v3.scale(B.r, x * h), v3.scale(B.u, y * h)));
-    const col = [0.75, 0.9, 1], al = 0.32 * k;
-    lines.seg(at(-0.3, -0.5), at(-0.3, 0.5), col, al);
-    lines.seg(at(0.3, -0.5), at(0.3, 0.5), col, al);
-    lines.seg(at(-0.3, 0), at(0.3, 0), col, al);
+    const h = size(a.p.pos), st = a.st, n = st.n || 0;
+    const top = v3.add(a.p.pos, v3.scale(B.u, 1.8 * h));
+    strokeTextC('H', top, h, col, 0.32 * k); // centred just above the nucleus
+    // the orbital it holds, just below the nucleus (largest bound share)
+    if (n) strokeTextC(`${n}${ORB_L[st.l] || '?'}`, v3.add(a.p.pos, v3.scale(B.u, -2.6 * h)), 0.8 * h, col, 0.28 * k);
+  }
+  for (const p of S.ps) {
+    if (p.kind !== 'proton' || !p.active || p.q !== 1) continue;
+    const h = size(p.pos);
+    strokeTextC('H+', v3.add(p.pos, v3.scale(B.u, 0.05 + 1.2 * h)), h, [1, 0.85, 0.6], 0.3);
   }
 }
 

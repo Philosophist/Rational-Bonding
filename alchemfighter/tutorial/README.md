@@ -401,7 +401,7 @@ and what the waves cost per frame.
     keeps its charge centred, so that pull is due to be brought in line.
 - **Windows:** the HUD windows have fully clear backgrounds (only a thin outline). Every one has a − button (top right) that folds it to
   its title row, and + opens it again (remembered between visits; I folds the tutor). The Game time
-  row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a faint "H" label.
+  row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a small, faint "H" centred just above the nucleus, with the orbital holding the largest bound share named just below it (for example "2p"); bare protons carry "H+" (Steve, 2026-11-17).
 - **Photosensitivity:** the start card carries a warning (the calmer Glow view was removed at Steve's request, 2026-11-17);
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
 - **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
