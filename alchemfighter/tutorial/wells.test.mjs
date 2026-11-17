@@ -172,3 +172,17 @@ test('light from the wave\'s swing: a pure wave keeps its own rates; a mix steer
   const want = 0.5 * (W.gamma[W.index(3, 0, 0)] + W.gamma[W.index(3, 2, 0)]);
   for (const sg of [1, -1]) assert.ok(Math.abs(WL.sloshChannels(W, mix(sg)).total / want - 1) < 1e-6);
 });
+
+test('a point carried from 3p into 1s keeps its place in the spread and ends inside the 1s cloud', () => {
+  const c3 = WL.compileWave(W, WL.pureState(W, 3, 1, 0)), c1 = WL.compileWave(W, WL.pureState(W, 1, 0, 0));
+  const p = [0, 12, 0]; WL.carryPoint(c3, c1, p);
+  const r = Math.hypot(...p), u3 = (() => { const x = WL.radialCdf(c3); return x; })();
+  assert.ok(r > 0.3 && r < 4, `r ${r}`);
+  assert.ok(p[0] === 0 && p[1] > 0 && p[2] === 0, 'same direction');
+  // 1s: the share inside r is 1 − e^{−2r}(1 + 2r + 2r²); it matches the 3p share inside 12 a₀
+  const in1 = 1 - Math.exp(-2 * r) * (1 + 2 * r + 2 * r * r);
+  const x = Math.sqrt(12 / c3.R) * (u3.length - 1), j = Math.floor(x), in3 = u3[j] + (u3[j + 1] - u3[j]) * (x - j);
+  assert.ok(Math.abs(in1 - in3) < 0.02, `${in1} vs ${in3}`);
+  // far outside the new cloud with no old wave: brought to its edge, not left outside
+  const q = [80, 0, 0]; WL.carryPoint(null, c1, q); assert.ok(q[0] < 5);
+});

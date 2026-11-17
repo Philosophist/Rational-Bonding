@@ -727,16 +727,20 @@ function wellCloud(a, dtReal) {
   if (extra != null) reach = Math.max(reach, WL.stateStats(WELL, extra).reach);
   const terms = wellTerms(cw).slice(0, freeT ? MAX_WELL_TERMS - 1 : MAX_WELL_TERMS);
   if (freeT) terms.unshift(freeT);
-  // The point: placed by the Born rule once the electron has settled in, then carried by the wave.
   if (!a.capt) {
-    if (!a.pt) a.pt = WL.sampleCompiled(cw, Math.max(1.5, 0.6 * reach));
-    else WL.rideCompiled(cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 60 : 120, spinOf(a), spinTurn(dtReal * (a.cloud ? S.frameN - a.cloudAt : 1)));
+    // A caught electron's point starts where the electron itself came in; whenever the wave's
+    // make-up changes the point is carried with it (WL.carryPoint), so it stays in the cloud.
+    if (!a.pt) a.pt = a.ptIn ? WL.carryPoint(null, cw, [...a.ptIn]) : WL.sampleCompiled(cw, Math.max(1.5, 0.6 * reach));
+    else if (a.ptSh && a.ptCw && sharesMoved(a.ptSh, sh)) WL.carryPoint(a.ptCw, cw, a.pt);
+    a.ptIn = null; a.ptSh = sh; a.ptCw = cw;
+    if (a.pt) WL.rideCompiled(cw, a.pt, (a.ptFs || 0) * AU_PER_FS * (a.ptRate || 1), phone.matches ? 60 : 120, spinOf(a), spinTurn(dtReal * (a.cloud ? S.frameN - a.cloudAt : 1)));
   }
   a.ptFs = 0;
   const radius = Math.max(Math.min(reach * 1.1, WELL.R), free ? free.rmax : 0) * P.A0;
   a.cw = cw; a.cloudAt = S.frameN; a.cloudKey = a.wvKey;
   return (a.cloud = { pos: a.p.pos, radius, frame: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], terms, free, trmax: WELL.R, invMax: 1 / (pk || 1), iso: iso / (pk || 1), fade: Math.min(1, a.fade * 3) });
 }
+const sharesMoved = (x, y) => { if (x.length !== y.length) return true; let d = 0; for (let i = 0; i < x.length; i++) d += Math.abs(x[i] - y[i]); return d > 2e-3; };
 const MAX_WELL_TERMS = phone.matches ? 6 : 10;   // fewer shapes per cloud on phones: the strongest ones
 // An atom sharing an excitation with others: its two parts belong to different joint states of
 // the group, so their densities add (group 1), as in classic physics.
@@ -940,7 +944,7 @@ function capture(e, p, E, viaDisc = false) {
   const axis = v3.len(F0) > FIELD_MIN ? v3.norm(F0) : Lh > 1e-6 ? v3.norm(Lv) : [0, 1, 0];
   const mAbs = Math.min(pick.l, Math.round(Math.abs(v3.dot(Lv, axis)))), m = mAbs && Math.random() < 0.5 ? -mAbs : mAbs;
   const st = { n: pick.n, l: pick.l, m };
-  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', from: null, to: st }], spin: e.spin || randomDir() };
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [{ lam, kind: 'capture', from: null, to: st }], spin: e.spin || randomDir(), ptIn: v3.scale(off, 1 / P.A0) };
   setPure(atom, st);
   // The capture itself: the free electron's wave (its l = pick.lIn part, solved at its energy) turns
   // into the orbital over FALL_DUR, one wave the whole way, sloshing at the light's frequency.
@@ -1019,7 +1023,7 @@ function catchOrbit(e, p, E, Lv) {
   e.active = false;
   S.ps = S.ps.filter(x => x !== e);
   p.q = 0;
-  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [], capt: null, spin: e.spin || randomDir() };
+  const atom = { p, st, axis, trans: null, fade: 0, beat: 0, waitFs: 0, hold: 0, pending: null, steps: [], capt: null, spin: e.spin || randomDir(), ptIn: v3.scale(v3.sub(e.pos, p.pos), 1 / P.A0) };
   setPure(atom, st);
   S.atoms.push(atom);
   p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));

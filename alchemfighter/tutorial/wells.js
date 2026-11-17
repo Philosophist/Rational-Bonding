@@ -1126,6 +1126,39 @@ export function spinLoop(cw, p, spin, n = 32) {
   if (clean) for (const x of pts) { const a = x[0] * spin[0] + x[1] * spin[1] + x[2] * spin[2], d = Math.hypot(x[0] - a * spin[0], x[1] - a * spin[1], x[2] - a * spin[2]); if (Math.abs(d - perp) > 0.2 * perp || Math.abs(a - al) > 0.2 * perp) { clean = false; break; } }
   return { pts, rate: sp0 / perp, clean };
 }
+// How much of the compiled wave lies inside each table radius (0 to 1).
+export function radialCdf(cw) {
+  if (cw._cdf) return cw._cdf;
+  const n = TAB_N, out = new Float64Array(n), R = cw.R; let acc = 0, prev = 0;
+  for (let j = 0; j < n; j++) {
+    const r = R * (j / (n - 1)) ** 2; let d = 0;
+    for (const c of cw.chans) d += c.tr[j] * c.tr[j] + c.ti[j] * c.ti[j];
+    d *= r * r;
+    if (j) acc += 0.5 * (d + prev) * (r - R * ((j - 1) / (n - 1)) ** 2);
+    out[j] = acc; prev = d;
+  }
+  for (let j = 0; j < n; j++) out[j] /= acc || 1;
+  return (cw._cdf = out);
+}
+const cdfAt = (cdf, r, R) => { const x = Math.sqrt(Math.min(1, Math.max(0, r / R))) * (cdf.length - 1), j = Math.min(cdf.length - 2, Math.floor(x)); return cdf[j] + (cdf[j + 1] - cdf[j]) * (x - j); };
+function radiusAt(cdf, u, R) {
+  let lo = 0, hi = cdf.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cdf[m] < u) lo = m; else hi = m; }
+  const f = cdf[hi] > cdf[lo] ? (u - cdf[lo]) / (cdf[hi] - cdf[lo]) : 0, x = lo + f;
+  return R * (x / (cdf.length - 1)) ** 2;
+}
+// When the wave's make-up changes (a step down, a step up, a field blending in another orbital),
+// the point is carried with it: it keeps its direction and its place in the wave's radial spread
+// (the share of the wave inside its radius stays the same, from the old wave to the new). So a
+// point that was in the outer part of 3p ends in the outer part of 1s, never left outside the
+// cloud. With no old wave (just caught) the point's radius is taken as its place in the new wave.
+export function carryPoint(cwOld, cwNew, p) {
+  const r = Math.hypot(p[0], p[1], p[2]);
+  if (r < 1e-9) return p;
+  const u = Math.min(0.995, Math.max(0.005, cdfAt(radialCdf(cwOld || cwNew), r, (cwOld || cwNew).R))), r2 = radiusAt(radialCdf(cwNew), u, cwNew.R), k = r2 / r;
+  p[0] *= k; p[1] *= k; p[2] *= k;
+  return p;
+}
 // A starting point drawn from |ψ|² (the Born rule): a Metropolis walk on the compiled wave.
 export function sampleCompiled(cw, scale, rand = Math.random, steps = 800) {
   let p = [scale * (rand() - 0.5), scale * (rand() - 0.5), scale * (rand() - 0.5)];

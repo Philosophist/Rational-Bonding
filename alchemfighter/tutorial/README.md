@@ -122,6 +122,14 @@ and what the waves cost per frame.
   chance (the true trigger is the light field's own restlessness, far too much to simulate);
   parts at different energies are counted separately (their cross terms beat faster than any
   step resolves); the 2s two-photon way out stays a rate.
+- **The point stays in its cloud.** Before, when an atom stepped down (or a field blended in
+  another orbital) the wave changed but the point stayed where it was, so after 3p → 1s it could
+  sit far outside the 1s cloud, where its real standing wave carries it nowhere. Now the point is
+  carried with the wave whenever its make-up changes (`carryPoint`): it keeps its direction and
+  its place in the wave's radial spread. A caught electron's point starts where the electron
+  came in, placed the same way. Departure, flagged: the carrying is that radial matching, not
+  the wave's flow integrated through the change (the change happens in attoseconds and is shown
+  slowed, so following the true flow would cost hundreds of steps a frame).
 - **Spin.** Every electron has a spin axis, a unit vector that belongs to its wave (random from
   the gun, which is unpolarised; an atom keeps the axis of the electron it caught). The point's
   guidance rule has its spin term: v = (ħ/m)·Im(∇ψ/ψ) + (ħ/2m)·∇ln ρ × ŝ. The axis is not read off
