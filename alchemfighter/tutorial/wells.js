@@ -828,6 +828,50 @@ export function waveEnergy(W, wv, F, T) {
   }
   return E / Math.max(n2, 1e-300);
 }
+// The bond cloud of two 1s atoms with paired spins, R a₀ apart. With both electrons shared, the
+// density is (φ_a² + φ_b² + 2S·φ_a·φ_b)/(1 + S²) (Heitler and London; S the two clouds' overlap):
+// each atom's own cloud a little thinner, plus the piled-up part between the protons, 2S·φ_a·φ_b.
+// That middle part is returned as a wave g with g² equal to it, about the midpoint with the polar
+// axis along the bond: radial tables for l = 0, 2, 4 at r_j = rmax·(j/(n−1))². Also `thin`, the
+// factor 1/(1 + S²) on each atom's own cloud.
+const BOND_GL = gaussLegendre(16);
+export function bondCloud(R, rmax = Math.max(8, R / 2 + 7), n = TAB_N) {
+  const S = Math.exp(-R) * (1 + R + R * R / 3), amp = Math.sqrt(2 * S / ((1 + S * S) * Math.PI)), h = R / 2;
+  const tables = [0, 2, 4].map(() => new Float32Array(n));
+  for (let j = 0; j < n; j++) {
+    const r = rmax * (j / (n - 1)) ** 2, acc = [0, 0, 0];
+    for (let g = 0; g < BOND_GL.x.length; g++) {
+      const x = BOND_GL.x[g], ra = Math.sqrt(r * r + h * h - 2 * r * h * x), rb = Math.sqrt(r * r + h * h + 2 * r * h * x), f = amp * Math.exp(-0.5 * (ra + rb)) * BOND_GL.w[g];
+      acc[0] += f; acc[1] += f * legendre(2, 0, x); acc[2] += f * legendre(4, 0, x);
+    }
+    [0, 2, 4].forEach((l, i) => { tables[i][j] = 2 * Math.PI * angNorm(l, 0) * acc[i]; });
+  }
+  return { ls: [0, 2, 4], tables, rmax, thin: 1 / (1 + S * S), peak: amp * amp * Math.exp(-R), S };
+}
+
+// Van der Waals pull between two neutral atoms, from their waves. Each atom's electron keeps
+// flickering toward every standing wave its own wave has a dipole overlap with; two atoms'
+// flickers fall into step and that lowers their energy by C₆/R⁶ (London's second-order sum):
+//   C₆ = (2/3)·Σ_a Σ_b |⟨A|r|a⟩|²·|⟨B|r|b⟩|² / (ΔE_a + ΔE_b)     (a.u.; 6.499 for 1s with 1s).
+// Simplified, flagged: averaged over the atoms' orientations; each atom taken in its one main
+// standing wave; pairs of flickers that cost nearly nothing in total (|ΔE_a + ΔE_b| < 0.002
+// hartree: a true resonance, where energy is handed over rather than borrowed) are left out.
+function flickers(W, a) {
+  if (!W._osc) W._osc = new Map();
+  let o = W._osc.get(a);
+  if (!o) { o = dipoleRows(W)[a].map(c => ({ dE: W.energies[c.a] - W.energies[a], d2: c.q[0] * c.q[0] + c.q[1] * c.q[1] + c.q[2] * c.q[2] })).filter(x => x.d2 > 1e-12); W._osc.set(a, o); }
+  return o;
+}
+export function c6(W, a, b) {
+  if (!W._c6) W._c6 = new Map();
+  const key = a < b ? a * 65536 + b : b * 65536 + a; let v = W._c6.get(key);
+  if (v === undefined) {
+    v = 0; const A = flickers(W, a), B = flickers(W, b);
+    for (const x of A) for (const y of B) { const d = x.dE + y.dE; if (Math.abs(d) > 0.002) v += x.d2 * y.d2 / d; }
+    v *= 2 / 3; W._c6.set(key, v);
+  }
+  return v;
+}
 // How much of the electron is inside radius r: a table at r_j = R·(j/(n−1))² (fine near the proton). A charge that far from
 // the proton feels the proton less that much of the electron (the cloud taken as round; the
 // lop-sided part is the dipole above). Shares of the standing waves only, their beats left out.
@@ -961,32 +1005,65 @@ export function evalCompiled(cw, p) {
   for (const c of cw.chans) { const y = cw.Y[c.ch]; re += tabAt(c.tr, r, cw.R) * y; im += tabAt(c.ti, r, cw.R) * y; }
   return [re, im];
 }
-export function flowCompiled(cw, p) {
+// The point's velocity (a.u.) at p. With a spin axis (unit vector `spin`) the guidance rule has its
+// spin term too: v = Im(∇ψ/ψ) + Re(∇ψ/ψ) × ŝ (that is (ħ/2m)·∇ln ρ × ŝ, the flow of the spin's own
+// current), scaled by spinK (1 = real).
+export function flowCompiled(cw, p, spin = null, spinK = 1) {
   const d = 1e-3 * Math.max(0.05, Math.hypot(p[0], p[1], p[2]));
   const w0 = evalCompiled(cw, p), den = w0[0] * w0[0] + w0[1] * w0[1];
   if (den < 1e-300) return [0, 0, 0];
-  const v = [0, 0, 0];
+  const v = [0, 0, 0], g = [0, 0, 0];
   for (let q = 0; q < 3; q++) {
     const a = [p[0], p[1], p[2]], b = [p[0], p[1], p[2]]; a[q] += d; b[q] -= d;
     const wa = evalCompiled(cw, a), wb = evalCompiled(cw, b);
     v[q] = (w0[0] * (wa[1] - wb[1]) - w0[1] * (wa[0] - wb[0])) / (2 * d) / den;
+    g[q] = (w0[0] * (wa[0] - wb[0]) + w0[1] * (wa[1] - wb[1])) / (2 * d) / den;
   }
+  if (spin && spinK) { v[0] += spinK * (g[1] * spin[2] - g[2] * spin[1]); v[1] += spinK * (g[2] * spin[0] - g[0] * spin[2]); v[2] += spinK * (g[0] * spin[1] - g[1] * spin[0]); }
   return v;
 }
 // Moves the point p (a₀) for time t (a.u.) on the compiled wave. Returns the substeps used.
-export function rideCompiled(cw, p, t, maxSub = 120) {
-  let left = t, n = 0;
+// spinTurn (radians): the most the spin term may carry the point round its axis in this call, so
+// the circling can be shown slowed instead of as a flicker (Infinity = real rate).
+export function rideCompiled(cw, p, t, maxSub = 120, spin = null, spinTurn = Infinity) {
+  let left = t, n = 0, spinK = 1;
+  if (spin && t > 0 && Number.isFinite(spinTurn)) {
+    const v0 = flowCompiled(cw, p), v1 = flowCompiled(cw, p, spin), vs = Math.hypot(v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]);
+    const al = p[0] * spin[0] + p[1] * spin[1] + p[2] * spin[2], perp = Math.hypot(p[0] - al * spin[0], p[1] - al * spin[1], p[2] - al * spin[2]);
+    const turn = vs * t / Math.max(perp, 1e-6);
+    if (turn > spinTurn) spinK = spinTurn / turn;
+  }
   while (left > 1e-12 && n < maxSub) {
-    const v = flowCompiled(cw, p), sp = Math.hypot(v[0], v[1], v[2]), r = Math.hypot(p[0], p[1], p[2]);
+    const v = flowCompiled(cw, p, spin, spinK), sp = Math.hypot(v[0], v[1], v[2]), r = Math.hypot(p[0], p[1], p[2]);
     if (sp < 1e-12) break;
     const dt = Math.min(left, 0.08 * Math.max(r, 0.3) / sp);
-    const mid = [p[0] + 0.5 * dt * v[0], p[1] + 0.5 * dt * v[1], p[2] + 0.5 * dt * v[2]], vm = flowCompiled(cw, mid);
+    const mid = [p[0] + 0.5 * dt * v[0], p[1] + 0.5 * dt * v[1], p[2] + 0.5 * dt * v[2]], vm = flowCompiled(cw, mid, spin, spinK);
     p[0] += dt * vm[0]; p[1] += dt * vm[1]; p[2] += dt * vm[2];
     left -= dt; n++;
   }
   const r = Math.hypot(p[0], p[1], p[2]);
   if (r > 0.97 * cw.R) { const k = 0.97 * cw.R / r; p[0] *= k; p[1] *= k; p[2] *= k; }
   return n;
+}
+// The loop the spin term carries the point round, traced from p in n steps (points in a₀), and how
+// fast it goes round it (radians per a.u. of time). For a round cloud it is a circle about the axis.
+export function spinLoop(cw, p, spin, n = 32) {
+  const sv = q => { const a = flowCompiled(cw, q), b = flowCompiled(cw, q, spin); return [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; };
+  const al = p[0] * spin[0] + p[1] * spin[1] + p[2] * spin[2], perp = Math.hypot(p[0] - al * spin[0], p[1] - al * spin[1], p[2] - al * spin[2]);
+  const v0 = sv(p), sp0 = Math.hypot(v0[0], v0[1], v0[2]), pts = [[p[0], p[1], p[2]]];
+  if (sp0 < 1e-9 || perp < 1e-6) return { pts, rate: 0, clean: false };
+  const ds = 2 * Math.PI * perp / n; let q = [p[0], p[1], p[2]];
+  for (let i = 0; i < n; i++) {
+    const v = sv(q), sp = Math.hypot(v[0], v[1], v[2]); if (sp < 1e-12) break;
+    const mid = [0, 1, 2].map(k => q[k] + 0.5 * ds * v[k] / sp), vm = sv(mid), sm = Math.hypot(vm[0], vm[1], vm[2]); if (sm < 1e-12) break;
+    q = [0, 1, 2].map(k => q[k] + ds * vm[k] / sm);
+    if (Math.hypot(q[0], q[1], q[2]) > 0.97 * cw.R) break;
+    pts.push(q);
+  }
+  // A clean loop is one that keeps its distance from the axis and comes back to where it began.
+  let clean = pts.length === n + 1 && Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 3 * ds;
+  if (clean) for (const x of pts) { const a = x[0] * spin[0] + x[1] * spin[1] + x[2] * spin[2], d = Math.hypot(x[0] - a * spin[0], x[1] - a * spin[1], x[2] - a * spin[2]); if (Math.abs(d - perp) > 0.2 * perp || Math.abs(a - al) > 0.2 * perp) { clean = false; break; } }
+  return { pts, rate: sp0 / perp, clean };
 }
 // A starting point drawn from |ψ|² (the Born rule): a Metropolis walk on the compiled wave.
 export function sampleCompiled(cw, scale, rand = Math.random, steps = 800) {

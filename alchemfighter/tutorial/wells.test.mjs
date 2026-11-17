@@ -128,3 +128,30 @@ test('the share of the electron inside a radius', () => {
   assert.ok(Math.abs(at(1) - (1 - Math.exp(-2) * 5)) < 0.02, `${at(1)}`);    // inside 1 a₀: 0.323
   assert.ok(q[q.length - 1] === 1 && q[0] === 0);
 });
+
+test('with spin the point circles its spin axis, even in 1s (angular rate 1/r)', () => {
+  const cw = WL.compileWave(W, WL.pureState(W, 1, 0, 0)), p = [1.2, 0.5, 0], s = [0, 1, 0];
+  const v = WL.flowCompiled(cw, p, s), r = Math.hypot(1.2, 0.5);
+  assert.ok(Math.abs(Math.hypot(...v) - 1.2 / r) < 0.06, `${v}`);   // speed sin θ (in units of αc)
+  WL.rideCompiled(cw, p, 2, 400, s);
+  assert.ok(Math.abs(Math.hypot(p[0], p[2]) - 1.2) < 0.01 && Math.abs(p[1] - 0.5) < 1e-6, 'a circle about the axis');
+  assert.ok(Math.hypot(p[0] - 1.2, p[2]) > 1, 'and it has moved');
+  const q = [1.2, 0.5, 0]; WL.rideCompiled(cw, q, 2, 400, s, 0.1);   // shown slowed: at most 0.1 rad
+  assert.ok(Math.abs(Math.atan2(-q[2], q[0])) < 0.11);
+});
+
+test('van der Waals from the waves: C₆ for two 1s atoms (6.499 exact; the rest is above E_CUT)', () => {
+  const c = WL.c6(W, W.index(1, 0, 0), W.index(1, 0, 0));
+  assert.ok(c > 5.5 && c < 6.5, `${c}`);
+  assert.ok(WL.c6(W, W.index(1, 0, 0), W.index(2, 1, 0)) > 10 * c, 'a wider cloud flickers further');
+});
+
+test('the bond cloud: the part piled up between two paired 1s atoms holds 2S²/(1+S²) of an electron', () => {
+  const R = 1.64, b = WL.bondCloud(R), n = b.tables[0].length;
+  // ∫ g² d³r = Σ_l ∫ table_l² r² dr (the harmonics are orthonormal); l = 0, 2, 4 carry nearly all of it
+  let tot = 0;
+  for (const t of b.tables) for (let j = 1; j < n; j++) { const r0 = b.rmax * ((j - 1) / (n - 1)) ** 2, r1 = b.rmax * (j / (n - 1)) ** 2, rm = 0.5 * (r0 + r1), tm = 0.5 * (t[j - 1] + t[j]); tot += tm * tm * rm * rm * (r1 - r0); }
+  const want = 2 * b.S * b.S / (1 + b.S * b.S);
+  assert.ok(Math.abs(tot - want) < 0.03 * want, `${tot} vs ${want}`);
+  assert.ok(Math.abs(2 * b.thin + want - 2) < 1e-12, 'two electrons in all');
+});

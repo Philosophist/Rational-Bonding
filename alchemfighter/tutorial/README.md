@@ -111,6 +111,46 @@ and what the waves cost per frame.
   A charge inside the cloud also feels the part of the proton the electron no longer covers
   (`enclosed`: the share of the electron inside each radius), and its field on the wave is
   softened over the cloud's size (1.5·n² a₀) so the pair stay matched.
+- **Spin.** Every electron has a spin axis, a unit vector that belongs to its wave (random from
+  the gun, which is unpolarised; an atom keeps the axis of the electron it caught). The point's
+  guidance rule has its spin term: v = (ħ/m)·Im(∇ψ/ψ) + (ħ/2m)·∇ln ρ × ŝ. The axis is not read off
+  the path and the point is not forced round it; the circling is what that term does wherever the
+  wave's density changes. In a held wave (`flowCompiled`) the point circles the axis even in 1s,
+  at speed αc·sin θ. Near a bare proton (`spinVelocity`) it is carried out of the flat path. In
+  free flight (`spinCircle`) the point turns about the axis through the middle of its packet at
+  ħ/(m·σ²), a corkscrew about 0.4 nm wide at 0.1 eV; the forces move the packet's middle and the
+  point is the middle plus its offset. A locked shot rides the middle and flies straight.
+  Inside an atom the circling is far too fast to follow (about 270 turns a second at this clock),
+  so above 3 turns per screen second the point is drawn as a blurred ring along the loop it runs
+  round (`spinLoop`, three faint loops side by side), in place of the dot.
+  Departures, flagged: the ring is retraced every 6 frames (12 on phones), not every frame; in a
+  lop-sided or mixed cloud the loop is not a clean ring at this resolution, so there the dot is
+  kept, shown at up to 3 turns a second; the free packet is taken as round and of fixed width (a spreading packet for
+  every electron is too much to carry); the axis is not turned by magnetic fields (those in the
+  level are far too weak to turn it during a flight); spin's own magnetic field and spin–orbit
+  coupling are not computed (too weak to move anything here).
+- **Spin pairing.** When two 1s atoms come within 0.6 nm, their electrons are found paired or not.
+  The chance of paired is the real one for their two spin axes, (1 − ŝ₁·ŝ₂)/4 (a quarter on
+  average), rolled once per meeting. Paired, they feel the well worked out from their two 1s
+  waves (Heitler and London's integrals, `heitlerLondon`: 3.16 eV deep at 0.087 nm); unpaired,
+  the push from the same waves (this replaces the fitted core for 1s pairs). They stay together
+  as H₂ only if something else carries off the energy they gain. Departures, flagged: the roll
+  stands in for the joint spin wave of the two electrons; the two 1s waves are taken undistorted
+  (the real well is 4.75 eV at 0.074 nm); an atom pairs with one partner only. All three need the
+  joint two-electron wave, which is beyond a phone. **The bond cloud** of a paired couple is
+  worked out live from the same two 1s waves at their distance right now (`bondCloud`): each
+  atom's cloud thinned by 1/(1 + S²) plus the part piled up between the protons, 2S·φ_a·φ_b,
+  drawn about the midpoint from its l = 0, 2, 4 parts. Unpaired atoms close together really have
+  a thinned-out middle; that is not drawn.
+- **Van der Waals from the waves (wells mode).** The pull between two neutral atoms is London's
+  sum over each atom's own standing waves (`c6`): −C₆/(r⁶ + S⁶), S the two clouds' sizes added.
+  For 1s with 1s it gives C₆ = 5.8 (exact 6.499; the missing tenth is in waves above the energy
+  cut). Departures, flagged: the true cause is the two electrons' waves moving in step, which
+  needs one joint wave for the pair (957 × 957 amplitudes per pair of atoms, far beyond a phone),
+  so the second-order sum stands in for it; it is averaged over orientations and uses each atom's
+  one main standing wave; resonant pairs are left out. The close-in repulsive core between atoms
+  is still the fitted curve (its cause, exchange between overlapping clouds, also needs the
+  joint wave).
 - **Simplified, flagged:** the rim leak is an estimate, not a wave solved through an open edge:
   it uses each standing wave's own energy (not its shift in the pull), has no tunnelling under the
   rim, and puts the point just past the rim rather than following it out. A free electron is still
@@ -120,7 +160,7 @@ and what the waves cost per frame.
   paid back, so energy drifts by a few hundredths of an eV in a close pass. The pull is taken
   to second order (tilt and dent), which is rough for a charge passing through the cloud itself
   (the dent of a charge closer than the cloud's size is taken at that size); a 1s-sized core still keeps charges
-  0.1 nm from an atom's proton (no H⁻ or H₂⁺ yet); spin and fine structure are left out; the Lamb shift
+  0.1 nm from an atom's proton (no H⁻ or H₂⁺ yet); fine structure is left out; the Lamb shift
   and the 2s two-photon rate are added from measurement (both quantum electrodynamics); when a
   step down happens the wave collapses onto the one lower standing wave the photon left it in; a
   near set is capped at 260 standing waves (120 on phones). Capture itself (the lock-on, the odds,
@@ -248,8 +288,8 @@ and what the waves cost per frame.
   test checks that this flow conserves probability. So the point is pulled round the proton,
   focused behind it, and wiggles where the incoming and scattered parts of the wave meet. While
   guided, the other charges' pulls on it are left out (the wave is the one-proton solution).
-  In the pilot-wave view the electric field lines are replaced by this wave: its crests in the
-  plane holding the electron's way in and the point, brighter where the wave is denser.
+  The wave itself is not drawn near a proton (its flat slice of crests was removed at Steve's
+  request); the point and its trail show the path.
 - **Drawing resolution adapts** when frames get slow (an electron cloud filling a phone screen
   is the heaviest thing to draw), down to 35% of the pixels and fewer steps through each cloud.
 - **Pilot-wave view (on by default; P, the "Pilot-wave view" button, or the left stick click in

@@ -439,3 +439,19 @@ test('an electron guided by its wave hands its proton the opposite momentum, and
   const tot = [0, 1, 2].map(k => P.MP * pr.vel[k] + P.ME * e.vel[k]);
   assert.ok(Math.abs(tot[0]) < 1e-9 * P.ME && Math.abs(tot[2] - 0.2 * P.ME) < 1e-9 * P.ME, `${tot}`);
 });
+
+test('two 1s atoms from their own waves: paired spins make a well (3.16 eV at 0.087 nm), unpaired push', () => {
+  let best = [0, 0];
+  for (let R = 0.8; R < 6; R += 0.01) { const h = P.heitlerLondon(R); if (h.singlet < best[1]) best = [R, h.singlet]; assert.ok(h.triplet > 0, `triplet at ${R}`); }
+  assert.ok(Math.abs(best[0] - 1.64) < 0.03 && Math.abs(best[1] + 0.116) < 0.002, `${best}`);
+  assert.ok(Math.abs(P.singletEnergy(0.0868) + 3.155) < 0.02);
+  assert.equal(P.singletChance([0, 0, 1], [0, 0, -1]), 0.5);
+  assert.equal(P.singletChance([0, 0, 1], [0, 0, 1]), 0);
+  // two paired atoms released at rest 0.3 nm apart fall together and come back out (energy kept)
+  const mk = x => ({ id: 'a' + x, pos: [x, 0, 0], vel: [0, 0, 0], q: 0, m: P.MP + P.ME, active: true, pol: P.atomPol(1) });
+  const a = mk(-0.15), b = mk(0.15); a.paired = b; b.paired = a; a.soft = b.soft = 1.5 * P.A0;
+  const U = r => P.singletEnergy(r) - P.C6_HH / (r ** 6 + (3 * P.A0) ** 6);
+  let rmin = 1, E0 = U(0.3);
+  for (let i = 0; i < 400; i++) { P.stepCharges([a, b], 0.25, new Map(), 1e9); const r = b.pos[0] - a.pos[0]; rmin = Math.min(rmin, r); const E = 0.5 * a.m * a.vel[0] ** 2 * 2 + U(r); assert.ok(Math.abs(E - E0) < 0.03, `energy ${E} vs ${E0} at r=${r}`); }
+  assert.ok(rmin < 0.07, `they fell together to ${rmin}`);
+});
