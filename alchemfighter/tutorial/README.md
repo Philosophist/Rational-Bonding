@@ -457,9 +457,10 @@ and what the waves cost per frame.
   point starts somewhere in the wave's width and its spin makes it corkscrew about the path. The
   odds use the angular momentum the shot brings in. Checked: exit direction within 1 to 2° of the
   real shot (the old classical path was off by over 100° on close passes).
-- **Sharper picture:** the resolution only drops when the graphics chip is what's slow (not when
-  the physics is), never below half, and up to 2 device pixels per screen pixel; clouds use a fine
-  interleaved-gradient dither instead of a blotchy hash.
+- **Picture:** clouds use a fine interleaved-gradient dither instead of a blotchy hash; desktops
+  may draw up to 2 device pixels per screen pixel (phones 1.5). An attempt to lower resolution only
+  when the graphics chip was slow broke phones (graphics calls block the page, so it never
+  lowered) and was undone, 2026-11-18.
 - **Stimulated emission** (Steve, 2026-11-17): when an atom sends Lyman light from np while another
   atom or group is still up in the same np level, the light can't tell which atom sent it (they
   are inside a wavelength of each other), so the sender lands in 1s sharing the leftover
@@ -493,6 +494,12 @@ and what the waves cost per frame.
   - Departures: bound electron treated as standing still in the binary rule (rough, about a factor
     of 2); far and close passes are split at the cloud's size, so near the edge both can act;
     n = 2 → 1 uses the measured superelastic rate.
+- **2026-11-18 (Steve):** learning shots back to 5; when the lock-on is introduced every free
+  electron is cleared for a clean start; the aim path line is no longer drawn (its prediction still
+  sets the rings' angular momentum); the gun goes down to 0.001 eV (0.001, 0.002, 0.005, 0.01, 0.02
+  added; capture tables computed down to there); a free electron circling its spin axis faster than
+  3 turns per screen second is drawn as a blurred loop with its trail along the loop's middle
+  (frame-by-frame sampling drew a false zigzag).
 - **Two views** (Steve, 2026-11-17; the Glow view was removed): the **pilot-wave view** (the
   default) and **EM field lines** (V, the two buttons, or X in VR). EM field lines: and each photon's electric wave. Nothing is drawn
   stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn

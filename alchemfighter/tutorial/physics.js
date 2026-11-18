@@ -40,7 +40,7 @@ export function kramersSigma(n, E) {
 // The game uses the computed cross sections (quantum.js): the free electron's own wave, solved at
 // its real energy one partial wave at a time, overlapped with every orbital up to n = 6.
 export const CAPTURE_NMAX = Q.NMAX;
-export const captureSigma = E => Q.captureSigmaQ(Math.max(E, 0.01));
+export const captureSigma = E => Q.captureSigmaQ(Math.max(E, 0.001));
 
 // Closest approach of an electron with energy E (at infinity) and impact parameter b,
 // on its hyperbola around a proton: r = √(b² + s²) − s, with s = k/(2E).
@@ -64,7 +64,7 @@ export const angularL = h => ME * h / HBAR;
 // and the wave near the proton is mostly the partial wave l ≈ L/ħ − ½. Each partial wave has its own
 // computed chance of being caught, into its own orbitals: light changes l by exactly one, so
 // l = 0 (head-on) can only land in p orbitals, l = 1 lands mostly in 1s, l = 3 mostly in 3d.
-export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01), L);
+export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.001), L);
 
 // The capture target, pilot-wave view. The electron is a point riding its wave; the proton catches
 // it if the point comes in through a disc whose area is the capture cross section σ (all orbitals
@@ -77,7 +77,7 @@ export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01)
 const sigGrid = new Map();
 function sigmaAt(i) { if (!sigGrid.has(i)) sigGrid.set(i, captureSigma(10 ** (i / 10))); return sigGrid.get(i); }
 export function captureSigmaFast(E) {
-  const x = 10 * Math.log10(Math.min(100, Math.max(E, 0.01))), i = Math.floor(x), f = x - i;
+  const x = 10 * Math.log10(Math.min(100, Math.max(E, 0.001))), i = Math.floor(x), f = x - i;
   return Math.exp(Math.log(sigmaAt(i)) * (1 - f) + Math.log(sigmaAt(i + 1)) * f);
 }
 export const captureDiscRadius = E => Math.sqrt(captureSigmaFast(E) / Math.PI);
@@ -112,7 +112,7 @@ export function gaussian(rand = Math.random) {
 // computed odds of every partial wave into every orbital. m is uniform here; the game ties it to
 // the pass (see capture in game.js). Returns { n, l, m, lIn }.
 export function pickCaptureState(E, L = 1, rand = Math.random) {
-  const x = L === null ? Q.pickCaptureBeam(Math.max(E, 0.01), rand) : Q.pickCapture(Math.max(E, 0.01), L, rand);
+  const x = L === null ? Q.pickCaptureBeam(Math.max(E, 0.001), rand) : Q.pickCapture(Math.max(E, 0.001), L, rand);
   const m = Math.floor(rand() * (2 * x.l + 1)) - x.l;
   return { n: x.n, l: x.l, m, lIn: x.lIn };
 }

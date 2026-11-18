@@ -85,7 +85,7 @@ const SWING_HZ = 1.2, SWING_HZ_AVG = 2.2;
 const ACID_N = 9;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
 const THRUST = 5, THRUST_FAST = 15, BRAKE = 10;   // nm/s²
-const DIAL = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
+const DIAL = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
 const PROTON_SMEAR = 0.01;       // nm, keeps the glow's centre finite (log scale, capped)
 // Missed electrons stay in the sphere (matter can't leave). Fire as many as you like; past this many
 // free electrons the oldest one is removed, to keep the simulation smooth.
@@ -103,7 +103,7 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
-    shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: 1, cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
+    shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: DIAL.indexOf(0.1), cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0, lessonAt: 0, lesson: false },
     lock: { on: true, target: null, prog: 0, locked: false }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
@@ -345,7 +345,7 @@ const launchKE = (E, dist) => E + P.KE / Math.max(dist, 0.5);
 // same spot in its wave every time and steers it through the disc, so the proton catches it. What
 // stays real: which orbital it lands in is rolled from the computed odds for the pass's angular
 // momentum (where on the rings you aim), and everything after the catch.
-const UNAIDED = 10;             // shots with real odds before the lesson and the lock-on
+const UNAIDED = 5;             // shots with real odds before the lesson and the lock-on
 const LOCK_TIME = 1.0;         // s of steady aim to close the lock
 const LOCK_LMAX = Q.NMAX + 0.5;   // the lock holds only inside the rings (angular momentum the odds cover)
 const lockReady = () => S.beat >= 3 || (S.beat === 2 && S.b2.lesson);
@@ -370,6 +370,9 @@ function giveLesson() {
   const E = DIAL[S.dial], disc = 2 * P.captureDiscRadius(E) * 1000, sh = Q.captureShares(E);
   const pct = k => Math.round(100 * (sh[k] || 0));
   say(`${S.b2.captured ? 'You beat the odds!' : 'None caught, and that is normal.'} The point has to come in through a disc only ${disc.toFixed(1)} pm across at ${E} eV (the 1s cloud it would join is 106 pm across, the proton itself 0.0017 pm), and your gun cannot choose where the point sits inside its wave: that is random. On average a 1 eV electron needs about 20 million passes before one is caught. Space is still full of neutral hydrogen because protons and electrons meet so often: in a neon sign's glow a proton waits about 25 seconds, in the thin upper air months to years, and in ordinary air a proton never waits at all, it takes an electron from a molecule within billionths of a second. In this tiny system, with ten free electrons, it would be about 25 microseconds, which at our clock is about 20 years of play. So your ship has a made-up technology: atomic lock-on. Hold the crosshair on the proton until the lock closes, then fire. Which orbital it lands in is still rolled from the real odds: at this speed about ${pct('1s')}% go straight to 1s, ${pct('2p')}% to 2p, ${pct('2s')}% to 2s.`);
+  // A clean start for the lock-on: every free electron is cleared out of the system.
+  for (const e of freeElectrons()) e.active = false;
+  S.ps = S.ps.filter(x => x.active); S.passes = []; renderPasses();
   $('lockBtn').hidden = false;
   $('rateTag').hidden = false;
   lastGoals = '';
@@ -1133,7 +1136,7 @@ function capture(e, p, E, viaDisc = false) {
   // partial wave at once, so its orbital is drawn from all of them in proportion to their odds.
   const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
   const Lv = v3.scale(v3.cross(off, rel), P.ME / P.HBAR), Lh = v3.len(Lv);
-  const pick = P.pickCaptureState(Math.max(E, 0.01), viaDisc ? null : Math.min(Lh, LOCK_LMAX));
+  const pick = P.pickCaptureState(Math.max(E, 0.001), viaDisc ? null : Math.min(Lh, LOCK_LMAX));
   const lam = P.captureLambda(Math.max(E, 0), pick.n);
   e.active = false;
   S.ps = S.ps.filter(x => x !== e);
@@ -1148,7 +1151,7 @@ function capture(e, p, E, viaDisc = false) {
   setPure(atom, st);
   // The capture itself: the free electron's wave (its l = pick.lIn part, solved at its energy) turns
   // into the orbital over FALL_DUR, one wave the whole way, sloshing at the light's frequency.
-  atom.capt = { t: 0, lIn: pick.lIn, mIn: Math.sign(m) * Math.min(Math.abs(m), pick.lIn), free: Q.freeRadialTable(Math.max(E, 0.01), pick.lIn, extentBohr(st.n, 1)), w: 2 * Math.PI * P.C / lam };
+  atom.capt = { t: 0, lIn: pick.lIn, mIn: Math.sign(m) * Math.min(Math.abs(m), pick.lIn), free: Q.freeRadialTable(Math.max(E, 0.001), pick.lIn, extentBohr(st.n, 1)), w: 2 * Math.PI * P.C / lam };
   S.atoms.push(atom);
   // Momentum is kept: the atom moves on with the pair's shared momentum, minus the photon's kick.
   p.vel = v3.scale(v3.add(v3.scale(p.vel, P.MP), v3.scale(e.vel, P.ME)), 1 / (P.MP + P.ME));
@@ -1657,7 +1660,7 @@ function onPass(ev) {
   if (ev.atom) { atomPass(ev); return; }
   if (p.q !== 1) return;
   e.passes++;
-  const E = Math.max(ev.E, 0.01);
+  const E = Math.max(ev.E, 0.001);
   const off = v3.sub(e.pos, p.pos), rel = v3.sub(e.vel, p.vel);
   const Lv = v3.scale(v3.cross(off, rel), P.ME / P.HBAR), L = v3.len(Lv);
   // Where the pass came in, seen along its path from far away: b = L·ƛ, in the plane square to it.
@@ -1750,7 +1753,7 @@ function step(dtReal) {
     // A guided wave turns as e^{−iEt/ħ}: its crests move (capped at SWING_HZ per screen second).
     if (e.gd) e.gd.ph = (e.gd.ph + Math.min(e.gd.E / P.HBAR * dtFs, 2 * Math.PI * SWING_HZ * dtReal)) % (2 * Math.PI);
     e.trailT -= dt;
-    if (e.trailT <= 0) { e.trailT = 0.04 * Math.max(S.slow, 0.15); e.trail.push([...e.pos]); if (e.trail.length > 90) e.trail.shift(); }
+    if (e.trailT <= 0) { e.trailT = 0.04 * Math.max(S.slow, 0.15); e.trail.push(freeBlur(e) ? v3.sub(e.pos, e.so) : [...e.pos]); if (e.trail.length > 90) e.trail.shift(); }
   }
   S.ps = S.ps.filter(x => x.active);
   for (const f of S.falling) f.t += dt;
@@ -1981,7 +1984,7 @@ function restart() {
   S = newState();
   cam.p = [0, 1.5, 24]; cam.v = [0, 0, 0]; cam.yaw = Math.PI; cam.pitch = -0.06;
   logLines.length = 0; $('logBox').innerHTML = '';
-  renderPasses(); setDial(1); setSpeed(S.speed); startBeat(1);
+  renderPasses(); setDial(DIAL.indexOf(0.1)); setSpeed(S.speed); startBeat(1);
   setPilot(true);
   $('lockBtn').hidden = true; $('lockBtn').setAttribute('aria-pressed', 'true'); $('rateTag').hidden = true;
   panelDirty();
@@ -2311,7 +2314,7 @@ function aimPath(a) {
   if (!a.target || a.target.p.q !== 1 || !a.path) return;
   const pc = a.target.p.pos, dir = v3.norm(v3.sub(a.aimPoint, a.muzzle));
   const r0 = v3.len(v3.sub(a.muzzle, pc)), vL = P.electronSpeed(launchKE(a.E, r0)), vInf = P.electronSpeed(a.E);
-  for (let i = 1; i < a.path.length; i++) lines.seg(a.path[i - 1], a.path[i], [0.6, 0.75, 1], 0.28);
+  // (the predicted path line itself is not drawn: Steve asked for it to go, 2026-11-18; it still sets the pass's angular momentum for the rings and the odds)
   const T = Q.captureTable(a.E), P_l = T.map(row => row.reduce((s, z) => s + z.P, 0)), best = Math.max(...P_l);
   const e1 = v3.norm(v3.cross(dir, Math.abs(dir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(dir, e1);
   const lb = P.reducedWavelength(a.E) * vInf / vL;   // the miss distance that gives one unit of L from here
@@ -2361,21 +2364,19 @@ function fallPos(f, t = f.t) {
   const x = Math.min(1, t / (0.5 * FALL_DUR)), s = x * x * (3 - 2 * x);
   return v3.add(f.atom.p.pos, v3.scale(f.off, 1 - s));
 }
-// Drawing resolution adapts to the device: when the graphics chip can't keep up (an electron
-// cloud filling a phone's screen is the heaviest thing to draw), the picture is drawn with fewer
-// pixels and fewer steps through each cloud, and it climbs back when there is time to spare.
-// Only time the frame spends waiting on drawing counts: when the physics itself is what takes
-// long, fewer pixels would only blur the picture without speeding anything up.
-let renderScale = 1, frameAvg = 16, gpuAvg = 8;
-function adaptResolution(dtMs, cpuMs) {
+// Drawing resolution adapts to the device: when frames take too long (an electron cloud filling a
+// phone's screen is the heaviest thing to draw), the picture is drawn with fewer pixels and fewer
+// steps through each cloud, and it climbs back when there is time to spare. (Whole frame time
+// counts: graphics calls can block the page's own thread, so it can't tell drawing from physics.)
+let renderScale = 1, frameAvg = 16;
+function adaptResolution(dtMs) {
   frameAvg += (dtMs - frameAvg) * 0.1;
-  gpuAvg += (Math.max(0, dtMs - cpuMs) - gpuAvg) * 0.1;
-  if (frameAvg > 45 && gpuAvg > 0.5 * frameAvg && renderScale > 0.5) { renderScale = Math.max(0.5, renderScale * 0.85); frameAvg = 30; }
-  else if ((frameAvg < 22 || gpuAvg < 0.3 * frameAvg) && renderScale < 1) renderScale = Math.min(1, renderScale * 1.03);
+  if (frameAvg > 45 && renderScale > 0.35) { renderScale = Math.max(0.35, renderScale * 0.85); frameAvg = 30; }
+  else if (frameAvg < 20 && renderScale < 1) renderScale = Math.min(1, renderScale * 1.03);
 }
 const cloudSteps = () => Math.round((phone.matches ? 48 : 72) * Math.max(0.6, renderScale));
 function flatViews() {
-  const dpr = Math.min(devicePixelRatio || 1, 2) * renderScale;
+  const dpr = Math.min(devicePixelRatio || 1, phone.matches ? 1.5 : 2) * renderScale;
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const B = flatBasis();
@@ -2440,7 +2441,7 @@ function draw(views, panel) {
   if (WELLS) bondClouds(clouds);
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
-  for (const e of freeElectrons()) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
+  for (const e of freeElectrons()) if (!freeBlur(e)) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
   glows.push(...fallGlows);
   for (const f of S.flashes) {
     const x = f.t / f.life;
@@ -2454,8 +2455,20 @@ function draw(views, panel) {
   for (const e of freeElectrons()) {
     // Its path only where it swings close by a proton (inside TRAIL_NEAR nm), where the pull bends it.
     const near = x => { let d = Infinity; for (const p of S.ps) if (p.kind === 'proton' && p.active) d = Math.min(d, v3.len(v3.sub(x, p.pos))); return Math.max(0, Math.min(1, (TRAIL_NEAR - d) / 1.5)); };
-    const pts = [...e.trail, e.pos];
+    const blur = freeBlur(e), mid = e.so ? v3.sub(e.pos, e.so) : e.pos;
+    const pts = [...e.trail, blur ? mid : e.pos];
     for (let i = 1; i < pts.length; i++) { const k = near(pts[i]); if (k > 0) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], k * (0.08 + 0.4 * i / pts.length)); }
+    if (blur) {
+      // circling its spin axis faster than the eye can follow: drawn as the blurred loop it traces
+      const sp = e.spin, o = e.so, al = v3.dot(o, sp), r = v3.sub(o, v3.scale(sp, al)), rl = v3.len(r);
+      if (rl > 1e-4) {
+        const u1 = v3.scale(r, 1 / rl), u2 = v3.cross(sp, u1), c0 = v3.add(mid, v3.scale(sp, al)), N = 24;
+        for (const [k, alpha] of [[0.93, 0.2], [1, 0.55], [1.07, 0.2]]) for (let i = 0; i < N; i++) {
+          const a0 = 2 * Math.PI * i / N, a1 = 2 * Math.PI * (i + 1) / N, at = t => v3.add(c0, v3.scale(v3.add(v3.scale(u1, Math.cos(t)), v3.scale(u2, Math.sin(t))), rl * k));
+          lines.seg(at(a0), at(a1), [0.45, 0.65, 1], alpha);
+        }
+      }
+    }
   }
   // (Near a proton the wave is not drawn: Steve asked for its flat slice of crests to go, 2026-11-15. The point and its trail show the path.)
   if (S.pilot) for (const e of freeElectrons()) if (!e.gd) electronWave(e);
@@ -2595,6 +2608,11 @@ function updateSpinPairs() {
 // is what the forces move (e.vel is its velocity); the point is e.pos = middle + e.so.
 // Simplified, flagged: the packet is taken as round and of fixed width, and the axis is not turned
 // by the level's magnetic fields (far too weak here to turn it in the time of a flight).
+// A free electron's point circles its spin axis at ħ/(mσ²) (σ: its wave's width). Faster than
+// BLUR_HZ turns per screen second, sampling it frame by frame would draw a jagged zigzag that it
+// doesn't really follow (the old "square wave" look), so then its loop is drawn blurred and its
+// trail follows the loop's middle.
+const freeBlur = e => !!(e.spin && e.so && !e.gd) && P.HBAR / (P.ME * (e.cone || 0.4) ** 2) * (S.fsRate || FS_PER_S) / (2 * Math.PI) > BLUR_HZ;
 function spinCircle(dtFs) {
   for (const e of freeElectrons()) {
     if (!e.spin || !e.so || e.gd) continue;
@@ -2811,14 +2829,13 @@ function atomLabels(eye) {
 let last = performance.now();
 function frame(now) {
   if (xr.session) return;   // the headset drives the loop while in VR
-  const t0 = performance.now(), dtMs = now - last, dt = Math.min(0.05, Math.max(0, dtMs / 1000)); last = now;
-  adaptResolution(dtMs, S.cpuMs || 0);
+  const dtMs = now - last, dt = Math.min(0.05, Math.max(0, dtMs / 1000)); last = now;
+  adaptResolution(dtMs);
   const paused = !$('startBox').hidden || !$('doneBox').hidden;
   fly(paused ? 0 : dt);
   if (!paused) { step(dt); updateLock(dt); }
   updateHud(); drawSpectro(); drawLadder(); drawZoom();
   draw(flatViews(), null);
-  S.cpuMs = performance.now() - t0;
   requestAnimationFrame(frame);
 }
 
