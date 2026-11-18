@@ -473,6 +473,12 @@ and what the waves cost per frame.
   Very rare: about 2 in a million passes at 1 nm, 6 in 100,000 at 0.1 nm (0.1 eV). Departures:
   classical rate for the quantum one; light below ω/10 (10% of the energy, very soft) not sent;
   only free electrons radiate this way.
+- **Superelastic collisions** (Steve, 2026-11-17): a slow electron passing an n = 2 atom can take
+  its 10.2 eV, so the atom drops to 1s with no light and the electron leaves faster. Size from
+  detailed balance with excitation, σ_down(E) = ¼·((E + 10.2)/E)·σ_up(E + 10.2), with the
+  measured σ_up near threshold (0.35 πa₀²): about 0.25 nm² at 0.1 eV. A group sharing an n = 2
+  excitation loses it with the hit atom's share. Departures: n = 2 only; one cross-section for 2s
+  and 2p.
 - **Two views** (Steve, 2026-11-17; the Glow view was removed): the **pilot-wave view** (the
   default) and **EM field lines** (V, the two buttons, or X in VR). EM field lines: and each photon's electric wave. Nothing is drawn
   stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn

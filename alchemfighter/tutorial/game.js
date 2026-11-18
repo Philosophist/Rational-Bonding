@@ -958,6 +958,7 @@ function cancelLight(L) { L.caught = true; L.cancelled = true; L.em.tEnd = Math.
 function atomPass(ev) {
   const { e, p, rp } = ev, a = S.atoms.find(x => x.p === p);
   const E = ev.E;
+  if (a && a.st.n === 2 || a && a.pair) { if (superelastic(ev, a)) return; }
   if (!a || !idle1s(a) || E <= P.EXCITE_E) return;
   if (bareProtons().some(q => v3.len(v3.sub(q.pos, e.pos)) < 2)) return;   // falling past a proton, not its own speed
   if (Math.random() > P.impactChanceReal(E, rp)) return;
@@ -976,6 +977,45 @@ function atomPass(ev) {
     log(`A fast electron (${E.toFixed(1)} eV) knocked the electron off a hydrogen atom.`, 'red');
     if (S.ionized === 1) say('A fast electron smashed into a hydrogen atom and knocked its electron off. That proton is bare again.');
   }
+}
+// Superelastic collisions. A slow electron passing an atom in n = 2 can take its 10.2 eV itself:
+// the atom drops to 1s with no light at all, and the electron leaves faster. It is the exact
+// reverse of an electron bumping a 1s atom up to n = 2, so its size follows from that one by
+// detailed balance (Klein and Rosseland): σ_down(E) = (g₁/g₂)·((E + ΔE)/E)·σ_up(E + ΔE), with
+// g₁/g₂ = 2/8 (1s against all eight n = 2 states). Near threshold σ_up is the measured one (about
+// 0.35 πa₀² for all of n = 2), so slow electrons have a large target: about 0.25 nm² at 0.1 eV
+// (a disc 0.56 nm across). A group sharing an excitation loses it if it is found on the atom that
+// is hit (chance: that atom's share). The electron is turned at random (slow electrons scatter
+// evenly), and momentum and energy are both kept.
+// Departures, flagged: only n = 2 (higher levels have their own collisional drops, not built);
+// the cross-section is the same for 2s and 2p (measured data averages them).
+const SIG_UP_THR = 0.35 * Math.PI * P.A0 * P.A0;   // nm², 1s → n = 2 just above threshold (measured)
+function superelastic(ev, a) {
+  const { e, p, rp } = ev, E = Math.max(ev.E, 0.005), dE = P.EXCITE_E;
+  if (a.capt || a.trans || a.fade < 1 || (a.emitL && a.emitL.launched)) return false;
+  const q = a.pair, j = q ? q.members.indexOf(a) : -1;
+  if (q ? q.up.n !== 2 || j < 0 : a.st.n !== 2) return false;
+  if (bareProtons().some(o => v3.len(v3.sub(o.pos, e.pos)) < 2)) return false;   // falling past a proton: not its own speed
+  const up = E + dE, sigUp = up < 2 * dE ? Math.max(P.collExciteSigma(up), SIG_UP_THR) : P.collExciteSigma(up);
+  const sig = 0.25 * (up / E) * sigUp, sR = Math.max(P.impactReach(E), Math.sqrt(sig / Math.PI));
+  const share = q ? q.c.re[j] ** 2 + q.c.im[j] ** 2 : 1;
+  if (Math.random() >= Math.min(1, sig * Math.exp(-rp * rp / (sR * sR)) / (Math.PI * sR * sR)) * share) return false;
+  if (!P.inelasticScatter(e, p, -dE, Math.acos(1 - 2 * Math.random()))) return false;
+  const from = q ? q.up : a.st;
+  if (q) {
+    // the shared excitation was found here and taken: every member is left in 1s
+    S.pairs = S.pairs.filter(x => x !== q);
+    for (const [, l] of q.lights) cancelLight(l);
+    for (const m of q.members) { m.pair = null; if (m.mix) m.mix.fade = true; }
+  } else {
+    if (a.emitL) { cancelLight(a.emitL); a.emitL = null; }
+    a.pending = null;
+    a.trans = { from: a.st, to: GROUND, t: 0, dur: SETTLE };
+  }
+  e.E = (e.E || 0) + dE;
+  S.superel = (S.superel || 0) + 1;
+  if (S.superel <= 2) log(`A slow electron passed ${fmtNm(rp)} from a ${P.stateName(from)} atom and took its 10.2 eV: the atom dropped to 1s with no light, and the electron left with ${(E + dE).toFixed(1)} eV (a superelastic collision).`);
+  return true;
 }
 // The atom comes apart: its proton is bare again and its electron flies off with `extra` eV.
 function freeAtom(a, extra, col) {
@@ -2853,5 +2893,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('lockBtn').addEventListener('click', toggleLock);
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, superelastic, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);
