@@ -403,7 +403,7 @@ and what the waves cost per frame.
   row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a small, faint "H" centred just above the nucleus, with the orbital holding the largest bound share named just below it (for example "2p"); bare protons carry "H+" (Steve, 2026-11-17).
 - **Photosensitivity:** the start card carries a warning (the calmer Glow view was removed at Steve's request, 2026-11-17);
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
-- **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
+- **Acid Neutrality:** after the first atom, 4 more protons appear (5 hydrogen in all; at most 5 free electrons at once) at random spots (at least
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every catch has settled (in any orbital). Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the capture takes 3 s on screen. Each step down then swings for its
@@ -462,6 +462,21 @@ and what the waves cost per frame.
   may draw up to 2 device pixels per screen pixel (phones 1.5). An attempt to lower resolution only
   when the graphics chip was slow broke phones (graphics calls block the page, so it never
   lowered) and was undone, 2026-11-18.
+- **Free waves drawn as clouds** (Steve, 2026-11-18; pilot-wave view): every free electron's and
+  every bare proton's wave packet is ray-marched like the orbitals, coloured by phase (+ cyan,
+  − magenta-leaning purple, the quarter turns lavender and amber), replacing the old crest rings.
+  - Electron: as wide as the gun's spot; as long as the gun's energy spread allows, rms length
+    ħv·2.355/(2ΔE). ΔE (FWHM) is a real source's: 10 meV at 0.1 eV and up (monochromated gun),
+    1 meV from 0.01 eV, 0.05 meV below (laser photoelectron sources). At 0.1 eV: about 15 nm long,
+    0.4 nm wide, crests 3.9 nm apart; at 0.001 eV about 290 nm long (longer than the system).
+  - Proton: given the coherence length of a proton in a gas at 300 K, λ_th/√(2π) = 0.04 nm
+    (assumed: nothing in the level sets it). Its crests are several nm apart, so it shows one colour.
+  - Departures: widths are held fixed (real packets spread, and the beam narrows to its focus);
+    near a proton the drawn packet is not bent by it (the point still follows the computed
+    Coulomb wave); electron packets are drawn at 0.7 of an orbital's brightness so long packets
+    don't wash out the view; at most 32 samples per ray through a packet (16 on phones).
+  - Cost: in a phone-sized software test with 5 packets crossing the view, a frame at fixed
+    resolution took about 3.5× as long as with them hidden; the resolution scaler absorbs it.
 - **Charge colours** (Steve, 2026-11-18): positive is neon pink, negative neon blue (field glows,
   field lines, proton points and H+ labels, electron points, trails, gun and aim cone).
 - **Unaided catch moves on**: catching the First capture proton without the lock-on gives the lesson,

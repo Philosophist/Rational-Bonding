@@ -93,7 +93,7 @@ vec3 phaseColor(vec2 w){
   return c / max(abs(ca) + abs(sa), 1e-6);   // (a wave that is exactly zero has no colour, not a broken one)
 }
 // One cloud's terms, read once per pixel.
-struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax; float trmax; int steps;
+struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax; float trmax; int steps; vec4 pk;
   ivec3 q[${MAX_TERMS}]; int mode[${MAX_TERMS}]; float norm[${MAX_TERMS}]; vec2 c[${MAX_TERMS}]; int g[${MAX_TERMS}]; };
 vec4 tx(int i, int k){ return texelFetch(uCloud, ivec2(k, i), 0); }
 Cloud loadCloud(int i){
@@ -101,6 +101,7 @@ Cloud loadCloud(int i){
   vec4 a = tx(i, 0), x = tx(i, 1), y = tx(i, 2), z = tx(i, 3), m = tx(i, 5);
   C.pos = a.xyz; C.radius = a.w; C.frame = mat3(x.xyz, y.xyz, z.xyz); C.invMax = x.w; C.iso = y.w; C.fade = z.w;
   C.lean = tx(i, 4); C.nt = int(m.x); C.rmax = m.y; C.trmax = m.z; C.steps = m.w > 0.5 ? min(int(m.w), uSteps) : uSteps;
+  if (C.lean.w > 1.5) { C.pk = tx(i, 6); return C; }   // a free packet (see sampleCloud)
   for (int t = 0; t < ${MAX_TERMS}; t++) {
     if (t >= C.nt) break;
     vec4 qq = tx(i, 6 + t), cc = tx(i, 6 + ${MAX_TERMS} + t);
@@ -113,9 +114,18 @@ Cloud loadCloud(int i){
 // (Dalgarno and Lewis), which gives hydrogen's real polarizability, 4.5 a₀³: the electron leans
 // toward a proton and away from an electron. Excited clouds need no factor: the field mixes their
 // shell's orbitals, and game.js sends that mixture as the terms.
+// A free particle's wave packet (lean.w = 2): a Gaussian round its middle, rmax wide across its
+// motion (density e^(−ρ²/rmax²)... amplitude e^(−ρ²/2rmax²)) and trmax long along it (amplitude
+// e^(−s²/4trmax²)), with crests k radians per nm apart along its motion (pk.x), shifted by pk.y.
+vec4 samplePacket(Cloud C, vec3 pw){
+  vec3 pr = pw - C.pos; float s = dot(pr, C.lean.xyz), r2 = max(dot(pr, pr) - s*s, 0.0);
+  float a = exp(-r2 / (2.0 * C.rmax * C.rmax) - s*s / (4.0 * C.trmax * C.trmax)), ph = C.pk.x * s - C.pk.y;
+  return vec4(phaseColor(vec2(cos(ph), sin(ph))), a * a);
+}
 vec4 sampleCloud(int i, Cloud C, vec3 pw){
+  if (C.lean.w > 1.5) return samplePacket(C, pw);
   vec3 pr = (pw - C.pos) * uAS;
-  float f = C.lean.w > 0.5 ? clamp(1.0 - dot(C.lean.xyz, pr) * (1.0 + 0.5 * length(pr)), 0.0, 2.0) : 1.0;
+  float f = C.lean.w > 0.5 && C.lean.w < 1.5 ? clamp(1.0 - dot(C.lean.xyz, pr) * (1.0 + 0.5 * length(pr)), 0.0, 2.0) : 1.0;
   vec3 p = pr * C.frame;   // into the cloud's own frame (its y is the axis m is counted about)
   vec2 w0 = vec2(0.0), w1 = vec2(0.0);
   for (int t = 0; t < ${MAX_TERMS}; t++) {
@@ -130,10 +140,7 @@ vec4 sampleCloud(int i, Cloud C, vec3 pw){
   if (d1 <= 0.0) return vec4(phaseColor(w0), d0);
   return vec4((phaseColor(w0) * d0 + phaseColor(w1) * d1) / max(d0 + d1, 1e-30), d0 + d1);
 }
-void marchCloud(int i, Cloud C, vec3 ro, vec3 rd, float t0, float t1, inout vec3 acc, inout float T){
-  // Samples go where the ray runs through the cloud's ball: a ray that only grazes its edge gets few,
-  // one through the middle gets them all, at the same spacing (no samples spent on empty space).
-  int ns = clamp(int(ceil(float(C.steps) * (t1 - t0) / (2.0 * C.radius))), 4, C.steps);
+void marchCloud(int i, Cloud C, vec3 ro, vec3 rd, float t0, float t1, int ns, inout vec3 acc, inout float T){
   float dt = (t1 - t0) / float(ns);
   // interleaved gradient noise: a fine, even dither (far less blotchy grain than a plain hash)
   vec2 fc = gl_FragCoord.xy + vec2(5.588238, 5.588238) * floor(fract(uTime * 7.0) * 64.0) + float(i) * 17.0;
@@ -166,9 +173,24 @@ vec4 clouds(vec3 ro, vec3 rd){
   float T = 1.0; vec3 acc = vec3(0.0);
   for (int i = 0; i < ${MAX_CLOUDS}; i++) {
     if (i >= uNA) break;
-    vec4 a = tx(i, 0);
-    vec3 oc = ro - a.xyz; float bb = dot(oc, rd), cc = dot(oc, oc) - a.w*a.w, hh = bb*bb - cc;
-    if (hh > 0.0) { hh = sqrt(hh); float t0 = max(-bb - hh, 0.0), t1 = -bb + hh; if (t1 > t0) marchCloud(i, loadCloud(i), ro, rd, t0, t1, acc, T); }
+    vec4 a = tx(i, 0), ln = tx(i, 4);
+    vec3 oc = ro - a.xyz;
+    if (ln.w > 1.5) {
+      // A packet: its bounds are an ellipsoid, 3 widths across and 4 lengths along, so a long thin
+      // packet costs only the rays that actually pass through it, spaced to resolve its crests.
+      vec4 m = tx(i, 5), pk = tx(i, 6); vec3 u = ln.xyz;
+      float A = 3.0 * m.y, B = 4.0 * m.z, ou = dot(oc, u), du = dot(rd, u);
+      vec3 op = oc - ou * u, dp = rd - du * u;
+      float qa = dot(dp, dp) / (A*A) + du*du / (B*B), qb = dot(op, dp) / (A*A) + ou*du / (B*B), qc = dot(op, op) / (A*A) + ou*ou / (B*B) - 1.0, hh = qb*qb - qa*qc;
+      if (hh > 0.0) { hh = sqrt(hh); float t0 = max((-qb - hh) / qa, 0.0), t1 = (-qb + hh) / qa;
+        if (t1 > t0) { Cloud C = loadCloud(i); marchCloud(i, C, ro, rd, t0, t1, clamp(int(ceil((t1 - t0) / pk.z)), 4, C.steps), acc, T); } }
+      continue;
+    }
+    float bb = dot(oc, rd), cc = dot(oc, oc) - a.w*a.w, hh = bb*bb - cc;
+    // Samples go where the ray runs through the cloud's ball: a ray that only grazes its edge gets few,
+    // one through the middle gets them all, at the same spacing (no samples spent on empty space).
+    if (hh > 0.0) { hh = sqrt(hh); float t0 = max(-bb - hh, 0.0), t1 = -bb + hh;
+      if (t1 > t0) { Cloud C = loadCloud(i); marchCloud(i, C, ro, rd, t0, t1, clamp(int(ceil(float(C.steps) * (t1 - t0) / (2.0 * C.radius))), 4, C.steps), acc, T); } }
   }
   return vec4(acc, T);
 }
@@ -330,6 +352,12 @@ export function createRenderer(canvas) {
   //   invMax, iso, fade, lean?: [x, y, z, on], steps? (march steps for this cloud; 0 = the scene's) }
   function packCloud(i, c) {
     const o = i * ROW * 4, put = (k, v) => cloudArr.set(v, o + k * 4);
+    if (c.packet) {   // { axis (unit), width, length (nm), k (rad/nm), phase, stepLen (nm) }
+      const P = c.packet;
+      put(0, [...c.pos, 3 * P.width]); put(1, [1, 0, 0, c.invMax]); put(2, [0, 1, 0, c.iso]); put(3, [0, 0, 1, c.fade]);
+      put(4, [...P.axis, 2]); put(5, [0, P.width, P.length, c.steps || 0]); put(6, [P.k, P.phase, P.stepLen, 0]);
+      return;
+    }
     const [X, Y, Z] = c.frame || [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
     const nt = Math.min(MAX_TERMS, c.terms.length);
     put(0, [...c.pos, c.radius]); put(1, [...X, c.invMax]); put(2, [...Y, c.iso]); put(3, [...Z, c.fade]);

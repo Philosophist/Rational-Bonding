@@ -82,15 +82,15 @@ const EMIT_PERIOD = 2, EMIT_HOLD = [5, 2], EMIT_EASE = 1;
 // Swings faster than SWING_HZ on screen are drawn as their average (no flicker: photosensitivity),
 // fully so above SWING_HZ_AVG.
 const SWING_HZ = 1.2, SWING_HZ_AVG = 2.2;
-// Acid Neutrality: this many fresh protons join the first one, so the system holds 10 hydrogen in all.
-const ACID_N = 9;
+// Acid Neutrality: this many fresh protons join the first one, so the system holds 5 hydrogen in all (Steve, 2026-11-18).
+const ACID_N = 4;
 // The ship: the keys fire thrusters (an acceleration), and it coasts when you let go.
 const THRUST = 5, THRUST_FAST = 15, BRAKE = 10;   // nm/s²
 const DIAL = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];   // eV, the electron's energy far from the proton
 const PROTON_SMEAR = 0.01;       // nm, keeps the glow's centre finite (log scale, capped)
 // Missed electrons stay in the sphere (matter can't leave). Fire as many as you like; past this many
 // free electrons the oldest one is removed, to keep the simulation smooth.
-const MAX_FREE = 12;
+const MAX_FREE = 5;   // free electrons at once (Steve, 2026-11-18)
 // Strongest field (atomic units) a 1s cloud is drawn leaning in; see draw().
 const LEAN_MAX_AU = 0.02;
 
@@ -138,7 +138,7 @@ const BEATS = {
   },
   3: {
     title: 'Acid Neutrality',
-    say: `Nine more protons have appeared, so this system now holds ten hydrogen. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Each catch's energy leaves as light through the edge of the system: watch the spectrometer catch it.`,
+    say: `Four more protons have appeared, so this system now holds five hydrogen. Loose H⁺ ions like these are what make an acid acidic: the more of them, the stronger the acid. Neutralize this one. Give every proton an electron, so each becomes a neutral hydrogen atom. Each catch's energy leaves as light through the edge of the system: watch the spectrometer catch it.`,
   },
 };
 function say(text) {
@@ -228,7 +228,7 @@ function spawnAcid() {
     }
     taken.push(pos);
     S.ps.push({ id: `p${nextId++}`, kind: 'proton', q: 1, m: P.MP, pos, vel: [0, 0, 0], active: true, glow: 1, acid: true });
-    S.flashes.push({ pos: [...pos], col: [1, 0.8, 0.5], t: 0, life: 1.2, size: 1.4 });
+    S.flashes.push({ pos: [...pos], col: [1, 0.35, 0.85], t: 0, life: 1.2, size: 1.4 });
   }
   log(`${ACID_N} protons (H⁺) appeared. Acid Neutrality: neutralize them all.`, 'hit');
 }
@@ -2409,8 +2409,9 @@ const LOD_PX = 48;
 function cloudDetail(clouds, v, steps) {
   const H = v.viewport[3], fovT = xr.session ? 1 : Math.tan(cam.fov / 2);
   return clouds.map(c => {
-    const d = Math.max(1e-6, v3.len(v3.sub(c.pos, v.camPos)) - c.radius), px = c.radius / d * H / fovT;
-    const out = { ...c, steps: Math.max(12, Math.min(steps, Math.ceil(px / 2))) };
+    const R = c.packet ? Math.max(c.radius, 4 * c.packet.length) : c.radius;   // (a packet reaches 4 lengths along its motion)
+    const d = Math.max(1e-6, v3.len(v3.sub(c.pos, v.camPos)) - R), px = R / d * H / fovT;
+    const out = { ...c, steps: Math.max(12, Math.min(c.maxSteps || steps, steps, Math.ceil(px / 2))) };
     if (px < LOD_PX && c.terms.length > 2) {
       let top = 0; for (const t of c.terms) if (t.w != null) top = Math.max(top, t.w);
       if (top > 0) out.terms = c.terms.filter(t => t.w == null || t.w >= 0.03 * top);
@@ -2482,6 +2483,7 @@ function draw(views, panel) {
     return c;
   });
   if (WELLS) bondClouds(clouds);
+  if (S.pilot && !S.noPackets) clouds.push(...freePackets());
   const glows = [];
   for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.6, 0.92] });
   for (const e of freeElectrons()) if (!freeBlur(e)) glows.push({ pos: e.pos, size: 0.008, col: [0.35, 0.62, 1] });
@@ -2514,7 +2516,6 @@ function draw(views, panel) {
     }
   }
   // (Near a proton the wave is not drawn: Steve asked for its flat slice of crests to go, 2026-11-15. The point and its trail show the path.)
-  if (S.pilot) for (const e of freeElectrons()) if (!e.gd) electronWave(e);
   const strength = L => (L.launched && !L.caught ? 2 : 0) + W.envelope(L.em, Math.min(S.simFs, L.em.tEnd));
   for (const L of [...S.light].sort((x, y) => strength(y) - strength(x)).slice(0, MAX_DRAWN_LIGHTS)) lightLines(L);
   for (const L of S.light) { if (L.launched && !L.caught) trackTrail(L); photonDot(L, glows); }
@@ -2666,29 +2667,42 @@ function spinCircle(dtFs) {
     e.pos = v3.add(e.pos, v3.sub(o2, o)); e.so = o2;
   }
 }
-// The electron's wave in the pilot-wave view: crests square to its motion, one de Broglie wavelength
-// apart (3.9 nm at 0.1 eV), as wide as the gun's spot, inside an envelope a couple of wavelengths
-// long. The point (the electron itself) rides inside it. Drawn as the free wave; close to a proton
-// the real wave bends round it, while the point's path there is computed from the forces.
-function electronWave(e) {
-  const mid = e.so ? v3.sub(e.pos, e.so) : e.pos;   // the wave's middle; the point sits e.so from it
-  const v = v3.len(e.vel);
-  if (v < 1e-6) return;
-  const u = v3.scale(e.vel, 1 / v), KEk = 0.5 * P.ME * v * v, lam = 2 * Math.PI * P.reducedWavelength(Math.max(1e-3, KEk));
-  const R = 2 * (e.cone || P.coneWidth(Math.max(0.01, e.E || 0.1), 20));
-  const e1 = v3.norm(v3.cross(u, Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(u, e1);
-  const col = [0.4, 0.6, 1];
-  for (let k = -2; k <= 2; k++) {
-    const s0 = k * lam - (e.waveS || 0), env = Math.exp(-0.5 * (s0 / lam) ** 2);
-    if (env < 0.05) continue;
-    const c = v3.add(mid, v3.scale(u, s0)), r = R * (0.6 + 0.4 * env);
-    let q = null;
-    for (let i = 0; i <= 32; i++) {
-      const t = 2 * Math.PI * i / 32, pt = v3.add(c, v3.add(v3.scale(e1, Math.cos(t) * r), v3.scale(e2, Math.sin(t) * r)));
-      if (q) lines.seg(q, pt, col, 0.22 * env);
-      q = pt;
-    }
+// Free waves in the pilot-wave view (Steve, 2026-11-18), drawn the same way as the orbitals: each
+// free electron's and each bare proton's wave packet as a cloud, coloured by its phase.
+// - Electron: as wide as the gun's spot (the same width the spin circling uses), and as long as the
+//   gun's energy spread allows: a packet with spread ΔE (full width at half maximum) is
+//   ħv·2.355/(2ΔE) long (rms of its density). The spread is that of a real source for each speed:
+//   10 meV at 0.1 eV and up (a trochoidal or hemispherical monochromator), 1 meV from 0.01 eV
+//   (the best monochromated guns), 0.05 meV below that (laser photoelectron sources). At 0.1 eV
+//   that is about 15 nm long and 0.4 nm wide, crests 3.9 nm apart.
+// - Proton: nothing in the level says how wide its wave is, so it is given the coherence length of
+//   a proton in a gas at room temperature (300 K), λ_th/√(2π) = 0.04 nm, round. Its crests are
+//   h/(m_p·v) apart: several nm for these slow protons, so it shows as one colour.
+// Simplified, flagged: widths are held fixed (a real packet spreads as it flies, and the gun's beam
+// narrows to its focus), and near a proton the drawn packet is not bent by it (the computed
+// Coulomb wave moves the point; drawing it as a cloud is a later step).
+const GUN_SPREAD = E => (E >= 0.1 ? 0.01 : E >= 0.01 ? 0.001 : 5e-5);   // eV, FWHM
+const PACKET_STEPS = phone.matches ? 16 : 32;
+const PROTON_COHERENCE = 0.0416;   // nm: λ_th / √(2π) for a proton at 300 K (λ_th = 0.104 nm)
+function freePackets() {
+  const out = [];
+  const packet = (pos, vel, m, width, length, phase, fade) => {
+    const v = v3.len(vel), k = m * v / P.HBAR;   // rad per nm
+    const axis = v > 1e-12 ? v3.scale(vel, 1 / v) : [0, 1, 0];
+    const lam = k > 0 ? 2 * Math.PI / k : Infinity;
+    // (samples: enough to resolve its crests and its width; phones take fewer, at most PACKET_STEPS)
+    return { pos, radius: 3 * width, terms: [], invMax: 1, iso: 0.044, fade, maxSteps: PACKET_STEPS,
+      packet: { axis, width, length, k, phase, stepLen: Math.min(lam / 6, 1.5 * width) } };
+  };
+  for (const e of freeElectrons()) {
+    const v = v3.len(e.vel); if (v < 1e-9) continue;
+    const mid = e.so && !e.gd ? v3.sub(e.pos, e.so) : e.pos;
+    const dk = GUN_SPREAD(e.E || 0.1) / (P.HBAR * v), len = 1 / (2 * dk / 2.355);
+    const k = P.ME * v / P.HBAR;
+    out.push(packet(mid, e.vel, P.ME, e.cone || P.coneWidth(Math.max(0.01, e.E || 0.1), 20), len, -k * (e.waveS || 0), 0.7));   // (a little softer than an orbital: long packets crossing the view would otherwise wash it out)
   }
+  for (const p of bareProtons()) out.push(packet(p.pos, p.vel, P.MP, PROTON_COHERENCE, PROTON_COHERENCE / Math.SQRT2, 0, 1));
+  return out;
 }
 // Faint labels, so the player connects what they see with chemistry's names. Every neutral atom
 // carries the name of the orbital its cloud shows, set just outside the cloud's drawn edge (on the
