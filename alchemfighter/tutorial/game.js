@@ -64,7 +64,7 @@ const EVENT_SLOW = 0.01;
 // Game speed the player picks (, and . keys), and automatic slow motion when an electron dives in
 // close to a proton: there it speeds up a lot, so the clock slows until it moves at most
 // SLOW_TARGET nm per screen second. Odds per pass don't depend on the clock.
-const SPEEDS = [0.1, 0.25, 0.5, 1, 2];
+const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
 const SLOW_NEAR = 4, SLOW_TARGET = 1.5, SLOW_MIN = 0.02;
 // After a capture the electron's glow is drawn melting into its new cloud over this many seconds.
 // (In nature the change is a sudden quantum jump; this lets you see which electron went where.)
@@ -103,7 +103,7 @@ function newState() {
   const proton = { id: 'p1', kind: 'proton', q: 1, m: P.MP, pos: [0, 0, 0], vel: [0, 0, 0], active: true, glow: 1 };
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
-    shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, passes: [], fieldView: true, dial: DIAL.indexOf(0.1), cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
+    shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, fieldView: true, dial: DIAL.indexOf(0.1), cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
     b1: { start: null, maxAngle: 0, moved: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0, lessonAt: 0, lesson: false },
     lock: { on: true, target: null, prog: 0, locked: false }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
@@ -133,7 +133,7 @@ const BEATS = {
   },
   2: {
     title: 'First capture',
-    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger\'s equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc (see the Target window). Fire 10 electrons at the proton, with real odds.',
+    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger\'s equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc. Fire 10 electrons at the proton, with real odds.',
   },
   3: {
     title: 'Acid Neutrality',
@@ -372,7 +372,7 @@ function giveLesson() {
   say(`${S.b2.captured ? 'You beat the odds!' : 'None caught, and that is normal.'} The point has to come in through a disc only ${disc.toFixed(1)} pm across at ${E} eV (the 1s cloud it would join is 106 pm across, the proton itself 0.0017 pm), and your gun cannot choose where the point sits inside its wave: that is random. On average a 1 eV electron needs about 20 million passes before one is caught. Space is still full of neutral hydrogen because protons and electrons meet so often: in a neon sign's glow a proton waits about 25 seconds, in the thin upper air months to years, and in ordinary air a proton never waits at all, it takes an electron from a molecule within billionths of a second. In this tiny system, with ten free electrons, it would be about 25 microseconds, which at our clock is about 20 years of play. So your ship has a made-up technology: atomic lock-on. Hold the crosshair on the proton until the lock closes, then fire. Which orbital it lands in is still rolled from the real odds: at this speed about ${pct('1s')}% go straight to 1s, ${pct('2p')}% to 2p, ${pct('2s')}% to 2s.`);
   // A clean start for the lock-on: every free electron is cleared out of the system.
   for (const e of freeElectrons()) e.active = false;
-  S.ps = S.ps.filter(x => x.active); S.passes = []; renderPasses();
+  S.ps = S.ps.filter(x => x.active);
   $('lockBtn').hidden = false;
   $('rateTag').hidden = false;
   lastGoals = '';
@@ -705,8 +705,9 @@ function wellTerms(cw, amp = [1, 0], g = 0) {
     if (c.w < 1e-5 * maxW) break;
     const mode = c.m === 0 ? 0 : c.m > 0 ? 1 : 2, norm = WL.angNorm(c.l, c.m);
     let ri = 0, ii = 0; for (let j = 0; j < c.tr.length; j++) { ri = Math.max(ri, Math.abs(c.tr[j])); ii = Math.max(ii, Math.abs(c.ti[j])); }
-    if (ri > 1e-4 * (ri + ii)) out.push({ n: -1, l: c.l, m: c.m, mode, norm, c: [amp[0], amp[1]], g, table: c.tr });
-    if (ii > 1e-4 * (ri + ii)) out.push({ n: -1, l: c.l, m: c.m, mode, norm, c: [-amp[1], amp[0]], g, table: c.ti });
+    const w = c.w / maxW * (amp[0] * amp[0] + amp[1] * amp[1]);   // (its weight, for the level of detail in draw)
+    if (ri > 1e-4 * (ri + ii)) out.push({ n: -1, l: c.l, m: c.m, mode, norm, c: [amp[0], amp[1]], g, table: c.tr, w });
+    if (ii > 1e-4 * (ri + ii)) out.push({ n: -1, l: c.l, m: c.m, mode, norm, c: [-amp[1], amp[0]], g, table: c.ti, w });
   }
   return out;
 }
@@ -1665,14 +1666,9 @@ function onPass(ev) {
   const Lv = v3.scale(v3.cross(off, rel), P.ME / P.HBAR), L = v3.len(Lv);
   // Where the pass came in, seen along its path from far away: b = L·ƛ, in the plane square to it.
   const u = v3.norm(rel), bvec = v3.scale(v3.norm(v3.cross(u, Lv)), P.impactParameter(E, L));
-  const locked = e.lock === p.id, disc = P.captureDiscRadius(E);
+  const locked = e.lock === p.id;
   const caught = locked || P.hitsCaptureDisc(E, L);
   if (locked) e.lock = null;   // the steering works once, on the pass it was aimed at
-  const who = e.freed ? 'freed electron' : `shot ${e.shot}`;
-  // A locked shot is steered in through the middle of the disc (the made-up part), so it is marked there.
-  S.passes.unshift({ who, pass: e.passes, rp, E, L, b: locked ? 0 : v3.len(bvec), bvec: locked ? [0, 0, 0] : bvec, disc, locked, caught, p });
-  S.passes.length = Math.min(S.passes.length, 4);
-  renderPasses();
   if (caught) {
     if (!locked) log(`Shot ${e.shot || ''} came in through the disc on its own (${fmtPm(v3.len(bvec))} off-centre): odds of about ${fmtOdds(unaidedOdds(E, L, e.cone || 0.4, E + P.KE / 20))} for a shot like it.`, 'hit');
     capture(e, p, E, !locked);
@@ -1680,11 +1676,6 @@ function onPass(ev) {
   }
   // Only for shots fired fast (electrons can also be sped up by pushing on each other).
   if ((e.E || 0) > 3 && rp < 1.5 && !S.b2.tooFastSaid) { S.b2.tooFastSaid = true; log('Too fast to catch: the capture disc shrinks as electrons speed up. Try slower.'); }
-}
-function renderPasses() {
-  $('passes').innerHTML = S.passes.length ? S.passes.map(p =>
-    `<div class="${p.caught ? 'hit' : p.E > 3 ? 'fast' : 'miss'}">${p.who}${p.pass > 1 ? ` (pass ${p.pass})` : ''}: ${p.locked ? 'steered in through the middle of the' : `came in ${fmtPm(p.b)} off-centre,`} target ${fmtPm(2 * p.disc)} across · L ${p.L.toFixed(1)} ħ · ${p.caught ? (p.locked ? 'CAUGHT (lock-on)' : 'CAUGHT') : 'missed'}</div>`).join('')
-    : '<div class="miss">No passes yet.</div>';
 }
 // Lengths from attometres to nanometres, for the capture target and the passes.
 function fmtPm(nm) {
@@ -1882,9 +1873,11 @@ for (const b of document.querySelectorAll('#dpad button')) {
 }
 function setSpeed(i) {
   S.speed = Math.max(0, Math.min(SPEEDS.length - 1, i));
-  $('speedBtn').textContent = `game speed ×${SPEEDS[S.speed]}`;
+  $('speedOutT').textContent = `×${SPEEDS[S.speed]}`;
+  $('speedDown').disabled = S.speed === 0; $('speedUp').disabled = S.speed === SPEEDS.length - 1;
 }
-$('speedBtn').addEventListener('click', () => setSpeed(S.speed === SPEEDS.length - 1 ? 0 : S.speed + 1));
+$('speedDown').addEventListener('click', () => setSpeed(S.speed - 1));
+$('speedUp').addEventListener('click', () => setSpeed(S.speed + 1));
 
 function fly(dt) {
   const B = flatBasis(), acc = keys.has('ShiftLeft') || keys.has('ShiftRight') ? THRUST_FAST : THRUST;
@@ -1984,7 +1977,7 @@ function restart() {
   S = newState();
   cam.p = [0, 1.5, 24]; cam.v = [0, 0, 0]; cam.yaw = Math.PI; cam.pitch = -0.06;
   logLines.length = 0; $('logBox').innerHTML = '';
-  renderPasses(); setDial(DIAL.indexOf(0.1)); setSpeed(S.speed); startBeat(1);
+  setDial(DIAL.indexOf(0.1)); setSpeed(S.speed); startBeat(1);
   setPilot(true);
   $('lockBtn').hidden = true; $('lockBtn').setAttribute('aria-pressed', 'true'); $('rateTag').hidden = true;
   panelDirty();
@@ -2369,12 +2362,31 @@ function fallPos(f, t = f.t) {
 // steps through each cloud, and it climbs back when there is time to spare. (Whole frame time
 // counts: graphics calls can block the page's own thread, so it can't tell drawing from physics.)
 let renderScale = 1, frameAvg = 16;
+let pinnedScale = 0;   // (tests: hold the resolution fixed)
 function adaptResolution(dtMs) {
+  if (pinnedScale) { renderScale = pinnedScale; return; }
   frameAvg += (dtMs - frameAvg) * 0.1;
   if (frameAvg > 45 && renderScale > 0.35) { renderScale = Math.max(0.35, renderScale * 0.85); frameAvg = 30; }
   else if (frameAvg < 20 && renderScale < 1) renderScale = Math.min(1, renderScale * 1.03);
 }
 const cloudSteps = () => Math.round((phone.matches ? 48 : 72) * Math.max(0.6, renderScale));
+// Level of detail: a cloud that is small on screen (far away, or a small level) gets fewer samples
+// along each ray, and below LOD_PX across it also leaves out the faintest shapes in its blend (under
+// 3% of the strongest), which are too small there to see. Big clouds, such as the higher levels
+// seen up close, keep everything. Only what is drawn changes; the physics is untouched.
+const LOD_PX = 48;
+function cloudDetail(clouds, v, steps) {
+  const H = v.viewport[3], fovT = xr.session ? 1 : Math.tan(cam.fov / 2);
+  return clouds.map(c => {
+    const d = Math.max(1e-6, v3.len(v3.sub(c.pos, v.camPos)) - c.radius), px = c.radius / d * H / fovT;
+    const out = { ...c, steps: Math.max(12, Math.min(steps, Math.ceil(px / 2))) };
+    if (px < LOD_PX && c.terms.length > 2) {
+      let top = 0; for (const t of c.terms) if (t.w != null) top = Math.max(top, t.w);
+      if (top > 0) out.terms = c.terms.filter(t => t.w == null || t.w >= 0.03 * top);
+    }
+    return out;
+  });
+}
 function flatViews() {
   const dpr = Math.min(devicePixelRatio || 1, phone.matches ? 1.5 : 2) * renderScale;
   const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
@@ -2496,7 +2508,8 @@ function draw(views, panel) {
   if (S.beat >= 2) { const ai = aimInfo(); coneLines(ai); aimPath(ai); lockReticle(); }
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
-  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps: xr.session ? 72 : cloudSteps(), bohrPerUnit: 1 / P.A0, charges, clouds, glows, lines: lines.data() });
+  const steps = xr.session ? 72 : cloudSteps();
+  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps, bohrPerUnit: 1 / P.A0, charges, clouds: cloudDetail(clouds, views[0], steps), glows, lines: lines.data() });
 }
 
 // ---------------------------------------------------------------------------
@@ -2646,79 +2659,6 @@ function electronWave(e) {
     }
   }
 }
-// The Target window: the proton's capture target seen along the shot, at three zooms (1 nm, 10 pm,
-// 0.01 pm across), each box the middle of the one before. Marks the gun's spread, where the aim
-// would bring the shot in, and where the last passes came in.
-const zc = $('zoom'), zctx = zc.getContext('2d');
-function drawZoom() {
-  const box = $('zoomBox');
-  box.hidden = S.beat < 2;
-  if (box.hidden || box.classList.contains('collapsed')) return;
-  const g = zctx, Wc = zc.width, Hc = zc.height, n = 3, gap = 18, bw = (Wc - gap * (n - 1)) / n, top = 30, bh = Math.min(bw, Hc - top - 34);
-  g.clearRect(0, 0, Wc, Hc);
-  const a = aimInfo(), E = a.E, disc = P.captureDiscRadius(E), B = camBasis();
-  const spans = [1, 0.01, 1e-5];   // nm across each box
-  const proj = v => [v3.dot(v, B.r), v3.dot(v, B.u)];
-  const font = s => `${s}px ui-monospace, Menlo, Consolas, monospace`;
-  let aimB = null;
-  if (a.target && a.Lvec && a.L !== undefined) {
-    const dir = v3.norm(v3.sub(a.aimPoint, a.muzzle));
-    aimB = S.lock.locked && S.lock.target === a.target.p ? [0, 0, 0] : v3.scale(v3.norm(v3.cross(dir, a.Lvec)), P.impactParameter(E, a.L));
-  }
-  for (let i = 0; i < n; i++) {
-    const x0 = i * (bw + gap), y0 = top, span = spans[i], k = bw / span, cx = x0 + bw / 2, cy = y0 + bh / 2;
-    const P2 = v => { const [x, y] = proj(v); return [cx + x * k, cy - y * k]; };
-    g.save(); g.beginPath(); g.rect(x0, y0, bw, bh); g.clip();
-    g.fillStyle = 'rgba(4,6,12,0.55)'; g.fillRect(x0, y0, bw, bh);
-    // 1s cloud (106 pm across where 90% of it lies; the shading follows e^(−2r/a₀)).
-    const r1s = 0.053 * k * 1.0;
-    const grd = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, 2 * r1s));
-    grd.addColorStop(0, 'rgba(120,170,255,0.55)'); grd.addColorStop(0.5, 'rgba(120,170,255,0.12)'); grd.addColorStop(1, 'rgba(120,170,255,0)');
-    g.fillStyle = grd; g.fillRect(x0, y0, bw, bh);
-    g.strokeStyle = 'rgba(159,191,255,0.6)'; g.setLineDash([3, 3]); g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, 0.053 * k, 0, 2 * Math.PI); g.stroke(); g.setLineDash([]);
-    // the gun's spread (1σ), in impact-parameter terms
-    if (a.target && a.rp !== undefined) {
-      const sb = a.cone * Math.sqrt(launchKE(E, v3.len(v3.sub(a.muzzle, a.target.p.pos))) / E);
-      const c0 = aimB ? P2(aimB) : [cx, cy];
-      g.strokeStyle = 'rgba(90,140,255,0.7)'; g.setLineDash([4, 4]); g.lineWidth = 1.5;
-      g.beginPath(); g.arc(c0[0], c0[1], sb * k, 0, 2 * Math.PI); g.stroke(); g.setLineDash([]);
-    }
-    // capture disc
-    g.fillStyle = 'rgba(255,233,77,0.35)'; g.strokeStyle = 'rgba(255,233,77,0.9)'; g.lineWidth = 1.5;
-    g.beginPath(); g.arc(cx, cy, Math.max(0.6, disc * k), 0, 2 * Math.PI); g.fill(); g.stroke();
-    // proton (charge radius 0.84 fm)
-    g.fillStyle = '#ffa02e'; g.beginPath(); g.arc(cx, cy, Math.max(0.5, 8.4e-7 * k), 0, 2 * Math.PI); g.fill();
-    // passes and the aim
-    for (const p of S.passes) {
-      if (!p.bvec) continue;
-      const [px, py] = P2(p.bvec);
-      g.fillStyle = p.caught ? '#5cf29a' : 'rgba(214,226,238,0.85)';
-      g.beginPath(); g.arc(px, py, 3, 0, 2 * Math.PI); g.fill();
-    }
-    if (aimB) {
-      const [ax, ay] = P2(aimB);
-      g.strokeStyle = S.lock.locked ? '#5cf29a' : '#2fe3e6'; g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(ax - 6, ay); g.lineTo(ax + 6, ay); g.moveTo(ax, ay - 6); g.lineTo(ax, ay + 6); g.stroke();
-    }
-    // where the next box zooms in
-    if (i < n - 1) {
-      const z = Math.max(3, spans[i + 1] * k / 2);
-      g.strokeStyle = 'rgba(214,226,238,0.7)'; g.lineWidth = 1; g.strokeRect(cx - z, cy - z, 2 * z, 2 * z);
-    }
-    g.restore();
-    g.strokeStyle = 'rgba(47,227,230,0.35)'; g.lineWidth = 1; g.strokeRect(x0 + 0.5, y0 + 0.5, bw - 1, bh - 1);
-    if (i < n - 1) {   // guide lines to the next box
-      const z = Math.max(3, spans[i + 1] * k / 2), nx = x0 + bw + gap;
-      g.strokeStyle = 'rgba(214,226,238,0.25)';
-      g.beginPath(); g.moveTo(cx + z, cy - z); g.lineTo(nx, y0); g.moveTo(cx + z, cy + z); g.lineTo(nx, y0 + bh); g.stroke();
-    }
-    g.fillStyle = '#8a9db1'; g.font = font(20); g.textAlign = 'center';
-    g.fillText(['1 nm wide', '10 pm wide', '0.01 pm wide'][i], cx, 21);
-    g.fillStyle = ['#9fbfff', '#ffe94d', '#ffa02e'][i];
-    g.font = font(19); g.fillText([`1s cloud 106 pm`, `disc ${fmtPm(2 * disc)}`, 'proton 0.0017 pm'][i], cx, y0 + bh + 24);
-  }
-  g.textAlign = 'left';
-}
 // Faint labels, so the player connects what they see with chemistry's names. Every neutral atom
 // carries the name of the orbital its cloud shows, set just outside the cloud's drawn edge (on the
 // side facing up on screen), with "H" above it; every bare proton carries "H+".
@@ -2848,7 +2788,7 @@ function frame(now) {
   const paused = !$('startBox').hidden || !$('doneBox').hidden;
   fly(paused ? 0 : dt);
   if (!paused) { step(dt); updateLock(dt); }
-  updateHud(); drawSpectro(); drawLadder(); drawZoom();
+  updateHud(); drawSpectro(); drawLadder();
   draw(flatViews(), null);
   requestAnimationFrame(frame);
 }
@@ -3006,7 +2946,6 @@ function drawPanelCanvas() {
   g.font = '24px ui-monospace, monospace'; g.fillStyle = '#ffe94d';
   y = wrap(g, `Electron gun ${$('dialOut').textContent} · ${$('aimOut').textContent}`, 28, y + 12, W - 56, 30, 2);
   g.fillStyle = '#8a9db1';
-  for (const p of S.passes.slice(0, 2)) y = wrap(g, `${p.who}: ${fmtPm(p.b)} off-centre, target ${fmtPm(2 * p.disc)} · ${p.caught ? 'CAUGHT' : 'missed'}`, 28, y + 4, W - 56, 28, 1);
   g.fillText(`H⁺ ${$('cHp').textContent}   H ${$('cH').textContent}   free e⁻ ${$('cE').textContent}   ·   ${S.pilot ? 'Pilot-wave view' : 'EM field lines'} (X)${lockReady() ? ` · lock-on ${S.lock.on ? 'on' : 'off'} (right stick click)` : ''}   ·   A/B electron speed   ·   ship ${$('shipOut').textContent}`, 28, H - 28);
 }
 for (const id of ['vrBtn', 'vrBtn2']) $(id).addEventListener('click', toggleVR);
@@ -3015,5 +2954,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('lockBtn').addEventListener('click', toggleLock);
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, superelastic, closeCollision, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, superelastic, closeCollision, setDial, toggleField, step, capture, xr, drawPanelCanvas, pinScale: k => { pinnedScale = k; } };
 requestAnimationFrame(frame);

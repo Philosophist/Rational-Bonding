@@ -224,9 +224,8 @@ and what the waves cost per frame.
   rings) for one second and the lock closes. A shot fired while locked starts from the same spot
   in its wave every time and is steered through the disc on its pass by that proton, so it is
   caught. What stays real: the orbital is rolled from the computed odds for that pass's angular
-  momentum (the HUD lists the top three for your aim), and everything after the catch. The
-  Target window shows the target at three zooms (1 nm, 10 pm, 0.01 pm wide) with the gun's
-  spread, where your aim brings the shot in, and where the last passes came in.
+  momentum (the HUD lists the top three for your aim), and everything after the catch. (The
+  Target and Passes windows were removed at Steve's request, 2026-11-18.)
 - **Aim cone:** the gun focuses the electron's wave from a 30 nm aperture, so the spot is about
   ƛ·D / 30 nm (ƛ is the electron's reduced wavelength, D the distance).
 - **Where the electron lands:** one photon takes it straight from free to one orbital, any n up
@@ -252,7 +251,7 @@ and what the waves cost per frame.
   second of play, whether it leaves through the wall or another atom takes it.
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
 - **Time: one clock, nothing pauses.** At full speed 1 screen second is 40 fs. The player picks
-  a game speed (×0.1 to ×2). When something worth watching happens, the whole system slows down
+  a game speed (×0.1 to ×10, with ◀ ▶ in the time window). When something worth watching happens, the whole system slows down
   together:
   - an electron within 4 nm of a proton: until it moves at most about 1.5 nm per screen second;
   - an electron settling into its new cloud, or an atom changing shape: ×0.01;
@@ -463,6 +462,17 @@ and what the waves cost per frame.
   may draw up to 2 device pixels per screen pixel (phones 1.5). An attempt to lower resolution only
   when the graphics chip was slow broke phones (graphics calls block the page, so it never
   lowered) and was undone, 2026-11-18.
+- **Lighter cloud drawing** (Steve, 2026-11-18; measured at a fixed resolution in a phone-sized
+  software renderer, see the PR). The physics is not touched; only how the clouds are drawn:
+  - Clouds are drawn into a picture half as wide and half as tall as the screen, then laid under
+    the full-sharpness stars, lines, labels and glows. Clouds are soft, so this barely shows.
+    (Needs float pictures, EXT_color_buffer_float; without it everything is drawn at full size.)
+  - Each cloud gets samples by its size on screen (about one per 2 pixels across, 12 at least),
+    and a cloud under 48 pixels across leaves out the faintest shapes in its blend (under 3% of
+    the strongest), too small there to see. Big clouds, such as higher levels seen close up, keep
+    every shape and the full sample count.
+  - A ray that only grazes a cloud's ball gets samples in proportion to the stretch it crosses
+    (same spacing as through the middle), and a ray stops once almost no light gets through.
 - **Stimulated emission** (Steve, 2026-11-17): when an atom sends Lyman light from np while another
   atom or group is still up in the same np level, the light can't tell which atom sent it (they
   are inside a wavelength of each other), so the sender lands in 1s sharing the leftover

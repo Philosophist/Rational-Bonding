@@ -50,7 +50,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: var(--void);
 #statusBox.collapsed #census { padding-right: 30px; }
 #tutor { grid-column: 1; grid-row: 1; align-self: start; }
 .right { grid-column: 3; grid-row: 1 / 3; display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; scrollbar-width: thin; }   /* scrolls on short screens, so no window is cut off */
-#passBox, #logPanel { min-height: 38px; overflow: hidden; flex-shrink: 1; }
+#logPanel { min-height: 38px; overflow: hidden; flex-shrink: 1; }
 .bottom { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 10px; align-items: end; }
 h1 { font: 700 12px/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin: 0 0 6px; }
 h2 { font: 700 19px/1.2 var(--font-display); margin: 0 0 6px; }
@@ -89,7 +89,6 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 #aimOut { font-size: 12px; }
 #spectro { width: 100%; height: 70px; display: block; }
 #ladder { width: 176px; height: 170px; display: block; }
-#zoom { width: 100%; height: auto; display: block; }
 .keys { color: var(--muted); font: 11px/1.5 var(--font-data); }
 .keys.touch { display: none; }
 @media (pointer: coarse) { .keys { display: none; } .keys.touch { display: block; } #dpad { display: grid !important; } }
@@ -164,20 +163,11 @@ a { color: var(--cyan); }
     </section>
     <section class="panel" id="timeBox" data-name="time">
       <div class="row keep" style="justify-content:space-between"><span class="label" title="How much real time passes in one second of play">Game time</span><span class="data" id="timeOut"></span></div>
-      <div class="row" style="justify-content:space-between;margin-top:4px"><button type="button" id="speedBtn" title="Game speed (, and . keys)">game speed ×1</button><span class="data fine">ship <span id="shipOut">still</span></span></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px"><span class="row"><span class="label">speed</span><button type="button" id="speedDown" aria-label="Slower game" title="Slow the game down (, key)">◀</button><span class="data" id="speedOutT">×1</span><button type="button" id="speedUp" aria-label="Faster game" title="Speed the game up (. key)">▶</button></span><span class="data fine">ship <span id="shipOut">still</span></span></div>
       <div class="row" style="justify-content:space-between;margin-top:4px"><span class="tag" id="rateTag" hidden title="All odds are real. The one made-up thing is the ship's atomic lock-on: it steers a locked shot through the proton's capture disc. Which orbital the electron lands in is still rolled from the real odds.">lock-on: made-up tech</span><span class="fine" id="lightNote">light at its real speed</span></div>
       <div class="legend" style="margin-top:8px"><span class="swatch" style="background:linear-gradient(90deg,transparent,var(--plus))"></span>+ field <span class="swatch" style="background:linear-gradient(90deg,transparent,var(--minus))"></span>− field</div>
       <div class="fine" id="physOut" title="Gravity wells: every atom's electron is worked out on its own grid from Schrödinger's equation, tilted and dented by every other charge. Classic: the shell model."></div>
       <div class="fine" id="linesNote">Lines follow the electric field. The haze around each charge brightens with its strength (log scale, capped at the centre).</div>
-    </section>
-    <section class="panel" id="zoomBox" data-name="target" hidden>
-      <div class="label keep">Target, seen along your shot</div>
-      <canvas id="zoom" width="600" height="250" aria-label="The proton's capture target at three zooms: the 1s cloud, the capture disc and the proton itself"></canvas>
-      <div class="fine" id="zoomNote">Each box zooms into the middle of the one before. The disc is an equal-area stand-in for the real odds, not a literal bullseye.</div>
-    </section>
-    <section class="panel" id="passBox" data-name="passes">
-      <div class="label keep">Passes (where each came in, against the target)</div>
-      <div id="passes"><div class="miss">No passes yet.</div></div>
     </section>
     <section class="panel" id="logPanel" data-name="light and events">
       <div class="label keep">Light and events</div>
