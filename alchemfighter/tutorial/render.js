@@ -208,7 +208,7 @@ void main(){
   float L = log(1.0 + 40.0 * uFieldGain);
   float fp = clamp(log(1.0 + Sp * uFieldGain) / L, 0.0, 1.0), fn = clamp(log(1.0 + Sn * uFieldGain) / L, 0.0, 1.0);
   // A steep curve keeps the bright part of each glow well inside a 1s atom (about 0.1 nm).
-  col += vec3(1.0, 0.62, 0.18) * 1.1 * pow(fp, 5.0) + vec3(0.3, 0.5, 1.0) * 1.3 * pow(fn, 5.0);
+  col += vec3(1.0, 0.17, 0.82) * 1.1 * pow(fp, 5.0) + vec3(0.1, 0.45, 1.0) * 1.3 * pow(fn, 5.0);   // + neon pink, − neon blue
 
   // Electron clouds (small and far apart, so their order doesn't matter much).
 #if PASS == 2

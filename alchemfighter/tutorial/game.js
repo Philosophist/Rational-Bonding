@@ -64,6 +64,7 @@ const EVENT_SLOW = 0.01;
 // Game speed the player picks (, and . keys), and automatic slow motion when an electron dives in
 // close to a proton: there it speeds up a lot, so the clock slows until it moves at most
 // SLOW_TARGET nm per screen second. Odds per pass don't depend on the clock.
+const UNAIDED = 5;             // shots with real odds before the lesson and the lock-on
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
 const SLOW_NEAR = 4, SLOW_TARGET = 1.5, SLOW_MIN = 0.02;
 // After a capture the electron's glow is drawn melting into its new cloud over this many seconds.
@@ -133,7 +134,7 @@ const BEATS = {
   },
   2: {
     title: 'First capture',
-    say: 'Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger\'s equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton\'s capture target, a tiny disc. Fire 10 electrons at the proton, with real odds.',
+    say: `Your gun fires electrons. This is the pilot-wave view: each electron is a point riding its own matter wave. Near a proton you see the wave itself, worked out from Schrödinger's equation, bending round the proton, and the point pushed and sloshed along by it. Electrons are negative, so the proton pulls them in. But an electron can only stay if it gets rid of its energy by giving off light, and that almost never happens. To be caught, the point has to come in through the proton's capture target, a tiny disc. Fire ${UNAIDED} electrons at the proton, with real odds.`,
   },
   3: {
     title: 'Acid Neutrality',
@@ -345,7 +346,6 @@ const launchKE = (E, dist) => E + P.KE / Math.max(dist, 0.5);
 // same spot in its wave every time and steers it through the disc, so the proton catches it. What
 // stays real: which orbital it lands in is rolled from the computed odds for the pass's angular
 // momentum (where on the rings you aim), and everything after the catch.
-const UNAIDED = 5;             // shots with real odds before the lesson and the lock-on
 const LOCK_TIME = 1.0;         // s of steady aim to close the lock
 const LOCK_LMAX = Q.NMAX + 0.5;   // the lock holds only inside the rings (angular momentum the odds cover)
 const lockReady = () => S.beat >= 3 || (S.beat === 2 && S.b2.lesson);
@@ -369,13 +369,18 @@ function giveLesson() {
   S.b2.lesson = true;
   const E = DIAL[S.dial], disc = 2 * P.captureDiscRadius(E) * 1000, sh = Q.captureShares(E);
   const pct = k => Math.round(100 * (sh[k] || 0));
-  say(`${S.b2.captured ? 'You beat the odds!' : 'None caught, and that is normal.'} The point has to come in through a disc only ${disc.toFixed(1)} pm across at ${E} eV (the 1s cloud it would join is 106 pm across, the proton itself 0.0017 pm), and your gun cannot choose where the point sits inside its wave: that is random. On average a 1 eV electron needs about 20 million passes before one is caught. Space is still full of neutral hydrogen because protons and electrons meet so often: in a neon sign's glow a proton waits about 25 seconds, in the thin upper air months to years, and in ordinary air a proton never waits at all, it takes an electron from a molecule within billionths of a second. In this tiny system, with ten free electrons, it would be about 25 microseconds, which at our clock is about 20 years of play. So your ship has a made-up technology: atomic lock-on. Hold the crosshair on the proton until the lock closes, then fire. Which orbital it lands in is still rolled from the real odds: at this speed about ${pct('1s')}% go straight to 1s, ${pct('2p')}% to 2p, ${pct('2s')}% to 2s.`);
+  // Radiative capture's rate grows with the number of free electrons: 25 µs for ten in this system.
+  const nFree = freeElectrons().length, wait = 25e-6 * 10 / Math.max(1, nFree);
+  const waitTxt = `${nFree === 0 ? 'with a single free electron' : nFree === 1 ? 'with the one free electron left' : `with the ${nFree} free electrons in it now`}, it would be about ${Math.round(wait * 1e6)} microseconds, which at our clock is about ${fmtSpan(wait * 1e15 / FS_PER_S)} of play`;
+  say(`${S.b2.captured ? 'You beat the odds!' : 'None caught, and that is normal.'} The point has to come in through a disc only ${disc.toFixed(1)} pm across at ${E} eV (the 1s cloud it would join is 106 pm across, the proton itself 0.0017 pm), and your gun cannot choose where the point sits inside its wave: that is random. On average a 1 eV electron needs about 20 million passes before one is caught. Space is still full of neutral hydrogen because protons and electrons meet so often: in a neon sign's glow a proton waits about 25 seconds, in the thin upper air months to years, and in ordinary air a proton never waits at all, it takes an electron from a molecule within billionths of a second. In this tiny system, ${waitTxt}. So your ship has a made-up technology: atomic lock-on. ${S.b2.captured ? 'You won\'t need it for this proton, but it is yours from now on' : 'Hold the crosshair on the proton until the lock closes, then fire'}. Which orbital it lands in is still rolled from the real odds: at this speed about ${pct('1s')}% go straight to 1s, ${pct('2p')}% to 2p, ${pct('2s')}% to 2s.`);
   // A clean start for the lock-on: every free electron is cleared out of the system.
   for (const e of freeElectrons()) e.active = false;
   S.ps = S.ps.filter(x => x.active);
   $('lockBtn').hidden = false;
   $('rateTag').hidden = false;
   lastGoals = '';
+  // Already caught one unaided: this proton is neutral now, so after time to read, move on.
+  if (S.b2.captured && !S.b2.nextAt) S.b2.nextAt = S.realT + 30;   // (screen seconds: reading time does not speed up with the game)
   log('Atomic lock-on unlocked (made-up technology). L or the Lock-on button turns it on and off.', 'hit');
   panelDirty();
 }
@@ -408,11 +413,11 @@ function fire() {
     const old = free[0];   // electrons are kept in the order they were fired
     old.active = false;
     S.ps = S.ps.filter(x => x.active);
-    S.flashes.push({ pos: [...old.pos], col: [0.3, 0.5, 1], t: 0, life: 0.5, size: 0.6 });
+    S.flashes.push({ pos: [...old.pos], col: [0.1, 0.45, 1], t: 0, life: 0.5, size: 0.6 });
     if (!S.trimSaid) { S.trimSaid = true; log(`More than ${MAX_FREE} free electrons: the oldest is removed each time you fire, to keep the game smooth.`); }
   }
   S.cooldown = 0.35;
-  S.flashes.push({ pos: v3.add(a.muzzle, v3.scale(ax, 0.3)), col: [0.3, 0.5, 1.0], t: 0, life: 0.25, size: 0.25 });
+  S.flashes.push({ pos: v3.add(a.muzzle, v3.scale(ax, 0.3)), col: [0.1, 0.45, 1], t: 0, life: 0.25, size: 0.25 });
 }
 
 const fmtSpan = s => (s < 120 ? `${Math.round(s)} seconds` : s < 7200 ? `${Math.round(s / 60)} minutes` : s < 172800 ? `${Math.round(s / 3600)} hours` : s < 3.15e7 * 2 ? `${Math.round(s / 86400)} days` : `${Math.round(s / 3.15e7).toLocaleString('en-US')} years`);
@@ -1616,7 +1621,7 @@ function updateAtoms(dt, dtFs) {
         ? 'You just made a hydrogen atom. Its electron is in 1s, the bottom step: it can\'t fall any further and never lands on the proton. 1s is the lowest energy an electron can have here.'
         : `You just made a hydrogen atom: neutral, with its electron in ${P.stateName(a.st)}. Higher orbitals are real and last a long time on an atom's scale (2p about 1.6 billionths of a second, which is hours at this clock), so it will most likely still be in ${P.stateName(a.st)} when you move on. When it does step down, each step comes out as light, and it stops at 1s.`);
       if (S.beat === 2 && !S.b2.lesson) { if (!S.b2.lessonAt) S.b2.lessonAt = S.time + 4; }
-      else if (S.beat === 2 && !S.b2.nextAt) S.b2.nextAt = S.time + 7;   // time to read, then Acid Neutrality
+      else if (S.beat === 2 && !S.b2.nextAt) S.b2.nextAt = S.realT + 7;   // time to read, then Acid Neutrality
     }
   }
   if (S.beat === 3 && !S.b3.doneAt && acidLeft() === 0 && !S.falling.length && S.atoms.every(a => !a.capt && a.fade >= 1)) {
@@ -1718,7 +1723,7 @@ function lightSlowNow(L) {
   return Math.min(1, want * Math.exp(Math.max(0, L.age - hold) / EMIT_EASE));
 }
 function step(dtReal) {
-  S.dtReal = dtReal;
+  S.dtReal = dtReal; S.realT = (S.realT || 0) + dtReal;
   const dt = dtReal * SPEEDS[S.speed];
   S.time += dt;
   S.cooldown = Math.max(0, S.cooldown - dtReal);
@@ -1753,7 +1758,7 @@ function step(dtReal) {
   updateGroups(dt, dtFs);
   // Light: c × the real time that passed. Steps down: the same real time. Chance encounters: real odds.
   updateLight(dt);
-  if (S.beat === 2 && S.b2.nextAt && S.time >= S.b2.nextAt) startBeat(3);
+  if (S.beat === 2 && S.b2.nextAt && S.realT >= S.b2.nextAt) startBeat(3);
   if (S.beat === 2 && !S.b2.lesson && S.b2.lessonAt && S.time >= S.b2.lessonAt) giveLesson();
   for (const f of S.flashes) f.t += dt;
   S.flashes = S.flashes.filter(f => f.t < f.life);
@@ -2029,7 +2034,7 @@ function drawLadder() {
   // √ scale on energy so the upper levels don't crowd together
   const y = E => top + (bot - top) * Math.sqrt(-E / P.RY);
   lctx.font = '20px ui-monospace, monospace';
-  lctx.fillStyle = 'rgba(90,140,255,.12)'; lctx.fillRect(0, 0, W, top - 6);
+  lctx.fillStyle = 'rgba(26,115,255,.12)'; lctx.fillRect(0, 0, W, top - 6);
   lctx.fillStyle = 'rgba(214,226,238,.55)'; lctx.fillText('free (E > 0)', 10, 26);
   const a = S.cascade ? S.cascade.atom : S.atoms[S.atoms.length - 1], cur = a ? (a.trans ? a.trans.to : a.st) : null;
   for (let n = 1; n <= 4; n++) {
@@ -2041,7 +2046,7 @@ function drawLadder() {
   }
   if (!a) {
     const E = DIAL[S.dial], yy = top - 10 - Math.min(26, 26 * Math.log10(1 + E * 10) / 2.3);
-    lctx.fillStyle = '#5a8cff'; lctx.beginPath(); lctx.arc(W / 2, yy, 6, 0, Math.PI * 2); lctx.fill();
+    lctx.fillStyle = '#1a73ff'; lctx.beginPath(); lctx.arc(W / 2, yy, 6, 0, Math.PI * 2); lctx.fill();
   }
   lctx.fillStyle = 'rgba(214,226,238,.45)'; lctx.textAlign = 'right'; lctx.fillText('−13.6 eV', W - 14, bot - 8); lctx.textAlign = 'left';
 }
@@ -2092,8 +2097,34 @@ function updateHud() {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
-const renderer = (() => { try { return createRenderer(canvas); } catch (err) { console.error(err); return null; } })();
+const makeRenderer = () => { try { return createRenderer(canvas); } catch (err) { console.error(err); return null; } };
+let renderer = makeRenderer();
 if (!renderer) $('glFail').hidden = false;
+// If the phone's graphics chip gives up (the context is lost), wait for it to come back, rebuild the
+// renderer and carry on at the lowest resolution, instead of leaving a dead picture.
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); renderer = null; crumb.lost = (crumb.lost || 0) + 1; saveCrumb(); });
+canvas.addEventListener('webglcontextrestored', () => { renderer = makeRenderer(); renderScale = 0.35; frameAvg = 30; log('The graphics chip reset; drawing resumed at lower resolution.', 'red'); });
+// A note kept on this device (never sent anywhere) of how the last session was going, so that if
+// the browser itself crashes the start card can say what was happening just before.
+const CRUMB = 'alchemfighter.lastSession';
+const crumb = { ok: false, t: 0 };
+function saveCrumb() {
+  try {
+    Object.assign(crumb, { t: Math.round(performance.now() / 1000), beat: S.beat, atoms: S.atoms.length, free: freeElectrons().length, shots: S.shots, ms: Math.round(frameAvg), scale: +renderScale.toFixed(2), px: canvas.width + 'x' + canvas.height, wellMs: +(S.wellMs || 0).toFixed(1), heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : undefined });
+    localStorage.setItem(CRUMB, JSON.stringify(crumb));
+  } catch { /* storage blocked: nothing to keep */ }
+}
+try {
+  const last = JSON.parse(localStorage.getItem(CRUMB) || 'null');
+  if (last && !last.ok && last.t > 5) {
+    $('crashNote').hidden = false;
+    $('crashNote').textContent = `Last time the game stopped without closing, ${last.t} s in: level part ${last.beat}, ${last.atoms} atoms, ${last.free} free electrons, ${last.shots} shots, frames ${last.ms} ms at ${last.px} px${last.lost ? `, graphics resets ${last.lost}` : ''}${last.err ? `, error: ${last.err}` : ''}. (Kept only on this device.)`;
+  }
+} catch { /* storage blocked */ }
+setInterval(saveCrumb, 2000);
+window.addEventListener('pagehide', () => { crumb.ok = true; saveCrumb(); });
+window.addEventListener('pageshow', () => { crumb.ok = false; });
+window.addEventListener('error', e => { crumb.err = String(e.message || e).slice(0, 160); saveCrumb(); });
 const lines = new Lines();
 
 function fieldAt(x, skip) {
@@ -2133,7 +2164,7 @@ function fieldLines() {
         if (v3.len(x) > P.SPHERE_R) break;
         const a = fieldAlpha(mag) * Math.min(1, 0.35 + r / 0.4);   // a little thinner right at the charge, where lines crowd
         if (a < 0.004) break;                                       // too weak to see: stop the line here
-        lines.seg(prev, x, pos ? [1, 0.62, 0.18] : [0.3, 0.5, 1], a);
+        lines.seg(prev, x, pos ? [1, 0.17, 0.82] : [0.1, 0.45, 1], a);
         prev = x;
         // stop at an opposite charge
         let hit = false;
@@ -2341,7 +2372,7 @@ function lockReticle() {
 function coneLines(a) {
   const ax = v3.norm(v3.sub(a.aimPoint, a.muzzle));
   const e1 = v3.norm(v3.cross(ax, Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(ax, e1);
-  const col = S.lock.locked && a.target && a.target.p === S.lock.target ? [0.36, 0.95, 0.6] : [0.3, 0.5, 1];
+  const col = S.lock.locked && a.target && a.target.p === S.lock.target ? [0.36, 0.95, 0.6] : [0.1, 0.45, 1];
   let prev = null;
   for (let i = 0; i <= 40; i++) {
     const t = 2 * Math.PI * i / 40, p = v3.add(a.aimPoint, v3.add(v3.scale(e1, Math.cos(t) * a.cone), v3.scale(e2, Math.sin(t) * a.cone)));
@@ -2452,8 +2483,8 @@ function draw(views, panel) {
   });
   if (WELLS) bondClouds(clouds);
   const glows = [];
-  for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.85, 0.6] });
-  for (const e of freeElectrons()) if (!freeBlur(e)) glows.push({ pos: e.pos, size: 0.008, col: [0.45, 0.65, 1] });
+  for (const p of S.ps) if (p.kind === 'proton' && p.active) glows.push({ pos: p.pos, size: 0.012, col: [1, 0.6, 0.92] });
+  for (const e of freeElectrons()) if (!freeBlur(e)) glows.push({ pos: e.pos, size: 0.008, col: [0.35, 0.62, 1] });
   glows.push(...fallGlows);
   for (const f of S.flashes) {
     const x = f.t / f.life;
@@ -2469,7 +2500,7 @@ function draw(views, panel) {
     const near = x => { let d = Infinity; for (const p of S.ps) if (p.kind === 'proton' && p.active) d = Math.min(d, v3.len(v3.sub(x, p.pos))); return Math.max(0, Math.min(1, (TRAIL_NEAR - d) / 1.5)); };
     const blur = freeBlur(e), mid = e.so ? v3.sub(e.pos, e.so) : e.pos;
     const pts = [...e.trail, blur ? mid : e.pos];
-    for (let i = 1; i < pts.length; i++) { const k = near(pts[i]); if (k > 0) lines.seg(pts[i - 1], pts[i], [0.3, 0.5, 1], k * (0.08 + 0.4 * i / pts.length)); }
+    for (let i = 1; i < pts.length; i++) { const k = near(pts[i]); if (k > 0) lines.seg(pts[i - 1], pts[i], [0.1, 0.45, 1], k * (0.08 + 0.4 * i / pts.length)); }
     if (blur) {
       // circling its spin axis faster than the eye can follow: drawn as the blurred loop it traces
       const sp = e.spin, o = e.so, al = v3.dot(o, sp), r = v3.sub(o, v3.scale(sp, al)), rl = v3.len(r);
@@ -2773,7 +2804,7 @@ function atomLabels(eye) {
   for (const p of S.ps) {
     if (p.kind !== 'proton' || !p.active || p.q !== 1) continue;
     const h = size(p.pos);
-    strokeTextC('H+', v3.add(p.pos, v3.scale(B.u, 0.05 + 1.2 * h)), h, [1, 0.85, 0.6], 0.3);
+    strokeTextC('H+', v3.add(p.pos, v3.scale(B.u, 0.05 + 1.2 * h)), h, [1, 0.6, 0.92], 0.3);
   }
 }
 

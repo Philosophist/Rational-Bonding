@@ -25,8 +25,8 @@
   --muted: #8a9db1;
   --cyan: #2fe3e6;
   --magenta: #e04dff;
-  --plus: #ffa02e;     /* positive field glow */
-  --minus: #5a8cff;    /* negative field glow */
+  --plus: #ff2bd1;     /* positive charge: neon pink */
+  --minus: #1a73ff;    /* negative charge: neon blue */
   --gold: #ffe94d;
   --good: #5cf29a;
   --font-display: "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -69,7 +69,7 @@ button:hover { border-color: var(--cyan); }
 button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 button[aria-pressed="true"] { background: rgba(47,227,230,.22); border-color: var(--cyan); color: #fff; }
 button:disabled { opacity: .35; cursor: not-allowed; }
-.fire { font: 700 14px var(--font-display); letter-spacing: .12em; padding: 9px 18px; border-color: var(--minus); background: rgba(90,140,255,.2); }
+.fire { font: 700 14px var(--font-display); letter-spacing: .12em; padding: 9px 18px; border-color: var(--minus); background: rgba(26,115,255,.2); }
 .tag { display: inline-block; font: 500 11px var(--font-data); border: 1px solid rgba(255,233,77,.5); color: var(--gold); border-radius: 3px; padding: 1px 6px; }
 #census { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; }
 #heat { margin-top: 6px; line-height: 1.35; }
@@ -219,6 +219,7 @@ a { color: var(--cyan); }
     <h2>Level 1: Electromagnetic Stardust</h2>
     <p>Welcome to the System. Currently your system is 80 nanometers (nm) in diameter. That's about a thousand times smaller than a bacterium. Your objective within the system is to achieve a state. In this level, your goal is to form a neutral hydrogen atom. In this level, the edge of the system holds matter in, but not light (photons).</p>
     <p class="warn" role="note"><b>Photosensitivity warning.</b> This game has flashes of light and moving patterns. If you have photosensitive epilepsy, or flashing lights have ever affected you, please talk to a doctor before playing, and stop at once if you feel unwell.</p>
+    <div class="fine" id="crashNote" hidden style="margin-top:8px;color:#ffe94d"></div>
     <div class="row" style="margin-top:10px"><button type="button" class="fire" id="startBtn">Start</button><button type="button" id="vrBtn2">Enter VR</button></div>
     <p class="fine" style="margin-top:10px">Physics: <button type="button" id="physWells" aria-pressed="true" title="New: every atom's electron is a wave worked out on its own grid from Schrödinger's equation (a well bubble), tilted and dented by every other charge, with the electron's point riding it">Gravity wells (new)</button> <button type="button" id="physClassic" aria-pressed="false" title="The earlier model: each shell's orbitals, mixed by the field along one axis">Classic</button></p>
     <p class="fine" id="vrNote" hidden>No VR headset found. Connect a PC VR headset (SteamVR, Oculus Link or Windows Mixed Reality) and open this page in Chrome or Edge, then press Enter VR.</p>

@@ -462,6 +462,14 @@ and what the waves cost per frame.
   may draw up to 2 device pixels per screen pixel (phones 1.5). An attempt to lower resolution only
   when the graphics chip was slow broke phones (graphics calls block the page, so it never
   lowered) and was undone, 2026-11-18.
+- **Charge colours** (Steve, 2026-11-18): positive is neon pink, negative neon blue (field glows,
+  field lines, proton points and H+ labels, electron points, trails, gun and aim cone).
+- **Unaided catch moves on**: catching the First capture proton without the lock-on gives the lesson,
+  then moves to Acid Neutrality after 30 screen seconds of reading time. The lesson's waiting time
+  uses the real number of free electrons (radiative capture's rate grows with it).
+- **Graphics resets**: if the phone's graphics chip drops the picture, the game rebuilds its
+  renderer at the lowest resolution and carries on. A note of how the last session was going is
+  kept on the device (never sent anywhere) and shown on the start card if the browser crashed.
 - **Lighter cloud drawing** (Steve, 2026-11-18; measured at a fixed resolution in a phone-sized
   software renderer, see the PR). The physics is not touched; only how the clouds are drawn:
   - Clouds are drawn into a picture half as wide and half as tall as the screen, then laid under
