@@ -83,11 +83,13 @@ vec2 psiTab(int i, int t, ivec3 q, int mode, float norm, float rmax, vec3 p){
   return vec2(A * sin(float(am)*phi), 0.0);
 }
 vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
-// Wave phase: +real cyan, −real magenta, ±imaginary violet / amber (prototype convention).
+// Wave phase (Steve, 2026-11-18): +real cyan, −real a magenta-leaning purple; the quarter turns
+// between them pale lavender (+imaginary) and amber (−imaginary). None of these is a charge colour
+// (+ neon pink, − neon blue), so a lobe's colour never reads as its charge.
 vec3 phaseColor(vec2 w){
   vec2 u = w / max(length(w), 1e-30); float ca = u.x, sa = u.y;
-  vec3 c = vec3(0.01,0.91,0.96)*max(ca,0.0) + vec3(0.94,0.18,0.37)*max(-ca,0.0)
-         + vec3(0.58,0.42,1.0)*max(sa,0.0) + vec3(1.0,0.72,0.25)*max(-sa,0.0);
+  vec3 c = vec3(0.01,0.91,0.96)*max(ca,0.0) + vec3(0.72,0.22,1.0)*max(-ca,0.0)
+         + vec3(0.86,0.84,1.0)*max(sa,0.0) + vec3(1.0,0.72,0.25)*max(-sa,0.0);
   return c / max(abs(ca) + abs(sa), 1e-6);   // (a wave that is exactly zero has no colour, not a broken one)
 }
 // One cloud's terms, read once per pixel.
