@@ -553,6 +553,23 @@ const wellRateNs = a => WL.emissionRate(WELL, wellOf(a).s) / (WL.T_AU_FS * 1e-6)
 // Steps every atom's wave, sharing a time budget per frame (ms): an atom that misses its turn
 // keeps its time and is stepped further on its next turn (the stepping is exact for any step).
 const WELL_BUDGET = () => (phone.matches ? 4 : 8);
+// The energy books for the wave itself. When a passing charge's field reshapes an atom's wave
+// (mixing in higher or lower levels), the atom's own energy changes, and the charge that did it
+// pays or receives the difference: its motion relative to the atom slows or quickens by exactly
+// that much (momentum kept, direction kept). The paying charge is the nearest one moving freely;
+// a change too small to matter (under 0.1 meV) or with no charge within 4 nm is left unbooked.
+function boundEnergy(s) {
+  let e = 0, w = 0;
+  for (let i = 0; i < s.re.length; i++) { const E = WELL.energies[i]; if (E >= 0) continue; const p = s.re[i] * s.re[i] + s.im[i] * s.im[i]; e += p * E; w += p; }
+  return w > 0 ? e / w : 0;
+}
+function payWave(a, E0, E1) {
+  const dE = (E1 - E0) * WL.HARTREE;
+  if (!(Math.abs(dE) > 1e-4)) return;
+  let payer = null, d = 4;
+  for (const c of S.ps) if (c.active && c.q && c !== a.p && !c.guide) { const r = v3.len(v3.sub(c.pos, a.p.pos)); if (r < d) { d = r; payer = c; } }
+  if (payer) P.inelasticScatter(payer, a.p, dE, 0);
+}
 let wellTurn = 0;
 function stepWells(dtFs) {
   if (!WELLS || !S.atoms.length) return;
@@ -566,8 +583,10 @@ function stepWells(dtFs) {
     const wv = wellOf(a), pull = wellPull(a), t = a.wvPend * AU_PER_FS;
     a.pull = pull; a.wvPend = 0;
     if (t <= 0) continue;
+    const Eb0 = boundEnergy(wv.s);
     WL.stepNear(WELL, wv, pull.F, pull.T, t, pull.lip);
     used++;
+    payWave(a, Eb0, boundEnergy(wv.s));
     // The electron itself: what leaked over the lip of the tilted well is the chance that it left.
     if (!a.capt && a.fade >= 1 && wv.lostEsc > 0 && Math.random() < wv.lostEsc && spill(a, wv, pull)) continue;
     const free = a.pending && a.pending.hazard && a.hold <= 0 && a.fade >= 1 && !a.capt;
@@ -959,6 +978,7 @@ function atomPass(ev) {
   const { e, p, rp } = ev, a = S.atoms.find(x => x.p === p);
   const E = ev.E;
   if (a && a.st.n === 2 || a && a.pair) { if (superelastic(ev, a)) return; }
+  if (a && a.st.n >= 2 && !a.pair) { if (closeCollision(ev, a)) return; }
   if (!a || !idle1s(a) || E <= P.EXCITE_E) return;
   if (bareProtons().some(q => v3.len(v3.sub(q.pos, e.pos)) < 2)) return;   // falling past a proton, not its own speed
   if (Math.random() > P.impactChanceReal(E, rp)) return;
@@ -1015,6 +1035,77 @@ function superelastic(ev, a) {
   e.E = (e.E || 0) + dE;
   S.superel = (S.superel || 0) + 1;
   if (S.superel <= 2) log(`A slow electron passed ${fmtNm(rp)} from a ${P.stateName(from)} atom and took its 10.2 eV: the atom dropped to 1s with no light, and the electron left with ${(E + dE).toFixed(1)} eV (a superelastic collision).`);
+  return true;
+}
+// Close collisions with excited atoms. A slow electron that passes through an excited atom's cloud
+// can trade energy with the bound electron directly: push it up a level or more, knock it off, or
+// take energy from it so the atom drops a level or more (no light either way). Collisions from
+// farther out are not rolled: there the passing charge's field reshapes the atom's computed wave
+// (stepWells), and the energy it gains or loses is paid by that charge.
+// Up and off: the two electrons meet as two free charges (the binary-encounter picture, Thomson's
+// rule): energy ε passes from the fast one with chance ∝ 1/ε², from the least a pass through the
+// cloud gives (ε at closest distance R, the cloud's size: E/(1 + (2ER/e²)²)) up to all of its
+// energy E. Which level it lands in is set by which energy band ε falls in; more than the binding
+// energy sets it free.
+// Down: from the same rule run backwards (detailed balance): the chance of dropping n → n'' at E
+// is (g'' / g)·((E + ΔE)/E) times the chance the reverse climb n'' → n has at E + ΔE, with the
+// sizes of the two clouds taken into account (g = 2n²). The new orbital's shape (l, m) is drawn by
+// its number of states, since a close collision scrambles it.
+// Departures, flagged: the bound electron is treated as standing still in the binary rule (good
+// for slow electrons hitting high levels, rough within about a factor of 2); levels above 7 count
+// as set free (the game's well holds up to 7); n = 2 → 1 uses the measured rate (superelastic).
+const COLL_NMAX = 7;
+const levelE = n => -P.RY / (n * n);
+function bandChance(n, nTo, E, R) {
+  // chance, for a pass through a cloud of size R around level n, that ε lands in level nTo's band
+  const eMin = E / (1 + (2 * E * R / P.KE) ** 2), lo = Math.max(eMin, levelE(nTo - 0.5) - levelE(n)), hi = Math.min(E, levelE(nTo + 0.5) - levelE(n));
+  if (!(hi > lo) || hi <= eMin) return 0;
+  return (1 / lo - 1 / hi) / (1 / eMin - 1 / E);
+}
+function closeCollision(ev, a) {
+  const { e, p, rp } = ev, E = Math.max(ev.E, 0.005), n = a.st.n;
+  if (a.capt || a.trans || a.fade < 1 || (a.emitL && a.emitL.launched) || n < 2 || n > COLL_NMAX) return false;
+  const R = cloudSize(a) * P.A0;
+  if (rp > Math.min(R, 2)) return false;
+  if (bareProtons().some(o => v3.len(v3.sub(o.pos, e.pos)) < 2)) return false;
+  const out = [];
+  // up, or off
+  for (let k = n + 1; k <= COLL_NMAX; k++) { const c = bandChance(n, k, E, R); if (c > 0) out.push({ to: k, dE: levelE(k) - levelE(n), c }); }
+  const bind = -levelE(n), eMin = E / (1 + (2 * E * R / P.KE) ** 2), eOff = Math.max(eMin, levelE(COLL_NMAX + 0.5) - levelE(n));
+  if (E > eOff) out.push({ to: 0, dE: null, c: (1 / eOff - 1 / E) / (1 / eMin - 1 / E) });
+  // down (n = 2 → 1 is the measured superelastic rate)
+  for (let k = n - 1; k >= (n === 2 ? 2 : 1); k--) {
+    const dE = levelE(n) - levelE(k), Rk = 1.5 * k * k * P.A0, up = bandChance(k, n, E + dE, Rk);
+    if (up > 0) out.push({ to: k, dE: -dE, c: (k * k) / (n * n) * ((E + dE) / E) * up * Math.min(1, (Rk * Rk) / (R * R)) });
+  }
+  const tot = out.reduce((x, o) => x + o.c, 0);
+  let r = Math.random() * Math.max(1, tot);
+  const pick = out.find(o => (r -= o.c) < 0);
+  if (!pick) return false;
+  const th = Math.acos(1 - 2 * Math.random());
+  if (pick.to === 0) {
+    // knocked off: the incoming electron gives ε (drawn in the band above eOff), the freed one takes what is left over the binding
+    const eps = 1 / (1 / eOff - Math.random() * (1 / eOff - 1 / E));
+    if (!P.inelasticScatter(e, p, eps, th)) return false;
+    if (a.emitL) { cancelLight(a.emitL); a.emitL = null; }
+    a.pending = null;
+    freeAtom(a, Math.max(0.001, eps - bind), [0.4, 0.6, 1]);
+    S.collOff = (S.collOff || 0) + 1;
+    if (S.collOff <= 2) log(`A slow electron went through a ${P.stateName(a.st)} atom's cloud and knocked its electron off (it only takes ${bind.toFixed(2)} eV from n = ${n}). That proton is bare again.`, 'red');
+    return true;
+  }
+  if (!P.inelasticScatter(e, p, pick.dE, th)) return false;
+  // the new orbital: l drawn by its 2l + 1 states, then m
+  const lTop = Math.min(pick.to - 1, WELLS ? WELL.LMAX : 5);
+  let x = Math.random() * (lTop + 1) ** 2, l = 0;
+  while (l < lTop && (x -= 2 * l + 1) >= 0) l++;
+  const to = { n: pick.to, l, m: Math.floor(Math.random() * (2 * l + 1)) - l };
+  if (a.emitL) { cancelLight(a.emitL); a.emitL = null; }
+  a.pending = null;
+  a.trans = { from: a.st, to, t: 0, dur: SETTLE };
+  e.E = Math.max(0.001, E - pick.dE);
+  S.collStep = (S.collStep || 0) + 1;
+  if (S.collStep <= 3) log(`A slow electron went through a ${P.stateName(a.st)} atom's cloud and ${pick.dE > 0 ? `pushed it up to ${P.stateName(to)}, slowing by ${pick.dE.toFixed(2)} eV` : `took ${(-pick.dE).toFixed(2)} eV from it: the atom dropped to ${P.stateName(to)} with no light`}.`);
   return true;
 }
 // The atom comes apart: its proton is bare again and its electron flies off with `extra` eV.
@@ -1283,7 +1374,7 @@ function stepGroup(q, dt, dtFs) {
   const k = { G: q.G, Gr: q.Gr, J: M.J[top * N + mate] * q.Gr, F: M.F[top * N + mate], D: M.D[top] - M.D[mate] };
   groupSlow(q, k, P.pairStep([1, 0, 0, 0], 0, k));
   q.members.forEach((a, j) => {
-    a.mix.w = q.w[j];
+    if (a.mix) a.mix.w = q.w[j];
     // Each member's own antenna: a wave drawn with its share's size and phase.
     let L = q.lights.get(a);
     const amp = Math.hypot(q.c.re[j], q.c.im[j]);
@@ -2893,5 +2984,5 @@ vrSupported().then(ok => { if (!ok) for (const id of ['vrBtn', 'vrBtn2']) $(id).
 $('lockBtn').addEventListener('click', toggleLock);
 restart();
 // Test hook: lets automated browser checks drive the game. Harmless for players.
-window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, superelastic, setDial, toggleField, step, capture, xr, drawPanelCanvas };
+window.__alchem = { get state() { return S; }, wellCloud, wellAlphabet, cam, fire, startLight, togglePilot, lines, setSpeed, slowTarget, startBeat, aimInfo, predictPath, setPure, stimJoin, orbitalName, scheduleDecay, superelastic, closeCollision, setDial, toggleField, step, capture, xr, drawPanelCanvas };
 requestAnimationFrame(frame);

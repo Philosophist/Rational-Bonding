@@ -479,6 +479,20 @@ and what the waves cost per frame.
   measured σ_up near threshold (0.35 πa₀²): about 0.25 nm² at 0.1 eV. A group sharing an n = 2
   excitation loses it with the hit atom's share. Departures: n = 2 only; one cross-section for 2s
   and 2p.
+- **Collisions with higher levels** (Steve, 2026-11-17):
+  - Far passes: the passing charge's field reshapes the atom's computed wave (mixing in higher or
+    lower levels), and now the energy books are kept for that too: the nearest free charge within
+    4 nm pays or receives the change in the atom's own energy (payWave). Changes under 0.1 meV, or
+    with no charge that close, are left unbooked.
+  - Close passes (through the cloud, closeCollision): binary-encounter rule (Thomson): energy ε
+    passes to the bound electron with chance ∝ 1/ε² from the least a pass through the cloud gives
+    up to all the incoming energy; its band sets the new level, more than the binding sets the
+    electron free (levels above 7 count as free). Drops by detailed balance from the reverse climbs
+    (g = 2n²). The new l and m are drawn by number of states. Very likely for high levels: a
+    0.1 eV electron through a 6d cloud usually changes its level.
+  - Departures: bound electron treated as standing still in the binary rule (rough, about a factor
+    of 2); far and close passes are split at the cloud's size, so near the edge both can act;
+    n = 2 → 1 uses the measured superelastic rate.
 - **Two views** (Steve, 2026-11-17; the Glow view was removed): the **pilot-wave view** (the
   default) and **EM field lines** (V, the two buttons, or X in VR). EM field lines: and each photon's electric wave. Nothing is drawn
   stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn
