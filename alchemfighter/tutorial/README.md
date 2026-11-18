@@ -450,7 +450,9 @@ and what the waves cost per frame.
   more of the bound wave) by its name (2p); several orbitals of one shell as a hybrid, sp^λ with
   λ = p share over s share (sp, sp², sp³, sp³d²; the leading number is the shell); an asterisk when
   the name covers less than 90% of the bound wave (other shells mixed in or a strong pull
-  distorting it): 2p*. A spin-paired H₂ shows σ1s once, above the pair.
+  distorting it): 2p*; two shells about evenly (each 40% or more) are both named, 1s+2p. The name
+  comes from the cloud as drawn (an atom sharing an excitation, changing level or sending light
+  shows both levels), not from the level it rests in. A spin-paired H₂ shows σ1s once, above the pair.
 - **Aim path** (Steve, 2026-11-17): the predicted path now follows the same rules as the shot: the
   game's own close-in force and leapfrog steps, and inside a bare proton's guide radius the Coulomb
   matter wave's flow (updateGuides). It is the path of the middle of the wave; an unaided shot's

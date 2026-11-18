@@ -2736,15 +2736,21 @@ function orbitalName(a) {
   const st = a.st, n0 = st.n || 0;
   if (!n0) return null;
   const base = [{ t: `${n0}${ORB_L[st.l] || '?'}` }];
-  if (!WELLS || !a.wv || a.trans || a.mix || a.pair) return base;
-  const p = WL.shares(a.wv.s).p, byN = new Map();
+  // Named from what is drawn right now: the cloud's own make-up (an atom sharing an excitation with
+  // others shows its 1s and its share of the excited shape together; one changing level or sending
+  // light shows both levels as one sloshing wave).
+  const parts0 = [];
+  if (a.mix && a.mix.st) { const w = Math.max(0, Math.min(1, a.mix.w || 0)); parts0.push({ n: n0, l: st.l, p: 1 - w }, { n: a.mix.st.n, l: a.mix.st.l, p: w }); }
+  else if (WELLS && (a.ptSh || a.wv)) {
+    const p = a.ptSh || WL.shares(a.wv.s).p;
+    for (let i = 0; i < p.length; i++) if (WELL.energies[i] < 0 && p[i] >= 1e-6) parts0.push({ n: WELL.states[i].n, l: WELL.states[i].l, p: p[i] });
+  } else return base;
+  const byN = new Map();
   let tot = 0;
-  for (let i = 0; i < p.length; i++) {
-    if (WELL.energies[i] >= 0 || p[i] < 1e-6) continue;
-    const x = WELL.states[i];
-    tot += p[i];
+  for (const x of parts0) {
+    tot += x.p;
     const e = byN.get(x.n) || { w: 0, l: new Float64Array(8) };
-    e.w += p[i]; e.l[x.l] += p[i]; byN.set(x.n, e);
+    e.w += x.p; e.l[x.l] += x.p; byN.set(x.n, e);
   }
   if (tot <= 0) return base;
   let n = n0, best = -1;
@@ -2756,6 +2762,14 @@ function orbitalName(a) {
   const parts = [{ t: String(n) }];
   const lead = e.l[ls[0]];
   for (const l of ls) { parts.push({ t: ORB_L[l] || '?' }); const x = fmtExp(e.l[l] / lead); if (x) parts.push({ t: x, sup: true }); }
+  // two shells about evenly (each 40% or more): both named, the larger first (1s+2p)
+  let n2 = 0, b2 = -1;
+  for (const [k, x] of byN) if (k !== n && x.w > b2) { b2 = x.w; n2 = k; }
+  if (n2 && b2 / tot >= 0.4) {
+    const e2 = byN.get(n2); let l2 = 0; for (let l = 1; l < 8; l++) if (e2.l[l] > e2.l[l2]) l2 = l;
+    let l1 = ls[0]; for (const l of ls) if (e.l[l] > e.l[l1]) l1 = l;
+    return [{ t: `${n}${ORB_L[l1] || '?'}+${n2}${ORB_L[l2] || '?'}` }];
+  }
   if (covered / tot < 0.9) parts.push({ t: '*' });
   return parts;
 }
