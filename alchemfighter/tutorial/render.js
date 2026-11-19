@@ -2,7 +2,9 @@
 // the glow of their electric field, electron clouds (ray-marched wavefunctions, as in the prototype),
 // point glows for flashes, and a line pass for photons, field lines, trails and the aim cone.
 
-export const MAX_CHARGES = 32, MAX_CLOUDS = 12, MAX_GLOWS = 48;
+export const MAX_CHARGES = 32, MAX_CLOUDS = 20, MAX_GLOWS = 48;
+// Samples in a bent free wave's table (see sampleCoul).
+export const COUL_N = 512;
 // Orbitals one cloud can be a blend of, and the points in a free electron's radial table.
 export const MAX_TERMS = 10, FREE_N = 128;
 // Clouds are drawn at this fraction of the picture's width and height (see createRenderer).
@@ -26,7 +28,7 @@ uniform vec4 uQ[${MAX_CHARGES}]; uniform float uQs[${MAX_CHARGES}]; uniform int 
 uniform int uNA; uniform float uAS; uniform highp sampler2D uCloud; uniform highp sampler2D uFree;
 // Computed waves (the well bubbles): each term's own radial table, one row per (cloud, term).
 uniform highp sampler2D uTerm;
-uniform highp sampler2D uCloudPic; uniform vec2 uFull;
+uniform highp sampler2D uCloudPic; uniform vec2 uFull; uniform highp sampler2D uCoul;
 uniform vec4 uG[${MAX_GLOWS}]; uniform vec3 uGC[${MAX_GLOWS}]; uniform int uGN;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -93,7 +95,7 @@ vec3 phaseColor(vec2 w){
   return c / max(abs(ca) + abs(sa), 1e-6);   // (a wave that is exactly zero has no colour, not a broken one)
 }
 // One cloud's terms, read once per pixel.
-struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax; float trmax; int steps; vec4 pk;
+struct Cloud { vec3 pos; float radius; mat3 frame; float invMax, iso, fade; vec4 lean; int nt; float rmax; float trmax; int steps; vec4 pk; vec4 clip; vec4 side;
   ivec3 q[${MAX_TERMS}]; int mode[${MAX_TERMS}]; float norm[${MAX_TERMS}]; vec2 c[${MAX_TERMS}]; int g[${MAX_TERMS}]; };
 vec4 tx(int i, int k){ return texelFetch(uCloud, ivec2(k, i), 0); }
 Cloud loadCloud(int i){
@@ -101,7 +103,7 @@ Cloud loadCloud(int i){
   vec4 a = tx(i, 0), x = tx(i, 1), y = tx(i, 2), z = tx(i, 3), m = tx(i, 5);
   C.pos = a.xyz; C.radius = a.w; C.frame = mat3(x.xyz, y.xyz, z.xyz); C.invMax = x.w; C.iso = y.w; C.fade = z.w;
   C.lean = tx(i, 4); C.nt = int(m.x); C.rmax = m.y; C.trmax = m.z; C.steps = m.w > 0.5 ? min(int(m.w), uSteps) : uSteps;
-  if (C.lean.w > 1.5) { C.pk = tx(i, 6); return C; }   // a free packet (see sampleCloud)
+  if (C.lean.w > 1.5) { C.pk = tx(i, 6); C.clip = tx(i, 7); C.side = tx(i, 8); return C; }   // a free packet (see sampleCloud)
   for (int t = 0; t < ${MAX_TERMS}; t++) {
     if (t >= C.nt) break;
     vec4 qq = tx(i, 6 + t), cc = tx(i, 6 + ${MAX_TERMS} + t);
@@ -120,9 +122,34 @@ Cloud loadCloud(int i){
 vec4 samplePacket(Cloud C, vec3 pw){
   vec3 pr = pw - C.pos; float s = dot(pr, C.lean.xyz), r2 = max(dot(pr, pr) - s*s, 0.0);
   float a = exp(-r2 / (2.0 * C.rmax * C.rmax) - s*s / (4.0 * C.trmax * C.trmax)), ph = C.pk.x * s - C.pk.y;
+  // Clipped (one straight end of a bent wave): only outside a ball round the proton, on one side.
+  if (C.pk.w > 0.0) {
+    vec3 d = pw - C.clip.xyz; float dl = length(d);
+    a *= smoothstep(0.85 * C.clip.w, C.clip.w, dl) * smoothstep(-0.2, 0.2, dot(d, C.side.xyz));
+  }
   return vec4(phaseColor(vec2(cos(ph), sin(ph))), a * a);
 }
+// A free electron's wave where a proton bends it (lean.w = 3): the exact Coulomb wave
+// ψ = √C·F(ξ)·e^{ikz} (its table in uCoul), kept to a beam as wide as the gun's spot round the flow
+// line the electron rides (its incoming offset b0): each point's own flow line came in at
+// b² = η·g(ξ) (see matterwave.js coulombTable), and the beam's envelope is in that offset.
+// pk: [k (rad/nm), z0 (nm, the packet's middle along u), stepLen, ball radius]; clip: [b0, ξ range (a₀)].
+vec4 sampleCoul(int i, Cloud C, vec3 pw){
+  vec3 p = pw - C.pos, u = C.lean.xyz; float R = length(p), z = dot(p, u);
+  if (R > C.pk.w) return vec4(0.0);
+  float xi = (R - z) * uAS, eta = (R + z) * uAS, x = clamp(xi / C.clip.w, 0.0, 1.0) * ${COUL_N - 1}.0;
+  int j = min(int(x), ${COUL_N - 2}); float f = x - float(j);
+  vec4 T = mix(texelFetch(uCoul, ivec2(j, i), 0), texelFetch(uCoul, ivec2(j + 1, i), 0), f);
+  vec3 perp = p - z * u; float pl = length(perp);
+  vec3 b = pl > 1e-6 ? perp * (sqrt(max(0.0, eta * T.z)) / uAS / pl) : vec3(0.0);
+  vec3 db = b - C.clip.xyz;
+  float env = exp(-dot(db, db) / (2.0 * C.rmax * C.rmax) - (z - C.pk.y) * (z - C.pk.y) / (4.0 * C.trmax * C.trmax)) * (1.0 - smoothstep(0.85 * C.pk.w, C.pk.w, R));
+  float ph = C.pk.x * z;
+  vec2 w = cmul(T.xy, vec2(cos(ph), sin(ph))) * env;
+  return vec4(phaseColor(w), dot(w, w));
+}
 vec4 sampleCloud(int i, Cloud C, vec3 pw){
+  if (C.lean.w > 2.5) return sampleCoul(i, C, pw);
   if (C.lean.w > 1.5) return samplePacket(C, pw);
   vec3 pr = (pw - C.pos) * uAS;
   float f = C.lean.w > 0.5 && C.lean.w < 1.5 ? clamp(1.0 - dot(C.lean.xyz, pr) * (1.0 + 0.5 * length(pr)), 0.0, 2.0) : 1.0;
@@ -176,6 +203,19 @@ vec4 clouds(vec3 ro, vec3 rd){
     if (i >= uNA) break;
     vec4 a = tx(i, 0), ln = tx(i, 4);
     vec3 oc = ro - a.xyz;
+    if (ln.w > 2.5) {
+      // A bent wave: a ball round its proton (pk.w across), sampled finely enough for the beam.
+      // Only the part of the ball within a cylinder round the proton's axis that holds the beam.
+      vec4 pk = tx(i, 6), cy = tx(i, 8); vec3 u = ln.xyz;
+      float bb = dot(oc, rd), cc = dot(oc, oc) - pk.w*pk.w, hh = bb*bb - cc;
+      if (hh > 0.0) { hh = sqrt(hh); float t0 = max(-bb - hh, 0.0), t1 = -bb + hh;
+        vec3 op = oc - dot(oc, u) * u, dp = rd - dot(rd, u) * u;
+        float qa = dot(dp, dp), qb = dot(op, dp), qc = dot(op, op) - cy.x * cy.x;
+        if (qa < 1e-8) { if (qc > 0.0) t1 = t0; }
+        else { float hc = qb*qb - qa*qc; if (hc < 0.0) t1 = t0; else { hc = sqrt(hc); t0 = max(t0, (-qb - hc) / qa); t1 = min(t1, (-qb + hc) / qa); } }
+        if (t1 > t0) { Cloud C = loadCloud(i); marchCloud(i, C, ro, rd, t0, t1, clamp(int(ceil((t1 - t0) / pk.z)), 4, C.steps), acc, T); } }
+      continue;
+    }
     if (ln.w > 1.5) {
       // A packet: its bounds are an ellipsoid, 3 widths across and 4 lengths along, so a long thin
       // packet costs only the rays that actually pass through it, spaced to resolve its crests.
@@ -291,7 +331,7 @@ export function createRenderer(canvas) {
   const progOf = pass => {
     const p = link(VERT, FRAG(pass), ['aPos']), U = { p };
     for (const n of ['uViewport', 'uCamPos', 'uInvVP', 'uTime', 'uSphereR', 'uSteps', 'uQ', 'uQs', 'uQN', 'uFieldGain',
-      'uNA', 'uAS', 'uCloud', 'uFree', 'uTerm', 'uCloudPic', 'uFull',
+      'uNA', 'uAS', 'uCloud', 'uFree', 'uTerm', 'uCloudPic', 'uFull', 'uCoul',
       'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(p, n);
     return U;
   };
@@ -349,21 +389,31 @@ export function createRenderer(canvas) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
   };
-  const cloudTex = tex(), freeTex = tex(), termTex = tex();
+  const cloudTex = tex(), freeTex = tex(), termTex = tex(), coulTex = tex();
+  const coulArr = new Float32Array(MAX_CLOUDS * COUL_N * 4);
   const cloudArr = new Float32Array(MAX_CLOUDS * ROW * 4), freeArr = new Float32Array(MAX_CLOUDS * FREE_N), termArr = new Float32Array(MAX_CLOUDS * MAX_TERMS * FREE_N);
   gl.bindTexture(gl.TEXTURE_2D, cloudTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, ROW, MAX_CLOUDS, 0, gl.RGBA, gl.FLOAT, cloudArr);
   gl.bindTexture(gl.TEXTURE_2D, freeTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, FREE_N, MAX_CLOUDS, 0, gl.RED, gl.FLOAT, freeArr);
   gl.bindTexture(gl.TEXTURE_2D, termTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, FREE_N, MAX_CLOUDS * MAX_TERMS, 0, gl.RED, gl.FLOAT, termArr);
+  gl.bindTexture(gl.TEXTURE_2D, coulTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, COUL_N, MAX_CLOUDS, 0, gl.RGBA, gl.FLOAT, coulArr);
   // One cloud: { pos, radius (nm), frame: [x, y, z] unit vectors (y = the axis m is counted about),
   //   terms: [{ n (0 = free wave, −1 = own table), l, m, mode, norm, c: [re, im], g, table? }],
 //   free?: { table, rmax (a₀) }, trmax? (a₀, the reach of the terms' own tables),
   //   invMax, iso, fade, lean?: [x, y, z, on], steps? (march steps for this cloud; 0 = the scene's) }
   function packCloud(i, c) {
     const o = i * ROW * 4, put = (k, v) => cloudArr.set(v, o + k * 4);
-    if (c.packet) {   // { axis (unit), width, length (nm), k (rad/nm), phase, stepLen (nm) }
+    if (c.packet) {   // { axis (unit), width, length (nm), k (rad/nm), phase, stepLen (nm), clip?: { pos, R, side } }
       const P = c.packet;
       put(0, [...c.pos, 3 * P.width]); put(1, [1, 0, 0, c.invMax]); put(2, [0, 1, 0, c.iso]); put(3, [0, 0, 1, c.fade]);
-      put(4, [...P.axis, 2]); put(5, [0, P.width, P.length, c.steps || 0]); put(6, [P.k, P.phase, P.stepLen, 0]);
+      put(4, [...P.axis, 2]); put(5, [0, P.width, P.length, c.steps || 0]); put(6, [P.k, P.phase, P.stepLen, P.clip ? 1 : 0]);
+      if (P.clip) { put(7, [...P.clip.pos, P.clip.R]); put(8, [...P.clip.side, 0]); }
+      return;
+    }
+    if (c.coul) {   // { axis u, width, length, k (rad/nm), z0, stepLen, R (ball), b0, xiMax (a₀), table }
+      const K = c.coul;
+      put(0, [...c.pos, 3 * K.width]); put(1, [1, 0, 0, c.invMax]); put(2, [0, 1, 0, c.iso]); put(3, [0, 0, 1, c.fade]);
+      put(4, [...K.axis, 3]); put(5, [0, K.width, K.length, c.steps || 0]); put(6, [K.k, K.z0, K.stepLen, K.R]); put(7, [...K.b0, K.xiMax]); put(8, [K.rho, 0, 0, 0]);
+      coulArr.set(K.table.subarray(0, COUL_N * 4), i * COUL_N * 4);
       return;
     }
     const [X, Y, Z] = c.frame || [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -393,6 +443,8 @@ export function createRenderer(canvas) {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FREE_N, MAX_CLOUDS, gl.RED, gl.FLOAT, freeArr);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, termTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FREE_N, MAX_CLOUDS * MAX_TERMS, gl.RED, gl.FLOAT, termArr);
+    if (scene.clouds.some(c => c.coul)) { gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, coulTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, COUL_N, MAX_CLOUDS, gl.RGBA, gl.FLOAT, coulArr); }
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, coulTex);
     gl.activeTexture(gl.TEXTURE0);
     const ng = Math.min(MAX_GLOWS, scene.glows.length);
     gArr.fill(0); gcArr.fill(0);
@@ -403,7 +455,7 @@ export function createRenderer(canvas) {
       gl.uniform1f(U.uSphereR, scene.sphereR); gl.uniform1i(U.uSteps, scene.steps);
       gl.uniform4fv(U.uQ, qArr); gl.uniform1fv(U.uQs, qsArr); gl.uniform1i(U.uQN, nq); gl.uniform1f(U.uFieldGain, 2.0);   // glow brightens inside about 0.3 nm, the capture range
       gl.uniform1i(U.uNA, na); gl.uniform1f(U.uAS, scene.bohrPerUnit);
-      gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uFree, 2); gl.uniform1i(U.uTerm, 3); gl.uniform1i(U.uCloudPic, 4);
+      gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uFree, 2); gl.uniform1i(U.uTerm, 3); gl.uniform1i(U.uCloudPic, 4); gl.uniform1i(U.uCoul, 5);
       gl.uniform4fv(U.uG, gArr); gl.uniform3fv(U.uGC, gcArr); gl.uniform1i(U.uGN, ng);
     };
     const view = (U, v, k) => {

@@ -3,8 +3,9 @@
 Beats 1 and 2 of [`docs/levels/01-hydrogen-tutorial.md`](../../docs/levels/01-hydrogen-tutorial.md),
 in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `rationalbonding.com/alchemfighter/tutorial/` once merged.
 
-- **Beat 1, meet the proton:** a lone proton drawn as the glow of its electric field (log scale,
-  capped), with Field view lines.
+- **Beat 1, learn to fly** (Steve, 2026-11-19): just the thrusters and all-stop. Fly (W A S D or
+  the pad), then brake with all-stop (X or ■) until the ship is still, and the gun beat starts.
+  (The proton is still there, drawn as the glow of its field, but flying round it is no longer a goal.)
 - **Beat 2, first capture:** the electron gun, with an aim cone that is wider for slower electrons
   (the electron is a wave). Every pass is reported with its closest approach, its chance in the
   game and its real chance. On a capture the electron cloud appears in the level it landed in and
@@ -471,12 +472,28 @@ and what the waves cost per frame.
     0.4 nm wide, crests 3.9 nm apart; at 0.001 eV about 290 nm long (longer than the system).
   - Proton: given the coherence length of a proton in a gas at 300 K, λ_th/√(2π) = 0.04 nm
     (assumed: nothing in the level sets it). Its crests are several nm apart, so it shows one colour.
-  - Departures: widths are held fixed (real packets spread, and the beam narrows to its focus);
-    near a proton the drawn packet is not bent by it (the point still follows the computed
-    Coulomb wave); electron packets are drawn at 0.7 of an orbital's brightness so long packets
+  - Departures: widths are held fixed away from protons (real packets spread, and the beam
+    narrows to its focus); electron packets are drawn at 0.7 of an orbital's brightness so long packets
     don't wash out the view; at most 32 samples per ray through a packet (16 on phones).
   - Cost: in a phone-sized software test with 5 packets crossing the view, a frame at fixed
     resolution took about 3.5× as long as with them hidden; the resolution scaler absorbs it.
+- **The wave bends round a proton** (Steve, 2026-11-19; pilot-wave view, shots under 2 eV): within
+  5 nm of a bare proton an electron's wave is drawn as the exact Coulomb wave (the same one that
+  steers the point), kept to a beam as wide as the gun's spot round the flow line the point rides.
+  The beam is a tube along the flow lines: each point's flow line is followed back to where it came
+  in (its offset b, from b² = η·ξ(1 − 2 Re F′/F)·C|F|², closed form), and the beam keeps the
+  points whose lines came in within the spot. The proton's pull draws the lines in, so the tube
+  narrows past the proton (at 0.1 eV, to about a fifth of its width): Coulomb focusing, and the
+  wave is brighter there. Outside the ball the beam is drawn as two straight packets, in along the
+  shot and out along the line's exit direction, each as wide as the tube where it meets the ball.
+  - Departures: the spin term in the guidance rule (the corkscrew) is left out of the tube; the
+    pull reaches beyond 5 nm (at 0.1 eV a line 2 nm off is already 1.4 nm off at the ball's edge),
+    but the straight pieces don't keep narrowing; the outgoing piece's crests are not matched in
+    phase to the tube's; the tube and the straight pieces are crossfaded over the ball's outer 15%.
+    All to keep the drawing cheap; the point's own motion is unchanged.
+  - Cost: none measurable over the straight packet it replaces (phone-sized software test, beam
+    across the view: 97 ms a frame either way at a fixed resolution), with up to 64 samples per ray
+    in the ball on desktops (32 on phones).
 - **Charge colours** (Steve, 2026-11-18): positive is neon pink, negative neon blue (field glows,
   field lines, proton points and H+ labels, electron points, trails, gun and aim cone).
 - **Unaided catch moves on**: catching the First capture proton without the lock-on gives the lesson,

@@ -105,7 +105,7 @@ function newState() {
   return {
     time: 0, simFs: 0, beat: 1, ps: [proton], enc: new Map(), atoms: [], waves: [], flashes: [], spectrum: [],
     shots: 0, emitShown: 0, pilot: true, ionized: 0, bumped: 0, paired: 0, pairs: [], oldSteps: [], light: [], lightOut: 0, lightOutE: 0, fieldView: true, dial: DIAL.indexOf(0.1), cooldown: 0, cascade: null, autoCam: null, falling: [], trails: [], speed: 3, slow: 1,
-    b1: { start: null, maxAngle: 0, moved: false },
+    b1: { moved: false, peak: 0, stopped: false },
     b2: { tooFastSaid: false, captured: false, doneShown: false, nextAt: 0, lessonAt: 0, lesson: false },
     lock: { on: true, target: null, prog: 0, locked: false }, b3: { spawned: false, doneAt: 0, caught: 0 }, ended: false, said: '',
   };
@@ -130,7 +130,7 @@ const freeElectrons = () => S.ps.filter(p => p.kind === 'electron' && p.active);
 const BEATS = {
   1: {
     title: 'Meet the proton',
-    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field. The glow shows how strong it is, brightest close in, where it is strong enough to catch an electron. Press V (or EM field lines) to see the field\'s lines, and V again to come back to the pilot-wave view. Your ship drifts like anything in space: the keys fire thrusters, and X brakes.',
+    say: 'This is a proton. It\'s also a hydrogen ion, written H⁺: a hydrogen atom that has lost its only electron. It carries one unit of positive charge, and that charge reaches out into space as an electric field. The glow shows how strong it is, brightest close in, where it is strong enough to catch an electron. Press V (or EM field lines) to see the field\'s lines, and V again to come back to the pilot-wave view. Your ship drifts like anything in space: the thrusters (W A S D, or the pad) push it and it keeps going, and all-stop (X, or ■) brakes it until it is still. Try both.',
   },
   2: {
     title: 'First capture',
@@ -179,8 +179,8 @@ phone.addEventListener && phone.addEventListener('change', e => setTutorOpen(!e.
 function goals() {
   if (S.beat === 1) {
     return [
-      ['Fly around the proton (W A S D, X to brake)', S.b1.moved],
-      ['Look at it from two sides', S.b1.maxAngle > 1.3],
+      ['Fly: fire your thrusters (W A S D, or the pad)', S.b1.moved],
+      ['All-stop: brake until the ship is still (X, or ■)', S.b1.stopped],
     ];
   }
   if (S.beat === 2) {
@@ -1765,12 +1765,12 @@ function step(dtReal) {
 
   // Beat 1 goals
   if (S.beat === 1) {
-    const p = S.ps[0];
-    const d = v3.norm(v3.sub(camBasis().p, p.pos));
-    if (!S.b1.start) S.b1.start = d;
-    S.b1.maxAngle = Math.max(S.b1.maxAngle, Math.acos(Math.max(-1, Math.min(1, v3.dot(d, S.b1.start)))));
-    if (S.b1.moved && S.b1.maxAngle > 1.3) {
-      log('Nicely done: you have seen the field from two sides. Your electron gun is ready.');
+    // Learn to move and to stop: thrust up to some speed, then all-stop until the ship is still.
+    const v = v3.len(cam.v);
+    if (S.b1.moved) S.b1.peak = Math.max(S.b1.peak, v);
+    if (S.b1.peak > 0.5 && v < 0.05) S.b1.stopped = true;
+    if (S.b1.moved && S.b1.stopped) {
+      log('Nicely done: you can fly and stop. Your electron gun is ready.');
       startBeat(2);
     }
   }
@@ -2587,6 +2587,7 @@ function updateGuides() {
     if (d > R || v3.dot(v3.sub(e.pos, p.pos), rel) > 0) continue;   // only on the way in
     const gd = { p, E, R, u: v3.norm(rel), ph: 0, slice: null, sliceW: null };
     e.gd = gd; e.guideP = p;
+    e.cview = bentView(e, p, E, gd.u);
     e.guide = pos => {
       const r = v3.sub(pos, gd.p.pos), rl = Math.max(v3.len(r), 0.005);
       const vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME);   // the flow is fast only right at the wave's zeros
@@ -2695,6 +2696,38 @@ function spinCircle(dtFs) {
 const GUN_SPREAD = E => (E >= 0.1 ? 0.01 : E >= 0.01 ? 0.001 : 5e-5);   // eV, FWHM
 const PACKET_STEPS = phone.matches ? 16 : 32;
 const PROTON_COHERENCE = 0.0416;   // nm: λ_th / √(2π) for a proton at 300 K (λ_th = 0.104 nm)
+// The bent part of a free electron's wave, drawn from the moment a proton starts to guide it until
+// it is well past (render.js sampleCoul): inside a ball BENT_R round the proton the exact Coulomb
+// wave, kept to a beam round the flow line the electron rides; outside it, the straight packet
+// coming in along that line's incoming offset, and the straight packet going out the way the line
+// leaves the ball.
+const BENT_R = 5;   // nm
+function bentView(e, p, E, u) {
+  if (E > 2 || S.noBend) return null;   // faster than that the proton barely bends it (noBend: a test switch)
+  const xiMax = 2 * BENT_R / MW.A0_NM, r0 = v3.sub(e.pos, p.pos);
+  const b0 = MW.lineOffset(E, u, r0, xiMax), bl = v3.len(b0);
+  if (bl >= BENT_R) return null;
+  // The proton's pull reaches far: even at the ball's edge its flow lines are already drawn in toward
+  // it (at 0.1 eV a line that came in 2 nm off passes the edge about 1.4 nm off). So the beam enters
+  // where its own flow line crosses the edge, narrowed by the same amount (squeeze = ρ/b there).
+  const side = bl > 1e-9 ? v3.scale(b0, 1 / bl) : v3.norm(v3.cross(u, Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
+  const edge = rh => v3.sub(v3.scale(side, rh), v3.scale(u, Math.sqrt(Math.max(0, BENT_R * BENT_R - rh * rh))));
+  let lo = 0, hi = 0.999 * BENT_R;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (v3.len(MW.lineOffset(E, u, edge(m), xiMax)) < bl) lo = m; else hi = m; }
+  const inRel = edge(lo);
+  const squeeze = q => { const z = v3.dot(q, u), rh = Math.sqrt(Math.max(0, v3.dot(q, q) - z * z)), b = v3.len(MW.lineOffset(E, u, q, xiMax));
+    return b > 1e-6 && rh > 1e-6 ? Math.min(1, rh / b) : 1; };
+  // where its flow line leaves the ball, and which way
+  let r = [...r0], dir = u, rho = bl;
+  for (let i = 0; i < 4000 && v3.len(r) < BENT_R; i++) {
+    const z = v3.dot(r, u); rho = Math.max(rho, Math.sqrt(Math.max(0, v3.dot(r, r) - z * z)));
+    const v = MW.guideVelocity(E, u, r), vl = v3.len(v);
+    if (!(vl > 1e-9)) break;
+    dir = v3.scale(v, 1 / vl);
+    r = v3.add(r, v3.scale(dir, Math.min(0.02, Math.max(0.002, 0.05 * v3.len(r)))));
+  }
+  return { p, E, u, b0, xiMax, inRel, outRel: r, outDir: dir, rho, sIn: squeeze(inRel), sOut: squeeze(r), table: MW.coulombTable(E, xiMax) };
+}
 function freePackets() {
   const out = [];
   const packet = (pos, vel, m, width, length, phase, fade) => {
@@ -2707,6 +2740,23 @@ function freePackets() {
   };
   for (const e of freeElectrons()) {
     const v = v3.len(e.vel); if (v < 1e-9) continue;
+    const cv = e.cview;
+    if (cv) {
+      const p = cv.p, rel = v3.sub(e.pos, p.pos);
+      const k = MW.k_au(cv.E) / MW.A0_NM, vIn = Math.sqrt(2 * cv.E / P.ME);
+      const len = 1 / (2 * (GUN_SPREAD(e.E || 0.1) / (P.HBAR * vIn)) / 2.355), w = e.cone || 0.4;
+      if (!p.active || p.q !== 1 || v3.len(rel) > BENT_R + 4 * len) e.cview = null;
+      else {
+        const z0 = v3.dot(rel, cv.u), stepLen = Math.min(2 * Math.PI / k / 6, 1.5 * w), base = { invMax: 1, iso: 0.044, fade: 0.7, maxSteps: PACKET_STEPS, terms: [] };
+        out.push({ ...base, maxSteps: 2 * PACKET_STEPS, pos: p.pos, radius: BENT_R, coul: { axis: cv.u, width: w, length: len, k, z0, stepLen: Math.min(stepLen, 0.6 * w * Math.min(cv.sIn, cv.sOut)), R: BENT_R, b0: cv.b0, xiMax: cv.xiMax, table: cv.table, rho: Math.min(BENT_R, 1.3 * cv.rho + 4 * w) } });
+        // (the straight ends keep the width the beam has where they meet the ball: see bentView)
+        const zIn = v3.dot(cv.inRel, cv.u), inC = v3.add(p.pos, v3.add(cv.inRel, v3.scale(cv.u, z0 - zIn)));
+        out.push({ ...base, pos: inC, radius: 3 * w * cv.sIn, packet: { axis: cv.u, width: w * cv.sIn, length: len, k, phase: -k * z0, stepLen, clip: { pos: p.pos, R: BENT_R, side: v3.norm(cv.inRel) } } });
+        const zOut = v3.dot(cv.outRel, cv.u), outC = v3.add(p.pos, v3.add(cv.outRel, v3.scale(cv.outDir, z0 - zOut)));
+        out.push({ ...base, pos: outC, radius: 3 * w * cv.sOut, packet: { axis: cv.outDir, width: w * cv.sOut, length: len, k, phase: 0, stepLen, clip: { pos: p.pos, R: BENT_R, side: v3.norm(cv.outRel) } } });
+        continue;
+      }
+    }
     const mid = e.so && !e.gd ? v3.sub(e.pos, e.so) : e.pos;
     const dk = GUN_SPREAD(e.E || 0.1) / (P.HBAR * v), len = 1 / (2 * dk / 2.355);
     const k = P.ME * v / P.HBAR;
