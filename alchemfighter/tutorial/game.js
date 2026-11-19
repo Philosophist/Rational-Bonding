@@ -2110,15 +2110,15 @@ const CRUMB = 'alchemfighter.lastSession';
 const crumb = { ok: false, t: 0 };
 function saveCrumb() {
   try {
-    Object.assign(crumb, { t: Math.round(performance.now() / 1000), beat: S.beat, atoms: S.atoms.length, free: freeElectrons().length, shots: S.shots, ms: Math.round(frameAvg), scale: +renderScale.toFixed(2), px: canvas.width + 'x' + canvas.height, wellMs: +(S.wellMs || 0).toFixed(1), heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : undefined });
+    Object.assign(crumb, { t: Math.round(performance.now() / 1000), beat: S.beat, atoms: S.atoms.length, free: freeElectrons().length, shots: S.shots, ms: Math.round(frameAvg), scale: +renderScale.toFixed(2), px: canvas.width + 'x' + canvas.height, noSplit: !!(renderer && renderer.info && renderer.info.noSplit), wellMs: +(S.wellMs || 0).toFixed(1), heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : undefined });
     localStorage.setItem(CRUMB, JSON.stringify(crumb));
   } catch { /* storage blocked: nothing to keep */ }
 }
 try {
   const last = JSON.parse(localStorage.getItem(CRUMB) || 'null');
-  if (last && !last.ok && last.t > 5) {
+  if (last && ((!last.ok && last.t > 5) || last.bad)) {
     $('crashNote').hidden = false;
-    $('crashNote').textContent = `Last time the game stopped without closing, ${last.t} s in: level part ${last.beat}, ${last.atoms} atoms, ${last.free} free electrons, ${last.shots} shots, frames ${last.ms} ms at ${last.px} px${last.lost ? `, graphics resets ${last.lost}` : ''}${last.err ? `, error: ${last.err}` : ''}. (Kept only on this device.)`;
+    $('crashNote').textContent = `${last.ok ? 'Last time something broke while drawing' : 'Last time the game stopped without closing'}, ${last.t} s in: level part ${last.beat}, ${last.atoms} atoms, ${last.free} free electrons, ${last.shots} shots, frames ${last.ms} ms at ${last.px} px${last.lost ? `, graphics resets ${last.lost}` : ''}${last.err ? `, error: ${last.err}` : ''}${last.bad ? `, broken ${last.bad} skipped` : ''}${last.noSplit ? ', one-pass drawing' : ''}. (Kept only on this device.)`;
   }
 } catch { /* storage blocked */ }
 setInterval(saveCrumb, 2000);
@@ -2406,6 +2406,12 @@ const cloudSteps = () => Math.round((phone.matches ? 48 : 72) * Math.max(0.6, re
 // 3% of the strongest), which are too small there to see. Big clouds, such as the higher levels
 // seen up close, keep everything. Only what is drawn changes; the physics is untouched.
 const LOD_PX = 48;
+function finiteDeep(x) {
+  if (typeof x === 'number') return Number.isFinite(x);
+  if (Array.isArray(x)) return x.every(finiteDeep);
+  if (x && typeof x === 'object') { for (const k in x) if (!finiteDeep(x[k])) return false; return true; }
+  return true;
+}
 function cloudDetail(clouds, v, steps) {
   const H = v.viewport[3], fovT = xr.session ? 1 : Math.tan(cam.fov / 2);
   return clouds.map(c => {
@@ -2541,7 +2547,12 @@ function draw(views, panel) {
   if (xr.session && xr.aim) lines.seg(xr.aim.o, v3.add(xr.aim.o, v3.scale(xr.aim.d, 3)), [0.8, 0.9, 1], 0.5);
 
   const steps = xr.session ? 72 : cloudSteps();
-  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps, bohrPerUnit: 1 / P.A0, charges, clouds: cloudDetail(clouds, views[0], steps), glows, lines: lines.data() });
+  // A broken number (NaN or infinite) in any one thing drawn would black out the whole picture on
+  // some phones, so such a thing is left out of this frame and the first one is noted for diagnosis.
+  const fine = (x, tag) => { const ok = finiteDeep(x); if (!ok && !crumb.bad) { crumb.bad = tag; saveCrumb(); log(`Drawing skipped a broken ${tag} (please tell the developer).`, 'red'); } return ok; };
+  renderer.draw({ views, panel, time: S.time, sphereR: P.SPHERE_R, steps, bohrPerUnit: 1 / P.A0,
+    charges: charges.filter(c => fine(c, 'charge')), clouds: cloudDetail(clouds.filter(c => fine({ pos: c.pos, radius: c.radius, invMax: c.invMax, iso: c.iso, fade: c.fade, lean: c.lean, packet: c.packet }, c.packet ? 'wave packet' : 'cloud')), views[0], steps),
+    glows: glows.filter(g => fine(g, 'glow')), lines: lines.data() });
 }
 
 // ---------------------------------------------------------------------------

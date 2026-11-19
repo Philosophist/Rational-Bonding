@@ -149,7 +149,8 @@ void marchCloud(int i, Cloud C, vec3 ro, vec3 rd, float t0, float t1, int ns, in
   for (int s = 0; s < 256; s++) {
     if (s >= ns || T < 0.004) break;   // (past T < 0.004 nothing behind can show)
     vec4 c = sampleCloud(i, C, ro + rd*t);
-    float dn = clamp(c.a * C.invMax, 0.0, 1.0);
+    float dn = c.a * C.invMax; dn = dn >= 0.0 ? min(dn, 1.0) : 0.0;   // (NaN counts as empty)
+    if (!(c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0)) c.rgb = vec3(0.0);
     float e = pow(dn, 0.5) * C.fade;
     if (C.iso > 0.0) { float x = log(max(dn, 1e-9) / C.iso) / 0.28; e += 1.4 * exp(-x*x) * C.fade; }
     acc += T * c.rgb * e * 1.3 * k;
@@ -237,6 +238,9 @@ void main(){
   // Electron clouds (small and far apart, so their order doesn't matter much).
 #if PASS == 2
   vec4 cl = texture(uCloudPic, gl_FragCoord.xy / uFull);
+  // (a broken number in the cloud picture must never black out the whole view)
+  if (!(cl.a >= 0.0 && cl.a <= 1.0)) cl.a = 1.0;
+  if (!(cl.r >= 0.0 && cl.r < 1e4)) cl.r = 0.0; if (!(cl.g >= 0.0 && cl.g < 1e4)) cl.g = 0.0; if (!(cl.b >= 0.0 && cl.b < 1e4)) cl.b = 0.0;
 #else
   vec4 cl = clouds(ro, rd);
 #endif
@@ -291,9 +295,11 @@ export function createRenderer(canvas) {
       'uG', 'uGC', 'uGN']) U[n] = gl.getUniformLocation(p, n);
     return U;
   };
-  const split = !!gl.getExtension('EXT_color_buffer_float');
-  const P0 = split ? null : progOf(0), P1 = split ? progOf(1) : null, P2 = split ? progOf(2) : null;
+  let split = !!gl.getExtension('EXT_color_buffer_float');
+  let P0 = split ? null : progOf(0);
+  const P1 = split ? progOf(1) : null, P2 = split ? progOf(2) : null;
   let cloudFbo = null, cloudPic = null, picW = 0, picH = 0;
+  const info = {};
   function cloudTarget(w, h) {
     if (cloudFbo && w === picW && h === picH) return;
     if (!cloudFbo) { cloudFbo = gl.createFramebuffer(); cloudPic = gl.createTexture(); }
@@ -304,6 +310,8 @@ export function createRenderer(canvas) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, cloudFbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, cloudPic, 0);
     picW = w; picH = h;
+    // Some phones list float pictures but can't draw into this one: then draw everything at once.
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { split = false; if (!P0) P0 = progOf(0); info.noSplit = true; }
   }
   const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
   const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb);
@@ -410,11 +418,12 @@ export function createRenderer(canvas) {
     let fullW = 1, fullH = 1;
     for (const v of scene.views) { fullW = Math.max(fullW, v.viewport[0] + v.viewport[2]); fullH = Math.max(fullH, v.viewport[1] + v.viewport[3]); }
     const k = Math.min(1, scene.cloudScale || CLOUD_SCALE);
-    const M = split ? P2 : P0;
+    const target = split ? gl.getParameter(gl.FRAMEBUFFER_BINDING) : null;
     if (split) {
-      const target = gl.getParameter(gl.FRAMEBUFFER_BINDING);
       cloudTarget(Math.max(1, Math.round(fullW * k)), Math.max(1, Math.round(fullH * k)));
-      gl.bindFramebuffer(gl.FRAMEBUFFER, cloudFbo);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, split ? cloudFbo : target);
+    }
+    if (split) {
       gl.viewport(0, 0, picW, picH);
       gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
       shared(P1);
@@ -422,6 +431,7 @@ export function createRenderer(canvas) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, target);
       gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, cloudPic); gl.activeTexture(gl.TEXTURE0);
     }
+    const M = split ? P2 : P0;
     shared(M);
     if (split) gl.uniform2f(M.uFull, fullW, fullH);
 
@@ -459,7 +469,7 @@ export function createRenderer(canvas) {
       }
     }
   }
-  return { gl, draw };
+  return { gl, draw, info };
 }
 
 // Line builder: pairs of points with colour and alpha (the GPU clips them at the near plane).
