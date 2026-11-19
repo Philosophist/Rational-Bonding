@@ -449,6 +449,67 @@ export function pickJump(W, s, rand = Math.random) {
   }
   return null;
 }
+// Light from the wave's own swing. Where the electron's wave is a mix, each part of it swings its
+// charge toward a lower standing wave b with the dipole ⟨b|r|a⟩, and the light toward b comes from
+// all those swings added with their amplitudes and phases: D_b = Σ_a c_a·√(4ω³/3c³)·⟨b|r|a⟩, the
+// chance per unit time of a photon leaving toward b is |D_b|², and the light's swing (its
+// polarisation and pattern) is D_b itself. Parts at one energy add and can cancel (the same
+// frequency); parts at different energies swing at different frequencies and their cross terms
+// average out over a step (they would show as quantum beats too fast to resolve here), so they are
+// counted separately. For a pure standing wave this is exactly its usual rates. Summed over every
+// lower b in a whole shell the cross terms between different shapes cancel (rotational symmetry),
+// so the mix chiefly changes WHERE the electron lands and which way the light goes; the total
+// changes only where the near set holds part of a shell.
+// The 2s two-photon way out has no dipole swing and stays a rate on 2s's share.
+export function sloshChannels(W, s) {
+  const n2 = normSq(s), NS = s.re.length, list = [], groups = new Map(); let two = 0;
+  for (let a = 0; a < NS; a++) {
+    const p = (s.re[a] * s.re[a] + s.im[a] * s.im[a]) / n2;
+    if (p < 1e-7) continue;   // (parts this small change no chance noticeably)
+    const A = W.states[a];
+    if (A.l === 0 && A.k === 1 && A.E < 0) two += TWO_PHOTON_2S * p;
+    if (!W.down[a].length) continue;
+    const g = Math.round(A.E * 2e4);   // parts within 5e-5 hartree swing together
+    let G = groups.get(g); if (!G) groups.set(g, G = []); G.push(a);
+  }
+  // dense scratch over the lower waves, reused
+  if (!W._sl || W._sl.re.length !== 3 * NS) W._sl = { re: new Float64Array(3 * NS), im: new Float64Array(3 * NS), from: new Int32Array(NS), best: new Float64Array(NS), seen: new Uint8Array(NS) };
+  const X = W._sl, kn = 1 / Math.sqrt(n2);
+  for (const G of groups.values()) {
+    const touched = [];
+    for (const a of G) {
+      const xr = kn * s.re[a], xi = kn * s.im[a], p = xr * xr + xi * xi;
+      for (const dn of W.down[a]) {
+        // (each step's swing √rate·⟨b|r|a⟩/|⟨b|r|a⟩| is worked out once and kept)
+        if (!dn.d) { const r = dipoleVector(W, a, dn.b), rm = Math.hypot(r[0], r[1], r[2]) || 1; dn.d = r.map(v => v * Math.sqrt(dn.rate) / rm); }
+        const b = dn.b, d = dn.d, o = 3 * b;
+        if (!X.seen[b]) { X.seen[b] = 1; touched.push(b); X.best[b] = -1; }
+        X.re[o] += xr * d[0]; X.re[o + 1] += xr * d[1]; X.re[o + 2] += xr * d[2];
+        X.im[o] += xi * d[0]; X.im[o + 1] += xi * d[1]; X.im[o + 2] += xi * d[2];
+        const own = dn.rate * p; if (own > X.best[b]) { X.best[b] = own; X.from[b] = a; }
+      }
+    }
+    for (const b of touched) {
+      const o = 3 * b, re = [X.re[o], X.re[o + 1], X.re[o + 2]], im = [X.im[o], X.im[o + 1], X.im[o + 2]];
+      list.push({ b, re, im, from: X.from[b], rate: re[0] * re[0] + re[1] * re[1] + re[2] * re[2] + im[0] * im[0] + im[1] * im[1] + im[2] * im[2] });
+      X.re[o] = X.re[o + 1] = X.re[o + 2] = X.im[o] = X.im[o + 1] = X.im[o + 2] = 0; X.seen[b] = 0;
+    }
+  }
+  return { list, two, total: list.reduce((t, c) => t + c.rate, two) };
+}
+// Picks the photon: which lower wave b, and the swing that sends it (axis: the long axis of the
+// swing's ellipse).
+export function pickJumpSlosh(W, s, rand = Math.random) {
+  const { list, two, total } = sloshChannels(W, s);
+  if (!(total > 0)) return null;
+  let x = rand() * total;
+  if (two > 0 && (x -= two) <= 0) { let a2 = -1, best = 0; for (let a = 0; a < s.re.length; a++) { const S2 = W.states[a]; if (S2.l === 0 && S2.k === 1 && S2.E < 0) { const p = s.re[a] ** 2 + s.im[a] ** 2; if (p > best) { best = p; a2 = a; } } } return { from: a2, to: W.index(1, 0, 0), twoPhoton: true }; }
+  let c = list[list.length - 1];
+  for (const y of list) { x -= y.rate; if (x <= 0) { c = y; break; } }
+  const U = c.re, V = c.im, uu = U[0] ** 2 + U[1] ** 2 + U[2] ** 2, vv = V[0] ** 2 + V[1] ** 2 + V[2] ** 2, uv = U[0] * V[0] + U[1] * V[1] + U[2] * V[2];
+  const th = 0.5 * Math.atan2(2 * uv, uu - vv), ax = [0, 1, 2].map(q => U[q] * Math.cos(th) + V[q] * Math.sin(th)), am = Math.hypot(ax[0], ax[1], ax[2]);
+  return { from: c.from, to: c.b, twoPhoton: false, axis: am > 0 ? ax.map(v => v / am) : null, swing: { re: U, im: V } };
+}
 // Each standing wave's share, and the largest one.
 export function shares(s) {
   const n2 = normSq(s), p = new Float64Array(s.re.length);
@@ -1064,6 +1125,39 @@ export function spinLoop(cw, p, spin, n = 32) {
   let clean = pts.length === n + 1 && Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 3 * ds;
   if (clean) for (const x of pts) { const a = x[0] * spin[0] + x[1] * spin[1] + x[2] * spin[2], d = Math.hypot(x[0] - a * spin[0], x[1] - a * spin[1], x[2] - a * spin[2]); if (Math.abs(d - perp) > 0.2 * perp || Math.abs(a - al) > 0.2 * perp) { clean = false; break; } }
   return { pts, rate: sp0 / perp, clean };
+}
+// How much of the compiled wave lies inside each table radius (0 to 1).
+export function radialCdf(cw) {
+  if (cw._cdf) return cw._cdf;
+  const n = TAB_N, out = new Float64Array(n), R = cw.R; let acc = 0, prev = 0;
+  for (let j = 0; j < n; j++) {
+    const r = R * (j / (n - 1)) ** 2; let d = 0;
+    for (const c of cw.chans) d += c.tr[j] * c.tr[j] + c.ti[j] * c.ti[j];
+    d *= r * r;
+    if (j) acc += 0.5 * (d + prev) * (r - R * ((j - 1) / (n - 1)) ** 2);
+    out[j] = acc; prev = d;
+  }
+  for (let j = 0; j < n; j++) out[j] /= acc || 1;
+  return (cw._cdf = out);
+}
+const cdfAt = (cdf, r, R) => { const x = Math.sqrt(Math.min(1, Math.max(0, r / R))) * (cdf.length - 1), j = Math.min(cdf.length - 2, Math.floor(x)); return cdf[j] + (cdf[j + 1] - cdf[j]) * (x - j); };
+function radiusAt(cdf, u, R) {
+  let lo = 0, hi = cdf.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cdf[m] < u) lo = m; else hi = m; }
+  const f = cdf[hi] > cdf[lo] ? (u - cdf[lo]) / (cdf[hi] - cdf[lo]) : 0, x = lo + f;
+  return R * (x / (cdf.length - 1)) ** 2;
+}
+// When the wave's make-up changes (a step down, a step up, a field blending in another orbital),
+// the point is carried with it: it keeps its direction and its place in the wave's radial spread
+// (the share of the wave inside its radius stays the same, from the old wave to the new). So a
+// point that was in the outer part of 3p ends in the outer part of 1s, never left outside the
+// cloud. With no old wave (just caught) the point's radius is taken as its place in the new wave.
+export function carryPoint(cwOld, cwNew, p) {
+  const r = Math.hypot(p[0], p[1], p[2]);
+  if (r < 1e-9) return p;
+  const u = Math.min(0.995, Math.max(0.005, cdfAt(radialCdf(cwOld || cwNew), r, (cwOld || cwNew).R))), r2 = radiusAt(radialCdf(cwNew), u, cwNew.R), k = r2 / r;
+  p[0] *= k; p[1] *= k; p[2] *= k;
+  return p;
 }
 // A starting point drawn from |ψ|² (the Born rule): a Metropolis walk on the compiled wave.
 export function sampleCompiled(cw, scale, rand = Math.random, steps = 800) {
