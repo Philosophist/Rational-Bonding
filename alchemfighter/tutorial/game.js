@@ -2054,7 +2054,7 @@ function drawLadder() {
 // kinetic temperature, T = (2/3)·(average energy of motion)/k_B, worked out separately for the free
 // electrons and for the heavy particles (bare protons and atoms), because they are not in step with
 // each other: nothing in the level shares energy between them quickly (an electron gives a proton
-// about 1/1836 of its energy per hit at most). Measured in the frame where the system's total
+// at most about 1/460 of its energy per head-on hit, 4mₑ/m_p). Measured in the frame where the system's total
 // momentum is zero. Pressure is the ideal-gas one, P = (2/3)·(total energy of motion)/V, the push
 // all the particles together would put on the sphere's wall per square metre on average; it leaves
 // out the Coulomb pushes and pulls between the particles.
