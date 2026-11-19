@@ -122,28 +122,27 @@ Cloud loadCloud(int i){
 vec4 samplePacket(Cloud C, vec3 pw){
   vec3 pr = pw - C.pos; float s = dot(pr, C.lean.xyz), r2 = max(dot(pr, pr) - s*s, 0.0);
   float a = exp(-r2 / (2.0 * C.rmax * C.rmax) - s*s / (4.0 * C.trmax * C.trmax)), ph = C.pk.x * s - C.pk.y;
-  // Clipped (one straight end of a bent wave): only outside a ball round the proton, on one side.
-  if (C.pk.w > 0.0) {
-    vec3 d = pw - C.clip.xyz; float dl = length(d);
-    a *= smoothstep(0.85 * C.clip.w, C.clip.w, dl) * smoothstep(-0.2, 0.2, dot(d, C.side.xyz));
-  }
+  // A free electron's packet is drawn only within a window round its point (clip: [point, radius]).
+  if (C.pk.w > 0.0) a *= 1.0 - smoothstep(0.6 * C.pk.w, C.pk.w, length(pw - C.clip.xyz));
   return vec4(phaseColor(vec2(cos(ph), sin(ph))), a * a);
 }
 // A free electron's wave where a proton bends it (lean.w = 3): the exact Coulomb wave
 // ψ = √C·F(ξ)·e^{ikz} (its table in uCoul), kept to a beam as wide as the gun's spot round the flow
 // line the electron rides (its incoming offset b0): each point's own flow line came in at
 // b² = η·g(ξ) (see matterwave.js coulombTable), and the beam's envelope is in that offset.
-// pk: [k (rad/nm), z0 (nm, the packet's middle along u), stepLen, ball radius]; clip: [b0, ξ range (a₀)].
+// pk: [k (rad/nm), z0 (nm, the point along u), stepLen, window radius]; clip: [b0, ξ range (a₀)];
+// side: [proton]. Drawn only within the window round the point (C.pos).
 vec4 sampleCoul(int i, Cloud C, vec3 pw){
-  vec3 p = pw - C.pos, u = C.lean.xyz; float R = length(p), z = dot(p, u);
-  if (R > C.pk.w) return vec4(0.0);
+  float wd = length(pw - C.pos);
+  if (wd > C.pk.w) return vec4(0.0);
+  vec3 p = pw - C.side.xyz, u = C.lean.xyz; float R = length(p), z = dot(p, u);
   float xi = (R - z) * uAS, eta = (R + z) * uAS, x = clamp(xi / C.clip.w, 0.0, 1.0) * ${COUL_N - 1}.0;
   int j = min(int(x), ${COUL_N - 2}); float f = x - float(j);
   vec4 T = mix(texelFetch(uCoul, ivec2(j, i), 0), texelFetch(uCoul, ivec2(j + 1, i), 0), f);
   vec3 perp = p - z * u; float pl = length(perp);
   vec3 b = pl > 1e-6 ? perp * (sqrt(max(0.0, eta * T.z)) / uAS / pl) : vec3(0.0);
   vec3 db = b - C.clip.xyz;
-  float env = exp(-dot(db, db) / (2.0 * C.rmax * C.rmax) - (z - C.pk.y) * (z - C.pk.y) / (4.0 * C.trmax * C.trmax)) * (1.0 - smoothstep(0.85 * C.pk.w, C.pk.w, R));
+  float env = exp(-dot(db, db) / (2.0 * C.rmax * C.rmax) - (z - C.pk.y) * (z - C.pk.y) / (4.0 * C.trmax * C.trmax)) * (1.0 - smoothstep(0.6 * C.pk.w, C.pk.w, wd));
   float ph = C.pk.x * z;
   vec2 w = cmul(T.xy, vec2(cos(ph), sin(ph))) * env;
   return vec4(phaseColor(w), dot(w, w));
@@ -204,15 +203,10 @@ vec4 clouds(vec3 ro, vec3 rd){
     vec4 a = tx(i, 0), ln = tx(i, 4);
     vec3 oc = ro - a.xyz;
     if (ln.w > 2.5) {
-      // A bent wave: a ball round its proton (pk.w across), sampled finely enough for the beam.
-      // Only the part of the ball within a cylinder round the proton's axis that holds the beam.
-      vec4 pk = tx(i, 6), cy = tx(i, 8); vec3 u = ln.xyz;
+      // A bent wave: the window round its point (pk.w), sampled finely enough for the beam.
+      vec4 pk = tx(i, 6);
       float bb = dot(oc, rd), cc = dot(oc, oc) - pk.w*pk.w, hh = bb*bb - cc;
       if (hh > 0.0) { hh = sqrt(hh); float t0 = max(-bb - hh, 0.0), t1 = -bb + hh;
-        vec3 op = oc - dot(oc, u) * u, dp = rd - dot(rd, u) * u;
-        float qa = dot(dp, dp), qb = dot(op, dp), qc = dot(op, op) - cy.x * cy.x;
-        if (qa < 1e-8) { if (qc > 0.0) t1 = t0; }
-        else { float hc = qb*qb - qa*qc; if (hc < 0.0) t1 = t0; else { hc = sqrt(hc); t0 = max(t0, (-qb - hc) / qa); t1 = min(t1, (-qb + hc) / qa); } }
         if (t1 > t0) { Cloud C = loadCloud(i); marchCloud(i, C, ro, rd, t0, t1, clamp(int(ceil((t1 - t0) / pk.z)), 4, C.steps), acc, T); } }
       continue;
     }
@@ -224,6 +218,10 @@ vec4 clouds(vec3 ro, vec3 rd){
       vec3 op = oc - ou * u, dp = rd - du * u;
       float qa = dot(dp, dp) / (A*A) + du*du / (B*B), qb = dot(op, dp) / (A*A) + ou*du / (B*B), qc = dot(op, op) / (A*A) + ou*ou / (B*B) - 1.0, hh = qb*qb - qa*qc;
       if (hh > 0.0) { hh = sqrt(hh); float t0 = max((-qb - hh) / qa, 0.0), t1 = (-qb + hh) / qa;
+        if (pk.w > 0.0) {   // and within its window
+          vec3 ow = ro - tx(i, 7).xyz; float wb = dot(ow, rd), wh = wb*wb - dot(ow, ow) + pk.w*pk.w;
+          if (wh <= 0.0) t1 = t0; else { wh = sqrt(wh); t0 = max(t0, -wb - wh); t1 = min(t1, -wb + wh); }
+        }
         if (t1 > t0) { Cloud C = loadCloud(i); marchCloud(i, C, ro, rd, t0, t1, clamp(int(ceil((t1 - t0) / pk.z)), 4, C.steps), acc, T); } }
       continue;
     }
@@ -402,17 +400,17 @@ export function createRenderer(canvas) {
   //   invMax, iso, fade, lean?: [x, y, z, on], steps? (march steps for this cloud; 0 = the scene's) }
   function packCloud(i, c) {
     const o = i * ROW * 4, put = (k, v) => cloudArr.set(v, o + k * 4);
-    if (c.packet) {   // { axis (unit), width, length (nm), k (rad/nm), phase, stepLen (nm), clip?: { pos, R, side } }
+    if (c.packet) {   // { axis (unit), width, length (nm), k (rad/nm), phase, stepLen (nm), win?: { pos, R } (drawn only within R of pos) }
       const P = c.packet;
       put(0, [...c.pos, 3 * P.width]); put(1, [1, 0, 0, c.invMax]); put(2, [0, 1, 0, c.iso]); put(3, [0, 0, 1, c.fade]);
-      put(4, [...P.axis, 2]); put(5, [0, P.width, P.length, c.steps || 0]); put(6, [P.k, P.phase, P.stepLen, P.clip ? 1 : 0]);
-      if (P.clip) { put(7, [...P.clip.pos, P.clip.R]); put(8, [...P.clip.side, 0]); }
+      put(4, [...P.axis, 2]); put(5, [0, P.width, P.length, c.steps || 0]); put(6, [P.k, P.phase, P.stepLen, P.win ? P.win.R : 0]);
+      if (P.win) put(7, [...P.win.pos, P.win.R]);
       return;
     }
-    if (c.coul) {   // { axis u, width, length, k (rad/nm), z0, stepLen, R (ball), b0, xiMax (a₀), table }
+    if (c.coul) {   // { axis u, width, length, k (rad/nm), z0, stepLen, R (window round c.pos, the point), b0, xiMax (a₀), table, proton (pos) }
       const K = c.coul;
-      put(0, [...c.pos, 3 * K.width]); put(1, [1, 0, 0, c.invMax]); put(2, [0, 1, 0, c.iso]); put(3, [0, 0, 1, c.fade]);
-      put(4, [...K.axis, 3]); put(5, [0, K.width, K.length, c.steps || 0]); put(6, [K.k, K.z0, K.stepLen, K.R]); put(7, [...K.b0, K.xiMax]); put(8, [K.rho, 0, 0, 0]);
+      put(0, [...c.pos, K.R]); put(1, [1, 0, 0, c.invMax]); put(2, [0, 1, 0, c.iso]); put(3, [0, 0, 1, c.fade]);
+      put(4, [...K.axis, 3]); put(5, [0, K.width, K.length, c.steps || 0]); put(6, [K.k, K.z0, K.stepLen, K.R]); put(7, [...K.b0, K.xiMax]); put(8, [...K.proton, 0]);
       coulArr.set(K.table.subarray(0, COUL_N * 4), i * COUL_N * 4);
       return;
     }

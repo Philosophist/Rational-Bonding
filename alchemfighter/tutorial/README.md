@@ -477,23 +477,22 @@ and what the waves cost per frame.
     don't wash out the view; at most 32 samples per ray through a packet (16 on phones).
   - Cost: in a phone-sized software test with 5 packets crossing the view, a frame at fixed
     resolution took about 3.5× as long as with them hidden; the resolution scaler absorbs it.
-- **The wave bends round a proton** (Steve, 2026-11-19; pilot-wave view, shots under 2 eV): within
-  5 nm of a bare proton an electron's wave is drawn as the exact Coulomb wave (the same one that
-  steers the point), kept to a beam as wide as the gun's spot round the flow line the point rides.
-  The beam is a tube along the flow lines: each point's flow line is followed back to where it came
-  in (its offset b, from b² = η·ξ(1 − 2 Re F′/F)·C|F|², closed form), and the beam keeps the
-  points whose lines came in within the spot. The proton's pull draws the lines in, so the tube
-  narrows past the proton (at 0.1 eV, to about a fifth of its width): Coulomb focusing, and the
-  wave is brighter there. Outside the ball the beam is drawn as two straight packets, in along the
-  shot and out along the line's exit direction, each as wide as the tube where it meets the ball.
-  - Departures: the spin term in the guidance rule (the corkscrew) is left out of the tube; the
-    pull reaches beyond 5 nm (at 0.1 eV a line 2 nm off is already 1.4 nm off at the ball's edge),
-    but the straight pieces don't keep narrowing; the outgoing piece's crests are not matched in
-    phase to the tube's; the tube and the straight pieces are crossfaded over the ball's outer 15%.
-    All to keep the drawing cheap; the point's own motion is unchanged.
-  - Cost: none measurable over the straight packet it replaces (phone-sized software test, beam
-    across the view: 97 ms a frame either way at a fixed resolution), with up to 64 samples per ray
-    in the ball on desktops (32 on phones).
+- **Wave drawn only near the electron** (Steve, 2026-11-19): a free electron's wave is drawn only
+  within 3 nm of its point (soft edge from 1.8 nm), so what shows is the part of the wave the point
+  is riding. The real packet is longer (about 15 nm at 0.1 eV); the rest is left out of the picture.
+- **The wave bends round a proton** (Steve, 2026-11-19; pilot-wave view, shots under 2 eV): while a
+  proton guides an electron (within 4 nm of it), its drawn wave is the exact Coulomb wave that
+  guides the point, kept to a beam as wide as the gun's spot round the flow line the point is on.
+  Each place's flow line is followed back to where it came in (its offset b, from
+  b² = η·ξ(1 − 2 Re F′/F)·C|F|², closed form) and the beam keeps the lines that came in within the
+  spot. It is worked out from the point's place every frame, so the point is always on the beam's
+  middle line. The proton's pull draws the lines in, so the beam narrows past the proton (Coulomb
+  focusing).
+  - Departures: the spin term in the guidance rule can carry the point across flow lines; the beam
+    simply follows it rather than drawing the spin's effect on the wave. The wave's colours (phase)
+    jump once when the proton starts and stops guiding (the phase's starting point is arbitrary).
+  - Cost: lighter than before, because only the window is sampled (phone-sized software test, beam
+    across the view: 52 ms a frame, against 97 ms for the full-length beam).
 - **Charge colours** (Steve, 2026-11-18): positive is neon pink, negative neon blue (field glows,
   field lines, proton points and H+ labels, electron points, trails, gun and aim cone).
 - **Unaided catch moves on**: catching the First capture proton without the lock-on gives the lesson,

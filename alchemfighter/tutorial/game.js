@@ -2587,7 +2587,6 @@ function updateGuides() {
     if (d > R || v3.dot(v3.sub(e.pos, p.pos), rel) > 0) continue;   // only on the way in
     const gd = { p, E, R, u: v3.norm(rel), ph: 0, slice: null, sliceW: null };
     e.gd = gd; e.guideP = p;
-    e.cview = bentView(e, p, E, gd.u);
     e.guide = pos => {
       const r = v3.sub(pos, gd.p.pos), rl = Math.max(v3.len(r), 0.005);
       const vmax = 3 * Math.sqrt(2 * (gd.E + P.KE / rl) / P.ME);   // the flow is fast only right at the wave's zeros
@@ -2691,43 +2690,21 @@ function spinCircle(dtFs) {
 //   a proton in a gas at room temperature (300 K), λ_th/√(2π) = 0.04 nm, round. Its crests are
 //   h/(m_p·v) apart: several nm for these slow protons, so it shows as one colour.
 // Simplified, flagged: widths are held fixed (a real packet spreads as it flies, and the gun's beam
-// narrows to its focus), and near a proton the drawn packet is not bent by it (the computed
-// Coulomb wave moves the point; drawing it as a cloud is a later step).
+// narrows to its focus).
 const GUN_SPREAD = E => (E >= 0.1 ? 0.01 : E >= 0.01 ? 0.001 : 5e-5);   // eV, FWHM
 const PACKET_STEPS = phone.matches ? 16 : 32;
 const PROTON_COHERENCE = 0.0416;   // nm: λ_th / √(2π) for a proton at 300 K (λ_th = 0.104 nm)
-// The bent part of a free electron's wave, drawn from the moment a proton starts to guide it until
-// it is well past (render.js sampleCoul): inside a ball BENT_R round the proton the exact Coulomb
-// wave, kept to a beam round the flow line the electron rides; outside it, the straight packet
-// coming in along that line's incoming offset, and the straight packet going out the way the line
-// leaves the ball.
-const BENT_R = 5;   // nm
-function bentView(e, p, E, u) {
-  if (E > 2 || S.noBend) return null;   // faster than that the proton barely bends it (noBend: a test switch)
-  const xiMax = 2 * BENT_R / MW.A0_NM, r0 = v3.sub(e.pos, p.pos);
-  const b0 = MW.lineOffset(E, u, r0, xiMax), bl = v3.len(b0);
-  if (bl >= BENT_R) return null;
-  // The proton's pull reaches far: even at the ball's edge its flow lines are already drawn in toward
-  // it (at 0.1 eV a line that came in 2 nm off passes the edge about 1.4 nm off). So the beam enters
-  // where its own flow line crosses the edge, narrowed by the same amount (squeeze = ρ/b there).
-  const side = bl > 1e-9 ? v3.scale(b0, 1 / bl) : v3.norm(v3.cross(u, Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0]));
-  const edge = rh => v3.sub(v3.scale(side, rh), v3.scale(u, Math.sqrt(Math.max(0, BENT_R * BENT_R - rh * rh))));
-  let lo = 0, hi = 0.999 * BENT_R;
-  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (v3.len(MW.lineOffset(E, u, edge(m), xiMax)) < bl) lo = m; else hi = m; }
-  const inRel = edge(lo);
-  const squeeze = q => { const z = v3.dot(q, u), rh = Math.sqrt(Math.max(0, v3.dot(q, q) - z * z)), b = v3.len(MW.lineOffset(E, u, q, xiMax));
-    return b > 1e-6 && rh > 1e-6 ? Math.min(1, rh / b) : 1; };
-  // where its flow line leaves the ball, and which way
-  let r = [...r0], dir = u, rho = bl;
-  for (let i = 0; i < 4000 && v3.len(r) < BENT_R; i++) {
-    const z = v3.dot(r, u); rho = Math.max(rho, Math.sqrt(Math.max(0, v3.dot(r, r) - z * z)));
-    const v = MW.guideVelocity(E, u, r), vl = v3.len(v);
-    if (!(vl > 1e-9)) break;
-    dir = v3.scale(v, 1 / vl);
-    r = v3.add(r, v3.scale(dir, Math.min(0.02, Math.max(0.002, 0.05 * v3.len(r)))));
-  }
-  return { p, E, u, b0, xiMax, inRel, outRel: r, outDir: dir, rho, sIn: squeeze(inRel), sOut: squeeze(r), table: MW.coulombTable(E, xiMax) };
-}
+// Steve, 2026-11-19: a free electron's wave is drawn only within WAVE_R of its point, so what you
+// see is always the part of the wave the point is riding (the real packet is longer: about 15 nm
+// at 0.1 eV, so most of it is left out of the picture).
+const WAVE_R = 3;   // nm
+// While a proton guides an electron (within MW.guideRadius of it, up to 4 nm), the drawn wave is
+// the exact Coulomb wave that guides it (render.js sampleCoul), kept to a beam round the flow line
+// the point is on right now: each point's flow line is followed back to where it came in (its
+// offset b, closed form), and the beam keeps the lines that came in within the gun's spot of the
+// point's own. Worked out from the point's current place every frame, so the point is always on
+// the beam's middle line (the spin term can carry it across lines; the beam follows).
+const COUL_XI = 2 * (4 + WAVE_R) / MW.A0_NM;   // a₀: the table's reach (guide radius + window)
 function freePackets() {
   const out = [];
   const packet = (pos, vel, m, width, length, phase, fade) => {
@@ -2740,27 +2717,20 @@ function freePackets() {
   };
   for (const e of freeElectrons()) {
     const v = v3.len(e.vel); if (v < 1e-9) continue;
-    const cv = e.cview;
-    if (cv) {
-      const p = cv.p, rel = v3.sub(e.pos, p.pos);
-      const k = MW.k_au(cv.E) / MW.A0_NM, vIn = Math.sqrt(2 * cv.E / P.ME);
+    const g = e.gd, win = { pos: e.pos, R: WAVE_R };
+    if (g && g.E <= 2 && g.p.active && g.p.q === 1) {
+      const rel = v3.sub(e.pos, g.p.pos), k = MW.k_au(g.E) / MW.A0_NM, vIn = Math.sqrt(2 * g.E / P.ME);
       const len = 1 / (2 * (GUN_SPREAD(e.E || 0.1) / (P.HBAR * vIn)) / 2.355), w = e.cone || 0.4;
-      if (!p.active || p.q !== 1 || v3.len(rel) > BENT_R + 4 * len) e.cview = null;
-      else {
-        const z0 = v3.dot(rel, cv.u), stepLen = Math.min(2 * Math.PI / k / 6, 1.5 * w), base = { invMax: 1, iso: 0.044, fade: 0.7, maxSteps: PACKET_STEPS, terms: [] };
-        out.push({ ...base, maxSteps: 2 * PACKET_STEPS, pos: p.pos, radius: BENT_R, coul: { axis: cv.u, width: w, length: len, k, z0, stepLen: Math.min(stepLen, 0.6 * w * Math.min(cv.sIn, cv.sOut)), R: BENT_R, b0: cv.b0, xiMax: cv.xiMax, table: cv.table, rho: Math.min(BENT_R, 1.3 * cv.rho + 4 * w) } });
-        // (the straight ends keep the width the beam has where they meet the ball: see bentView)
-        const zIn = v3.dot(cv.inRel, cv.u), inC = v3.add(p.pos, v3.add(cv.inRel, v3.scale(cv.u, z0 - zIn)));
-        out.push({ ...base, pos: inC, radius: 3 * w * cv.sIn, packet: { axis: cv.u, width: w * cv.sIn, length: len, k, phase: -k * z0, stepLen, clip: { pos: p.pos, R: BENT_R, side: v3.norm(cv.inRel) } } });
-        const zOut = v3.dot(cv.outRel, cv.u), outC = v3.add(p.pos, v3.add(cv.outRel, v3.scale(cv.outDir, z0 - zOut)));
-        out.push({ ...base, pos: outC, radius: 3 * w * cv.sOut, packet: { axis: cv.outDir, width: w * cv.sOut, length: len, k, phase: 0, stepLen, clip: { pos: p.pos, R: BENT_R, side: v3.norm(cv.outRel) } } });
-        continue;
-      }
+      out.push({ invMax: 1, iso: 0.044, fade: 0.7, maxSteps: 2 * PACKET_STEPS, terms: [], pos: e.pos, radius: WAVE_R,
+        coul: { axis: g.u, width: w, length: len, k, z0: v3.dot(rel, g.u), stepLen: Math.min(2 * Math.PI / k / 8, 0.3 * w), R: WAVE_R,
+          b0: MW.lineOffset(g.E, g.u, rel, COUL_XI), xiMax: COUL_XI, table: MW.coulombTable(g.E, COUL_XI), proton: g.p.pos } });
+      continue;
     }
     const mid = e.so && !e.gd ? v3.sub(e.pos, e.so) : e.pos;
     const dk = GUN_SPREAD(e.E || 0.1) / (P.HBAR * v), len = 1 / (2 * dk / 2.355);
     const k = P.ME * v / P.HBAR;
-    out.push(packet(mid, e.vel, P.ME, e.cone || P.coneWidth(Math.max(0.01, e.E || 0.1), 20), len, -k * (e.waveS || 0), 0.7));   // (a little softer than an orbital: long packets crossing the view would otherwise wash it out)
+    const pk = packet(mid, e.vel, P.ME, e.cone || P.coneWidth(Math.max(0.01, e.E || 0.1), 20), len, -k * (e.waveS || 0), 0.7);
+    pk.packet.win = win; out.push(pk);   // (a little softer than an orbital: long packets crossing the view would otherwise wash it out)
   }
   for (const p of bareProtons()) out.push(packet(p.pos, p.vel, P.MP, PROTON_COHERENCE, PROTON_COHERENCE / Math.SQRT2, 0, 1));
   return out;
