@@ -8,7 +8,7 @@ export const COUL_N = 512;
 // Orbitals one cloud can be a blend of, and the points in a free electron's radial table.
 export const MAX_TERMS = 10, FREE_N = 128;
 // Clouds are drawn at this fraction of the picture's width and height (see createRenderer).
-export const CLOUD_SCALE = 0.5;
+export const CLOUD_SCALE = 0.4;
 const ROW = 6 + 2 * MAX_TERMS;
 
 const VERT = `#version 300 es
@@ -179,8 +179,8 @@ void marchCloud(int i, Cloud C, vec3 ro, vec3 rd, float t0, float t1, int ns, in
     if (!(c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0)) c.rgb = vec3(0.0);
     float e = pow(dn, 0.5) * C.fade;
     if (C.iso > 0.0) { float x = log(max(dn, 1e-9) / C.iso) / 0.28; e += 1.4 * exp(-x*x) * C.fade; }
-    acc += T * c.rgb * e * 1.3 * k;
-    T *= exp(-e * 1.6 * k);
+    acc += T * c.rgb * e * 1.0 * k;
+    T *= exp(-e * 0.9 * k);   // (see-through: Steve, 2026-11-19)
     t += dt;
   }
 }

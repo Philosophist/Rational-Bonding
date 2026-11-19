@@ -477,6 +477,19 @@ and what the waves cost per frame.
     don't wash out the view; at most 32 samples per ray through a packet (16 on phones).
   - Cost: in a phone-sized software test with 5 packets crossing the view, a frame at fixed
     resolution took about 3.5× as long as with them hidden; the resolution scaler absorbs it.
+- **Temperature and pressure** (Steve, 2026-11-19), in the Census window, updated twice a second:
+  - Temperature is the kinetic one, (2/3)·(average energy of motion)/k_B, for the free electrons and
+    for the heavy particles (bare protons and atoms) separately, since nothing in the level shares
+    energy between them quickly. It is taken in the frame where the system's momentum is zero; an
+    electron being steered past a proton counts with its energy far from that proton.
+  - Pressure is the ideal-gas one, (2/3)·(total energy of motion)/volume of the 80 nm sphere; it
+    leaves out the Coulomb pushes and pulls between particles. A 0.1 eV electron alone is about
+    60 Pa (0.0006 atm), because the sphere is so small.
+- **Dimmer, see-through, coarser clouds** (Steve, 2026-11-19): free electron waves at 0.35 of an
+  orbital's brightness (was 0.7); every cloud lets more light through (absorption 0.9, was 1.6) and
+  glows less (1.0, was 1.3); clouds drawn at 0.4 of the screen's width and height (was 0.5) with
+  one sample per 3 pixels across (was 2, at least 10). Phone-sized test, wave across the view:
+  40 ms a frame, was 52.
 - **Wave drawn only near the electron** (Steve, 2026-11-19): a free electron's wave is drawn only
   within 3 nm of its point (soft edge from 1.8 nm), so what shows is the part of the wave the point
   is riding. The real packet is longer (about 15 nm at 0.1 eV); the rest is left out of the picture.
@@ -503,7 +516,8 @@ and what the waves cost per frame.
   kept on the device (never sent anywhere) and shown on the start card if the browser crashed.
 - **Lighter cloud drawing** (Steve, 2026-11-18; measured at a fixed resolution in a phone-sized
   software renderer, see the PR). The physics is not touched; only how the clouds are drawn:
-  - Clouds are drawn into a picture half as wide and half as tall as the screen, then laid under
+  - Clouds are drawn into a picture half as wide and half as tall as the screen (0.4 since
+    2026-11-19), then laid under
     the full-sharpness stars, lines, labels and glows. Clouds are soft, so this barely shows.
     (Needs float pictures, EXT_color_buffer_float; without it everything is drawn at full size.)
   - Each cloud gets samples by its size on screen (about one per 2 pixels across, 12 at least),

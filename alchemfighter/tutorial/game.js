@@ -1630,7 +1630,6 @@ function updateAtoms(dt, dtFs) {
     setTimeout(showDone, 3000);
   }
 }
-const fmtC = K => `${Math.round((K - 273) / (K > 2000 ? 100 : 10)) * (K > 2000 ? 100 : 10)} °C`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 function showDone() {
   const steps = [...S.oldSteps, ...S.atoms.flatMap(a => a.steps)].filter(s => !s.reemit);
   // Each kind of light on its own line, with the drops (orbital to orbital) that released it.
@@ -2051,15 +2050,46 @@ function drawLadder() {
   lctx.fillStyle = 'rgba(214,226,238,.45)'; lctx.textAlign = 'right'; lctx.fillText('−13.6 eV', W - 14, bot - 8); lctx.textAlign = 'left';
 }
 
+// The system's temperature and pressure, as a gas (Steve, 2026-11-19). Temperature here is the
+// kinetic temperature, T = (2/3)·(average energy of motion)/k_B, worked out separately for the free
+// electrons and for the heavy particles (bare protons and atoms), because they are not in step with
+// each other: nothing in the level shares energy between them quickly (an electron gives a proton
+// about 1/1836 of its energy per hit at most). Measured in the frame where the system's total
+// momentum is zero. Pressure is the ideal-gas one, P = (2/3)·(total energy of motion)/V, the push
+// all the particles together would put on the sphere's wall per square metre on average; it leaves
+// out the Coulomb pushes and pulls between the particles.
+const SPHERE_M3 = 4 / 3 * Math.PI * (P.SPHERE_R * 1e-9) ** 3;   // the sphere's volume, m³
+const EV_J = 1.602176634e-19;
+function gasGauge() {
+  const parts = S.ps.filter(p => p.active && (p.kind === 'electron' || p.kind === 'proton'));
+  let M = 0; const mom = [0, 0, 0];
+  for (const p of parts) { const m = p.m || P.MP; M += m; for (let i = 0; i < 3; i++) mom[i] += m * p.vel[i]; }
+  const vc = M > 0 ? v3.scale(mom, 1 / M) : [0, 0, 0];
+  // An electron being steered past a proton counts with the energy it has far from that proton (its
+  // energy of motion there is borrowed from the pull and given back as it leaves; without this the
+  // pass would read as a burst of heat that is gone a moment later).
+  let Ee = 0, Eh = 0, ne = 0, nh = 0;
+  for (const p of parts) {
+    const dv = v3.sub(p.vel, vc), K = 0.5 * (p.m || P.MP) * v3.dot(dv, dv);   // eV
+    if (p.kind === 'electron') { Ee += p.gd ? Math.max(0, p.gd.E) : K; ne++; } else { Eh += K; nh++; }
+  }
+  return { ne, nh, Te: ne ? P.kelvin(2 * Ee / ne / 3) : 0, Th: nh ? P.kelvin(2 * Eh / nh / 3) : 0, Pa: 2 / 3 * (Ee + Eh) * EV_J / SPHERE_M3 };
+}
+const fmtK = K => (K >= 100 ? `${Math.round(K).toLocaleString('en-US')} K` : K >= 1 ? `${K.toFixed(1)} K` : K >= 1e-3 ? `${(K * 1000).toFixed(K >= 0.01 ? 0 : 1)} mK` : K > 0 ? `${(K * 1e6).toFixed(0)} µK` : '0 K');
+const fmtPa = Pa => {
+  const v = Pa >= 1000 ? `${(Pa / 1000).toFixed(Pa >= 1e4 ? 0 : 1)} kPa` : Pa >= 1 ? `${Pa.toFixed(Pa >= 10 ? 0 : 1)} Pa` : Pa >= 1e-3 ? `${(Pa * 1000).toFixed(0)} mPa` : Pa > 0 ? `${Pa.toExponential(0)} Pa` : '0 Pa';
+  const atm = Pa / 101325;
+  return `${v}, ${atm >= 0.01 ? atm.toFixed(2) : atm >= 1e-6 ? atm.toPrecision(1) : atm > 0 ? atm.toExponential(0) : 0} atm`;
+};
 function updateHud() {
   const nHp = bareProtons().length, nH = S.atoms.length, nE = freeElectrons().length;
   $('cHp').textContent = nHp; $('cH').textContent = nH; $('cE').textContent = nE;
-  if (S.beat >= 2 && S.time - (S.gaugeAt || -9) > 0.5) {
-    S.gaugeAt = S.time;
-    const fe = freeElectrons();
-    const avg = fe.length ? fe.reduce((t, e) => t + 0.5 * P.ME * v3.dot(e.vel, e.vel), 0) / fe.length : 0;
-    $('heat').innerHTML = `${fe.length ? `Free electrons: ${avg.toFixed(2)} eV each (${fmtC(P.kelvin(2 * avg / 3))})` : 'No free electrons'}<br>`
-      + `Light out through the edge: <b>${S.lightOut}</b> photon${S.lightOut === 1 ? '' : 's'}, ${S.lightOutE.toFixed(0)} eV`;
+  if (S.time - (S.gaugeAt || -9) > 0.5 || S.realT - (S.gaugeReal || -9) > 0.5) {
+    S.gaugeAt = S.time; S.gaugeReal = S.realT;
+    const g = gasGauge();
+    $('heat').innerHTML = `Temperature: electrons <b>${g.ne ? fmtK(g.Te) : '–'}</b> · protons and atoms <b>${g.nh ? fmtK(g.Th) : '–'}</b><br>`
+      + `Pressure: <b>${fmtPa(g.Pa)}</b> (${g.ne + g.nh} particles in 80 nm)`
+      + (S.beat >= 2 ? `<br>Light out through the edge: <b>${S.lightOut}</b> photon${S.lightOut === 1 ? '' : 's'}, ${S.lightOutE.toFixed(0)} eV` : '');
   }
   const sp = SPEEDS[S.speed], fs = FS_PER_S * sp * S.slow;
   const tf = fs >= 10 ? `${Math.round(fs)} fs` : fs >= 1 ? `${fs.toFixed(1)} fs` : `${Math.round(fs * 1000)} as`;   // as = attoseconds
@@ -2417,7 +2447,7 @@ function cloudDetail(clouds, v, steps) {
   return clouds.map(c => {
     const R = c.packet ? Math.max(c.radius, 4 * c.packet.length) : c.radius;   // (a packet reaches 4 lengths along its motion)
     const d = Math.max(1e-6, v3.len(v3.sub(c.pos, v.camPos)) - R), px = R / d * H / fovT;
-    const out = { ...c, steps: Math.max(12, Math.min(c.maxSteps || steps, steps, Math.ceil(px / 2))) };
+    const out = { ...c, steps: Math.max(10, Math.min(c.maxSteps || steps, steps, Math.ceil(px / 3))) };
     if (px < LOD_PX && c.terms.length > 2) {
       let top = 0; for (const t of c.terms) if (t.w != null) top = Math.max(top, t.w);
       if (top > 0) out.terms = c.terms.filter(t => t.w == null || t.w >= 0.03 * top);
@@ -2698,6 +2728,8 @@ const PROTON_COHERENCE = 0.0416;   // nm: λ_th / √(2π) for a proton at 300 K
 // see is always the part of the wave the point is riding (the real packet is longer: about 15 nm
 // at 0.1 eV, so most of it is left out of the picture).
 const WAVE_R = 3;   // nm
+// Free electron waves are drawn dim and see-through (Steve, 2026-11-19: they read bright and white).
+const WAVE_FADE = 0.35;
 // While a proton guides an electron (within MW.guideRadius of it, up to 4 nm), the drawn wave is
 // the exact Coulomb wave that guides it (render.js sampleCoul), kept to a beam round the flow line
 // the point is on right now: each point's flow line is followed back to where it came in (its
@@ -2721,15 +2753,15 @@ function freePackets() {
     if (g && g.E <= 2 && g.p.active && g.p.q === 1) {
       const rel = v3.sub(e.pos, g.p.pos), k = MW.k_au(g.E) / MW.A0_NM, vIn = Math.sqrt(2 * g.E / P.ME);
       const len = 1 / (2 * (GUN_SPREAD(e.E || 0.1) / (P.HBAR * vIn)) / 2.355), w = e.cone || 0.4;
-      out.push({ invMax: 1, iso: 0.044, fade: 0.7, maxSteps: 2 * PACKET_STEPS, terms: [], pos: e.pos, radius: WAVE_R,
-        coul: { axis: g.u, width: w, length: len, k, z0: v3.dot(rel, g.u), stepLen: Math.min(2 * Math.PI / k / 8, 0.3 * w), R: WAVE_R,
+      out.push({ invMax: 1, iso: 0.044, fade: WAVE_FADE, maxSteps: Math.round(1.5 * PACKET_STEPS), terms: [], pos: e.pos, radius: WAVE_R,
+        coul: { axis: g.u, width: w, length: len, k, z0: v3.dot(rel, g.u), stepLen: Math.min(2 * Math.PI / k / 6, 0.5 * w), R: WAVE_R,
           b0: MW.lineOffset(g.E, g.u, rel, COUL_XI), xiMax: COUL_XI, table: MW.coulombTable(g.E, COUL_XI), proton: g.p.pos } });
       continue;
     }
     const mid = e.so && !e.gd ? v3.sub(e.pos, e.so) : e.pos;
     const dk = GUN_SPREAD(e.E || 0.1) / (P.HBAR * v), len = 1 / (2 * dk / 2.355);
     const k = P.ME * v / P.HBAR;
-    const pk = packet(mid, e.vel, P.ME, e.cone || P.coneWidth(Math.max(0.01, e.E || 0.1), 20), len, -k * (e.waveS || 0), 0.7);
+    const pk = packet(mid, e.vel, P.ME, e.cone || P.coneWidth(Math.max(0.01, e.E || 0.1), 20), len, -k * (e.waveS || 0), WAVE_FADE);
     pk.packet.win = win; out.push(pk);   // (a little softer than an orbital: long packets crossing the view would otherwise wash it out)
   }
   for (const p of bareProtons()) out.push(packet(p.pos, p.vel, P.MP, PROTON_COHERENCE, PROTON_COHERENCE / Math.SQRT2, 0, 1));
