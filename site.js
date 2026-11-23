@@ -36,4 +36,17 @@ if (CASHTAG.test(SITE.cashApp || '')) {
   $('cash-link').href = `https://cash.app/${SITE.cashApp}`;
   $('cash-link').textContent = `Cash App ${SITE.cashApp}`;
 }
+// Liberapay and Ko-fi names: letters, numbers, dot, dash and underscore.
+const HANDLE = /^[A-Za-z0-9_.-]{1,40}$/;
+const PAGES = [
+  ['liberapay', (u) => `https://liberapay.com/${u}/donate`],
+  ['kofi', (u) => `https://ko-fi.com/${u}`],
+];
+for (const [key, url] of PAGES) {
+  const name = (SITE[key] || '').trim();
+  if (!HANDLE.test(name)) continue;
+  any = true;
+  $(`${key}-card`).hidden = false;
+  $(`${key}-link`).href = url(encodeURIComponent(name));
+}
 $('support-soon').hidden = any;

@@ -1221,6 +1221,9 @@ function renderPanel() {
     ol.appendChild(li);
   }
   ol.scrollTop = ol.scrollHeight;
+  // After a finished game (not an abort or a replay), a gentle coffee link.
+  $('support-nudge').hidden = !(app.game.result && app.game.history.length >= 2 && app.mode !== 'review'
+    && !['aborted', 'declined'].includes(app.game.result.reason));
   $('resign-btn').disabled = !!app.game.result || app.mode === 'review' || (app.mode === 'online' && !link.connected);
   $('new-btn').textContent = app.mode === 'account' ? 'Rematch' : 'New game';
   $('new-btn').disabled = app.mode === 'review';
