@@ -23,7 +23,7 @@ export const V_AU = 2.18769126;            // nm/fs per atomic unit of speed (α
 export const HARTREE = 27.211386;          // eV
 export const XI_MAX = 120;
 
-const k_au = E => Math.sqrt(2 * Math.max(E, 1e-4) / HARTREE);
+export const k_au = E => Math.sqrt(2 * Math.max(E, 1e-4) / HARTREE);
 // How far from the proton (nm) the wave is worked out, at energy E (eV): at most 4 nm.
 export const guideRadius = E => Math.min(4, 0.5 * XI_MAX / k_au(E) * A0_NM);
 
@@ -159,4 +159,37 @@ export function crests(slice, t) {
     }
   }
   return out;
+}
+
+// For drawing the wave as a narrow beam (game.js, render.js). This wave is a function of
+// ξ = r − z alone times e^{ikz}, and its flow keeps η = r + z and ξ apart, so its flow lines have a
+// closed form: the current through the paraboloid ξ = const out to η is 2πk·η·ξ(½ − q)·|ψ|² (q =
+// Re F′/F), and far upstream that is πk·b² for the line that came in at distance b from the axis.
+// So the line through any point came in at b² = η·ξ(1 − 2q(ξ))·|ψ(ξ)|² (all in Bohr radii).
+// coulombTable(E, xiMax) samples ξ from 0 to xiMax (Bohr radii) in n steps: per sample
+// [Re √C·F, Im √C·F, ξ(1 − 2q)·C|F|², 0], so ψ = (that) · e^{ikz} and b² = η · (third).
+const ctabs = new Map();
+export function coulombTable(E, xiMax, n = 512) {
+  const key = `${Math.round(Math.log(E) * 200)},${Math.round(xiMax)}`;
+  let t = ctabs.get(key);
+  if (t) return t;
+  const k = k_au(E), g = 2 * Math.PI / k, C = g / (1 - Math.exp(-g)), sq = Math.sqrt(C);
+  t = new Float32Array(4 * n);
+  for (let j = 0; j < n; j++) {
+    const xi = xiMax * j / (n - 1), [Fr, Fi, Dr, Di] = hyp(k, k * xi), f2 = Fr * Fr + Fi * Fi;
+    const q = (Dr * Fr + Di * Fi) / Math.max(f2, 1e-300);
+    t.set([sq * Fr, sq * Fi, xi * (1 - 2 * q) * C * f2, 0], 4 * j);
+  }
+  if (ctabs.size > 40) ctabs.clear();
+  ctabs.set(key, t);
+  return t;
+}
+// The incoming offset (nm, a vector square to u) of the flow line through r (nm, from the proton).
+export function lineOffset(E, u, r, xiMax) {
+  const t = coulombTable(E, xiMax), n = t.length / 4;
+  const R = Math.hypot(r[0], r[1], r[2]), z = r[0] * u[0] + r[1] * u[1] + r[2] * u[2];
+  const xi = (R - z) / A0_NM, eta = (R + z) / A0_NM, x = Math.min(n - 1, xi / xiMax * (n - 1)), j = Math.min(n - 2, Math.floor(x)), f = x - j;
+  const gv = t[4 * j + 2] * (1 - f) + t[4 * j + 6] * f, b = Math.sqrt(Math.max(0, eta * gv)) * A0_NM;
+  const p = [r[0] - z * u[0], r[1] - z * u[1], r[2] - z * u[2]], pl = Math.hypot(p[0], p[1], p[2]);
+  return pl > 1e-9 ? p.map(c => c * b / pl) : [0, 0, 0];
 }

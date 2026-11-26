@@ -3,8 +3,9 @@
 Beats 1 and 2 of [`docs/levels/01-hydrogen-tutorial.md`](../../docs/levels/01-hydrogen-tutorial.md),
 in the browser window or a PC VR headset (WebXR, the Enter VR button). Live at `rationalbonding.com/alchemfighter/tutorial/` once merged.
 
-- **Beat 1, meet the proton:** a lone proton drawn as the glow of its electric field (log scale,
-  capped), with Field view lines.
+- **Beat 1, learn to fly** (Steve, 2026-11-19): just the thrusters and all-stop. Fly (W A S D or
+  the pad), then brake with all-stop (X or ■) until the ship is still, and the gun beat starts.
+  (The proton is still there, drawn as the glow of its field, but flying round it is no longer a goal.)
 - **Beat 2, first capture:** the electron gun, with an aim cone that is wider for slower electrons
   (the electron is a wave). Every pass is reported with its closest approach, its chance in the
   game and its real chance. On a capture the electron cloud appears in the level it landed in and
@@ -111,6 +112,25 @@ and what the waves cost per frame.
   A charge inside the cloud also feels the part of the proton the electron no longer covers
   (`enclosed`: the share of the electron inside each radius), and its field on the wave is
   softened over the cloud's size (1.5·n² a₀) so the pair stay matched.
+- **Light from the wave's own swing** (Steve, 2026-11-17). Each part of the electron's wave
+  swings its charge toward every lower standing wave b; the light toward b comes from all those
+  swings added with their amplitudes and phases (`sloshChannels`: D_b = Σ c_a·√(4ω³/3c³)·⟨b|r|a⟩,
+  chance per unit time |D_b|²), and the photon's swing axis is the long axis of D_b. Parts at one
+  energy add or cancel, so a mixed wave steers where the electron lands and which way the light
+  goes. Over a whole lower shell the cross terms between different shapes cancel (rotational
+  symmetry), so the total chance is still the shares times the rates. A pure standing wave keeps
+  its measured lifetime. Departures, flagged: the moment of release is still rolled from that
+  chance (the true trigger is the light field's own restlessness, far too much to simulate);
+  parts at different energies are counted separately (their cross terms beat faster than any
+  step resolves); the 2s two-photon way out stays a rate.
+- **The point stays in its cloud.** Before, when an atom stepped down (or a field blended in
+  another orbital) the wave changed but the point stayed where it was, so after 3p → 1s it could
+  sit far outside the 1s cloud, where its real standing wave carries it nowhere. Now the point is
+  carried with the wave whenever its make-up changes (`carryPoint`): it keeps its direction and
+  its place in the wave's radial spread. A caught electron's point starts where the electron
+  came in, placed the same way. Departure, flagged: the carrying is that radial matching, not
+  the wave's flow integrated through the change (the change happens in attoseconds and is shown
+  slowed, so following the true flow would cost hundreds of steps a frame).
 - **Spin.** Every electron has a spin axis, a unit vector that belongs to its wave (random from
   the gun, which is unpolarised; an atom keeps the axis of the electron it caught). The point's
   guidance rule has its spin term: v = (ħ/m)·Im(∇ψ/ψ) + (ħ/2m)·∇ln ρ × ŝ. The axis is not read off
@@ -205,9 +225,8 @@ and what the waves cost per frame.
   rings) for one second and the lock closes. A shot fired while locked starts from the same spot
   in its wave every time and is steered through the disc on its pass by that proton, so it is
   caught. What stays real: the orbital is rolled from the computed odds for that pass's angular
-  momentum (the HUD lists the top three for your aim), and everything after the catch. The
-  Target window shows the target at three zooms (1 nm, 10 pm, 0.01 pm wide) with the gun's
-  spread, where your aim brings the shot in, and where the last passes came in.
+  momentum (the HUD lists the top three for your aim), and everything after the catch. (The
+  Target and Passes windows were removed at Steve's request, 2026-11-18.)
 - **Aim cone:** the gun focuses the electron's wave from a 30 nm aperture, so the spot is about
   ƛ·D / 30 nm (ƛ is the electron's reduced wavelength, D the distance).
 - **Where the electron lands:** one photon takes it straight from free to one orbital, any n up
@@ -233,7 +252,7 @@ and what the waves cost per frame.
   second of play, whether it leaves through the wall or another atom takes it.
 - **Photon recoil** is applied to the atom (about 3 m/s for Lyman-alpha).
 - **Time: one clock, nothing pauses.** At full speed 1 screen second is 40 fs. The player picks
-  a game speed (×0.1 to ×2). When something worth watching happens, the whole system slows down
+  a game speed (×0.1 to ×10, with ◀ ▶ in the time window). When something worth watching happens, the whole system slows down
   together:
   - an electron within 4 nm of a proton: until it moves at most about 1.5 nm per screen second;
   - an electron settling into its new cloud, or an atom changing shape: ×0.01;
@@ -268,8 +287,7 @@ and what the waves cost per frame.
     on the game's clock. When the photon is found, the swing stops and the rest of the wave, now
     empty, runs out at c.
   - *No flicker:* a swing faster than 1.2 per screen second blends into its average
-    (nested surfaces of equal average field strength), fully so above 2.2 per second. Glow view
-    always shows the average, dimmer.
+    (nested surfaces of equal average field strength), fully so above 2.2 per second.
 - **Electron clouds follow Schrödinger's equation live.** While a lone atom sends light, its cloud
   is part upper shape and part lower, beating at the light's real frequency (that beat is what
   swings the charge); its share in the upper level fades as e^(−t/τ). When the beat is too fast
@@ -383,10 +401,10 @@ and what the waves cost per frame.
     keeps its charge centred, so that pull is due to be brought in line.
 - **Windows:** the HUD windows have fully clear backgrounds (only a thin outline). Every one has a − button (top right) that folds it to
   its title row, and + opens it again (remembered between visits; I folds the tutor). The Game time
-  row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a faint "H" label.
-- **Photosensitivity:** the start card carries a warning and a "Start in Glow view" button;
+  row ("1 s = … fs") stays visible when its window is folded. Neutral atoms carry a small, faint "H" centred just above the nucleus, with the orbital holding the largest bound share named just below it (for example "2p"); bare protons carry "H+" (Steve, 2026-11-17).
+- **Photosensitivity:** the start card carries a warning (the calmer Glow view was removed at Steve's request, 2026-11-17);
   the capture flash is dimmed, and a photon leaving through the wall makes only a small soft flash.
-- **Acid Neutrality:** after the first atom, 9 more protons appear (10 hydrogen in all) at random spots (at least
+- **Acid Neutrality:** after the first atom, 4 more protons appear (5 hydrogen in all; at most 5 free electrons at once) at random spots (at least
   7 nm apart). The goal is to give every one an electron; it ends once all are neutral and every catch has settled (in any orbital). Protons this far apart barely move:
   their repulsion is about 0.1 eV, and they are 1,836 times heavier than an electron.
 - **Pacing of a capture:** the capture takes 3 s on screen. Each step down then swings for its
@@ -400,7 +418,7 @@ and what the waves cost per frame.
   separate orbitals at once.
 - **One electron, one cloud.** Between two levels the cloud is one wave made of both shapes,
   sloshing at the light's real frequency (that slosh is the swinging charge that sends the light).
-  Faster than 1.2 swings per screen second it is shown at 1.2 (0.5 in Glow view) rather than
+  Faster than 1.2 swings per screen second it is shown at 1.2 rather than
   blurred into two nested shapes, which would also flicker. The only clouds drawn as two shapes
   added together are atoms sharing an excitation with other atoms: then this atom's part of the
   shared state really is split between two possibilities.
@@ -426,11 +444,132 @@ and what the waves cost per frame.
 
 ## Views and controls
 
-- **Field view** (default): electric field lines, and each photon's electric wave. Nothing is drawn
+- **Orbital labels** (Steve, 2026-11-17): every neutral atom's orbital is named just outside the
+  drawn edge of its cloud (found by walking in from the cloud's rim until the density reaches the
+  level it is drawn at), with "H" above it. Names follow chemistry's own system: one orbital (90% or
+  more of the bound wave) by its name (2p); several orbitals of one shell as a hybrid, sp^λ with
+  λ = p share over s share (sp, sp², sp³, sp³d²; the leading number is the shell); an asterisk when
+  the name covers less than 90% of the bound wave (other shells mixed in or a strong pull
+  distorting it): 2p*; two shells about evenly (each 40% or more) are both named, 1s+2p. The name
+  comes from the cloud as drawn (an atom sharing an excitation, changing level or sending light
+  shows both levels), not from the level it rests in. A spin-paired H₂ shows σ1s once, above the pair.
+- **Aim path** (Steve, 2026-11-17): the predicted path now follows the same rules as the shot: the
+  game's own close-in force and leapfrog steps, and inside a bare proton's guide radius the Coulomb
+  matter wave's flow (updateGuides). It is the path of the middle of the wave; an unaided shot's
+  point starts somewhere in the wave's width and its spin makes it corkscrew about the path. The
+  odds use the angular momentum the shot brings in. Checked: exit direction within 1 to 2° of the
+  real shot (the old classical path was off by over 100° on close passes).
+- **Picture:** clouds use a fine interleaved-gradient dither instead of a blotchy hash; desktops
+  may draw up to 2 device pixels per screen pixel (phones 1.5). An attempt to lower resolution only
+  when the graphics chip was slow broke phones (graphics calls block the page, so it never
+  lowered) and was undone, 2026-11-18.
+- **Free waves drawn as clouds** (Steve, 2026-11-18; pilot-wave view): every free electron's and
+  every bare proton's wave packet is ray-marched like the orbitals, coloured by phase (+ cyan,
+  − magenta-leaning purple, the quarter turns lavender and amber), replacing the old crest rings.
+  - Electron: as wide as the gun's spot; as long as the gun's energy spread allows, rms length
+    ħv·2.355/(2ΔE). ΔE (FWHM) is a real source's: 10 meV at 0.1 eV and up (monochromated gun),
+    1 meV from 0.01 eV, 0.05 meV below (laser photoelectron sources). At 0.1 eV: about 15 nm long,
+    0.4 nm wide, crests 3.9 nm apart; at 0.001 eV about 290 nm long (longer than the system).
+  - Proton: given the coherence length of a proton in a gas at 300 K, λ_th/√(2π) = 0.04 nm
+    (assumed: nothing in the level sets it). Its crests are several nm apart, so it shows one colour.
+  - Departures: widths are held fixed away from protons (real packets spread, and the beam
+    narrows to its focus); electron packets are drawn at 0.7 of an orbital's brightness so long packets
+    don't wash out the view; at most 32 samples per ray through a packet (16 on phones).
+  - Cost: in a phone-sized software test with 5 packets crossing the view, a frame at fixed
+    resolution took about 3.5× as long as with them hidden; the resolution scaler absorbs it.
+- **Temperature and pressure** (Steve, 2026-11-19), in the Census window, updated twice a second:
+  - Temperature is the kinetic one, (2/3)·(average energy of motion)/k_B, for the free electrons and
+    for the heavy particles (bare protons and atoms) separately, since nothing in the level shares
+    energy between them quickly. It is taken in the frame where the system's momentum is zero; an
+    electron being steered past a proton counts with its energy far from that proton.
+  - Pressure is the ideal-gas one, (2/3)·(total energy of motion)/volume of the 80 nm sphere; it
+    leaves out the Coulomb pushes and pulls between particles. A 0.1 eV electron alone is about
+    40 Pa (0.0004 atm), because the sphere is so small.
+- **Dimmer, see-through, coarser clouds** (Steve, 2026-11-19): free electron waves at 0.35 of an
+  orbital's brightness (was 0.7); every cloud lets more light through (absorption 0.9, was 1.6) and
+  glows less (1.0, was 1.3); clouds drawn at 0.4 of the screen's width and height (was 0.5) with
+  one sample per 3 pixels across (was 2, at least 10). Phone-sized test, wave across the view:
+  40 ms a frame, was 52.
+- **Wave drawn only near the electron** (Steve, 2026-11-19): a free electron's wave is drawn only
+  within 3 nm of its point (soft edge from 1.8 nm), so what shows is the part of the wave the point
+  is riding. The real packet is longer (about 15 nm at 0.1 eV); the rest is left out of the picture.
+- **The wave bends round a proton** (Steve, 2026-11-19; pilot-wave view, shots under 2 eV): while a
+  proton guides an electron (within 4 nm of it), its drawn wave is the exact Coulomb wave that
+  guides the point, kept to a beam as wide as the gun's spot round the flow line the point is on.
+  Each place's flow line is followed back to where it came in (its offset b, from
+  b² = η·ξ(1 − 2 Re F′/F)·C|F|², closed form) and the beam keeps the lines that came in within the
+  spot. It is worked out from the point's place every frame, so the point is always on the beam's
+  middle line. The proton's pull draws the lines in, so the beam narrows past the proton (Coulomb
+  focusing).
+  - Departures: the spin term in the guidance rule can carry the point across flow lines; the beam
+    simply follows it rather than drawing the spin's effect on the wave. The wave's colours (phase)
+    jump once when the proton starts and stops guiding (the phase's starting point is arbitrary).
+  - Cost: lighter than before, because only the window is sampled (phone-sized software test, beam
+    across the view: 52 ms a frame, against 97 ms for the full-length beam).
+- **Charge colours** (Steve, 2026-11-18): positive is neon pink, negative neon blue (field glows,
+  field lines, proton points and H+ labels, electron points, trails, gun and aim cone).
+- **Unaided catch moves on**: catching the First capture proton without the lock-on gives the lesson,
+  then moves to Acid Neutrality after 30 screen seconds of reading time. The lesson's waiting time
+  uses the real number of free electrons (radiative capture's rate grows with it).
+- **Graphics resets**: if the phone's graphics chip drops the picture, the game rebuilds its
+  renderer at the lowest resolution and carries on. A note of how the last session was going is
+  kept on the device (never sent anywhere) and shown on the start card if the browser crashed.
+- **Lighter cloud drawing** (Steve, 2026-11-18; measured at a fixed resolution in a phone-sized
+  software renderer, see the PR). The physics is not touched; only how the clouds are drawn:
+  - Clouds are drawn into a picture half as wide and half as tall as the screen (0.4 since
+    2026-11-19), then laid under
+    the full-sharpness stars, lines, labels and glows. Clouds are soft, so this barely shows.
+    (Needs float pictures, EXT_color_buffer_float; without it everything is drawn at full size.)
+  - Each cloud gets samples by its size on screen (about one per 2 pixels across, 12 at least),
+    and a cloud under 48 pixels across leaves out the faintest shapes in its blend (under 3% of
+    the strongest), too small there to see. Big clouds, such as higher levels seen close up, keep
+    every shape and the full sample count.
+  - A ray that only grazes a cloud's ball gets samples in proportion to the stretch it crosses
+    (same spacing as through the middle), and a ray stops once almost no light gets through.
+- **Stimulated emission** (Steve, 2026-11-17): when an atom sends Lyman light from np while another
+  atom or group is still up in the same np level, the light can't tell which atom sent it (they
+  are inside a wavelength of each other), so the sender lands in 1s sharing the leftover
+  excitation, in step with chance (1 + F)/2 (then the two flash together, about twice as fast) or
+  out of step (it can hardly get out). This is stimulated emission for atoms closer than a
+  wavelength (Dicke). Departure: the roll stands in for following the light field itself.
+- **Braking light** (bremsstrahlung, Steve 2026-11-17): physics.js adds up each electron's
+  acceleration (∫a²dt; near a proton the wave's Coulomb pull at the point stands in for jumps in
+  the guided flow); the game turns Larmor's radiated energy into whole photons with energies
+  spread as 1/ω between ω/10 and ω (ω ≈ |a|/|v|), and the electron pays each photon's energy.
+  Very rare: about 2 in a million passes at 1 nm, 6 in 100,000 at 0.1 nm (0.1 eV). Departures:
+  classical rate for the quantum one; light below ω/10 (10% of the energy, very soft) not sent;
+  only free electrons radiate this way.
+- **Superelastic collisions** (Steve, 2026-11-17): a slow electron passing an n = 2 atom can take
+  its 10.2 eV, so the atom drops to 1s with no light and the electron leaves faster. Size from
+  detailed balance with excitation, σ_down(E) = ¼·((E + 10.2)/E)·σ_up(E + 10.2), with the
+  measured σ_up near threshold (0.35 πa₀²): about 0.25 nm² at 0.1 eV. A group sharing an n = 2
+  excitation loses it with the hit atom's share. Departures: n = 2 only; one cross-section for 2s
+  and 2p.
+- **Collisions with higher levels** (Steve, 2026-11-17):
+  - Far passes: the passing charge's field reshapes the atom's computed wave (mixing in higher or
+    lower levels), and now the energy books are kept for that too: the nearest free charge within
+    4 nm pays or receives the change in the atom's own energy (payWave). Changes under 0.1 meV, or
+    with no charge that close, are left unbooked.
+  - Close passes (through the cloud, closeCollision): binary-encounter rule (Thomson): energy ε
+    passes to the bound electron with chance ∝ 1/ε² from the least a pass through the cloud gives
+    up to all the incoming energy; its band sets the new level, more than the binding sets the
+    electron free (levels above 7 count as free). Drops by detailed balance from the reverse climbs
+    (g = 2n²). The new l and m are drawn by number of states. Very likely for high levels: a
+    0.1 eV electron through a 6d cloud usually changes its level.
+  - Departures: bound electron treated as standing still in the binary rule (rough, about a factor
+    of 2); far and close passes are split at the cloud's size, so near the edge both can act;
+    n = 2 → 1 uses the measured superelastic rate.
+- **2026-11-18 (Steve):** learning shots back to 5; when the lock-on is introduced every free
+  electron is cleared for a clean start; the aim path line is no longer drawn (its prediction still
+  sets the rings' angular momentum); the gun goes down to 0.001 eV (0.001, 0.002, 0.005, 0.01, 0.02
+  added; capture tables computed down to there); a free electron circling its spin axis faster than
+  3 turns per screen second is drawn as a blurred loop with its trail along the loop's middle
+  (frame-by-frame sampling drew a false zigzag).
+- **Two views** (Steve, 2026-11-17; the Glow view was removed): the **pilot-wave view** (the
+  default) and **EM field lines** (V, the two buttons, or X in VR). EM field lines: and each photon's electric wave. Nothing is drawn
   stronger than it is, and fields too weak to have a noticeable effect in the game are not drawn
   (still counted in the physics): the magnetic fields of moving electrons and of light push on
   these slow charges about 1,000 times less than the electric fields, so they are left out.
-- **Glow view** (V): the calmer view, glows only.
 - **Window:** drag to look, or double-click for mouse look (double-click again or Esc frees the cursor; raw movement, first reading and big jumps skipped to stop drift), click or Space to fire, W A S D to thrust, R / F up and down, X to brake,
   [ ] or the wheel for electron speed, , and . for game speed.
 - **Phones and tablets:** a flight pad bottom left (thrust ▲ ▼ ◀ ▶, rise, sink, ■ brake) and the
@@ -439,7 +578,7 @@ and what the waves cost per frame.
 - **VR:** 1 metre in the headset is drawn as 1 nm. Left stick thrusts where you look (the ship keeps drifting;
   squeeze the left grip to brake; Y changes game speed); right stick turns
   and rises or sinks; trigger fires along the right controller; A / B change electron speed; X
-  switches Field / Glow view. The tutor text and odds are on a panel above the left hand.
+  switches between the pilot-wave view and EM field lines. The tutor text and odds are on a panel above the left hand.
   Tested only with a simulated headset so far.
 
 Not in this slice yet: the photon gun, H2, the potential-landscape grid,

@@ -40,7 +40,7 @@ export function kramersSigma(n, E) {
 // The game uses the computed cross sections (quantum.js): the free electron's own wave, solved at
 // its real energy one partial wave at a time, overlapped with every orbital up to n = 6.
 export const CAPTURE_NMAX = Q.NMAX;
-export const captureSigma = E => Q.captureSigmaQ(Math.max(E, 0.01));
+export const captureSigma = E => Q.captureSigmaQ(Math.max(E, 0.001));
 
 // Closest approach of an electron with energy E (at infinity) and impact parameter b,
 // on its hyperbola around a proton: r = √(b² + s²) − s, with s = k/(2E).
@@ -64,7 +64,7 @@ export const angularL = h => ME * h / HBAR;
 // and the wave near the proton is mostly the partial wave l ≈ L/ħ − ½. Each partial wave has its own
 // computed chance of being caught, into its own orbitals: light changes l by exactly one, so
 // l = 0 (head-on) can only land in p orbitals, l = 1 lands mostly in 1s, l = 3 mostly in 3d.
-export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01), L);
+export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.001), L);
 
 // The capture target, pilot-wave view. The electron is a point riding its wave; the proton catches
 // it if the point comes in through a disc whose area is the capture cross section σ (all orbitals
@@ -77,7 +77,7 @@ export const captureChanceReal = (E, L) => Q.captureChancePass(Math.max(E, 0.01)
 const sigGrid = new Map();
 function sigmaAt(i) { if (!sigGrid.has(i)) sigGrid.set(i, captureSigma(10 ** (i / 10))); return sigGrid.get(i); }
 export function captureSigmaFast(E) {
-  const x = 10 * Math.log10(Math.min(100, Math.max(E, 0.01))), i = Math.floor(x), f = x - i;
+  const x = 10 * Math.log10(Math.min(100, Math.max(E, 0.001))), i = Math.floor(x), f = x - i;
   return Math.exp(Math.log(sigmaAt(i)) * (1 - f) + Math.log(sigmaAt(i + 1)) * f);
 }
 export const captureDiscRadius = E => Math.sqrt(captureSigmaFast(E) / Math.PI);
@@ -112,7 +112,7 @@ export function gaussian(rand = Math.random) {
 // computed odds of every partial wave into every orbital. m is uniform here; the game ties it to
 // the pass (see capture in game.js). Returns { n, l, m, lIn }.
 export function pickCaptureState(E, L = 1, rand = Math.random) {
-  const x = L === null ? Q.pickCaptureBeam(Math.max(E, 0.01), rand) : Q.pickCapture(Math.max(E, 0.01), L, rand);
+  const x = L === null ? Q.pickCaptureBeam(Math.max(E, 0.001), rand) : Q.pickCapture(Math.max(E, 0.001), L, rand);
   const m = Math.floor(rand() * (2 * x.l + 1)) - x.l;
   return { n: x.n, l: x.l, m, lIn: x.lIn };
 }
@@ -429,12 +429,14 @@ export function stepCharges(ps, dt, enc = new Map(), R = SPHERE_R, maxSub = 4000
   const acc = ps.map(() => [0, 0, 0]);
   const events = [];
   let t = 0, n = 0;
+  const v0 = new Float64Array(3 * ps.length);
   accelerations(ps, acc);
   while (t < dt && n < maxSub) {
     const h = Math.min(dt - t, 0.02 * timeStep(ps));
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       if (!p.active) continue;
+      if (p.q < 0) { const v = p.vel; v0[3 * i] = v[0]; v0[3 * i + 1] = v[1]; v0[3 * i + 2] = v[2]; }
       if (p.guide) {
         // Moved by its wave (pilot-wave view, matterwave.js): midpoint step along the wave's flow.
         const v1 = p.guide(p.pos), mid = [0, 1, 2].map(k => p.pos[k] + 0.5 * h * v1[k]), v2 = p.guide(mid);
@@ -451,6 +453,25 @@ export function stepCharges(ps, dt, enc = new Map(), R = SPHERE_R, maxSub = 4000
       const p = ps[i];
       if (!p.active) continue;
       if (!p.guide) for (let k = 0; k < 3; k++) p.vel[k] += 0.5 * h * acc[i][k];
+      // Braking light: a charge that is turned or slowed radiates (Larmor, P = ⅔·e²a²/c³). The
+      // electron's acceleration over each sub-step is added up here (∫a²dt, and the same weighted
+      // by how fast it is being turned, |a|/|v|, which sets the light's frequency); the game turns
+      // that into photons (brakingLight in game.js). The wall's bounce is not a real force: skipped.
+      if (p.q < 0 && h > 0) {
+        // (carried by its wave near a proton: the wave's own pull, the proton's Coulomb force at
+        // the point, stands in, since jumps in the guided flow are not forces on the charge)
+        let ax, ay, az;
+        if (p.guide && p.guideP) {
+          const g = p.guideP, dx = p.pos[0] - g.pos[0], dy = p.pos[1] - g.pos[1], dz = p.pos[2] - g.pos[2];
+          const r2 = dx * dx + dy * dy + dz * dz + SOFT2, f = -KE / (p.m * r2 * Math.sqrt(r2));
+          ax = f * dx; ay = f * dy; az = f * dz;
+        } else { ax = (p.vel[0] - v0[3 * i]) / h; ay = (p.vel[1] - v0[3 * i + 1]) / h; az = (p.vel[2] - v0[3 * i + 2]) / h; }
+        const a2 = ax * ax + ay * ay + az * az, sp = Math.hypot(p.vel[0], p.vel[1], p.vel[2]) || 1e-9;
+        if (a2 > 0) {
+          p.brem = (p.brem || 0) + a2 * h; p.bremW = (p.bremW || 0) + a2 * h * Math.sqrt(a2) / sp;
+          const b = p.bremA || (p.bremA = [0, 0, 0]); b[0] += ax * h; b[1] += ay * h; b[2] += az * h;
+        }
+      }
       // The wall: matter bounces off like a ball off a curved mirror, without losing energy. The
       // velocity is mirrored about the wall's normal where it hits (angle in = angle out).
       const r = Math.hypot(p.pos[0], p.pos[1], p.pos[2]);

@@ -155,3 +155,34 @@ test('the bond cloud: the part piled up between two paired 1s atoms holds 2S²/(
   assert.ok(Math.abs(tot - want) < 0.03 * want, `${tot} vs ${want}`);
   assert.ok(Math.abs(2 * b.thin + want - 2) < 1e-12, 'two electrons in all');
 });
+
+test('light from the wave\'s swing: a pure wave keeps its own rates; a mix steers where it lands', () => {
+  // pure 3p: the same total and the same 88% to 1s as the rates
+  const s3 = WL.pureState(W, 3, 1, 0), ch = WL.sloshChannels(W, s3);
+  assert.ok(Math.abs(ch.total / W.gamma[W.index(3, 1, 0)] - 1) < 1e-9);
+  let seed = 3, to1s = 0; const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 3000; i++) if (W.states[WL.pickJumpSlosh(W, s3, rand).to].n === 1) to1s++;
+  assert.ok(Math.abs(to1s / 3000 - 0.882) < 0.03);
+  // 3s and 3d₀ mixed in step or out of step: both swing toward 2p, and the swings add or cancel
+  const mix = sign => { const s = WL.pureState(W, 3, 0, 0); s.re[W.index(3, 0, 0)] = Math.SQRT1_2; s.re[W.index(3, 2, 0)] = sign * Math.SQRT1_2; return s; };
+  const toP0 = sign => WL.sloshChannels(W, mix(sign)).list.filter(c => c.b === W.index(2, 1, 0)).reduce((t, c) => t + c.rate, 0);
+  const plus = toP0(1), minus = toP0(-1), plain = 0.5 * (toP0(1) + toP0(-1));
+  assert.ok(Math.abs(plus - minus) > 0.3 * plain, `${plus} vs ${minus}`);
+  // over the whole 2p shell the cross terms cancel: the total is the shares times the rates
+  const want = 0.5 * (W.gamma[W.index(3, 0, 0)] + W.gamma[W.index(3, 2, 0)]);
+  for (const sg of [1, -1]) assert.ok(Math.abs(WL.sloshChannels(W, mix(sg)).total / want - 1) < 1e-6);
+});
+
+test('a point carried from 3p into 1s keeps its place in the spread and ends inside the 1s cloud', () => {
+  const c3 = WL.compileWave(W, WL.pureState(W, 3, 1, 0)), c1 = WL.compileWave(W, WL.pureState(W, 1, 0, 0));
+  const p = [0, 12, 0]; WL.carryPoint(c3, c1, p);
+  const r = Math.hypot(...p), u3 = (() => { const x = WL.radialCdf(c3); return x; })();
+  assert.ok(r > 0.3 && r < 4, `r ${r}`);
+  assert.ok(p[0] === 0 && p[1] > 0 && p[2] === 0, 'same direction');
+  // 1s: the share inside r is 1 − e^{−2r}(1 + 2r + 2r²); it matches the 3p share inside 12 a₀
+  const in1 = 1 - Math.exp(-2 * r) * (1 + 2 * r + 2 * r * r);
+  const x = Math.sqrt(12 / c3.R) * (u3.length - 1), j = Math.floor(x), in3 = u3[j] + (u3[j + 1] - u3[j]) * (x - j);
+  assert.ok(Math.abs(in1 - in3) < 0.02, `${in1} vs ${in3}`);
+  // far outside the new cloud with no old wave: brought to its edge, not left outside
+  const q = [80, 0, 0]; WL.carryPoint(null, c1, q); assert.ok(q[0] < 5);
+});
